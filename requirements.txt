@@ -1,0 +1,10 @@
+# AutoChaoxingCLI - 超星学习通自动学习CLI工具
+
+## 核心依赖
+requests>=2.31.0
+pyyaml>=6.0.1
+rich>=13.7.0
+lxml>=5.1.0
+fonttools>=4.47.0
+loguru>=0.7.0
+pyDes>=2.0.1

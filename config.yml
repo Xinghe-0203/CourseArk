@@ -1,0 +1,90 @@
+# ============================================================
+# AutoChaoxingCLI 配置文件
+# ============================================================
+
+# 账号配置
+account:
+  phone: ""          # 手机号
+  password: ""       # 密码
+
+# 视频刷取配置
+video:
+  # 并发线程数: 0=不限制(使用系统默认), 1-200=指定线程数
+  max_workers: 20
+  # 刷取模式: instant=立即完成, real_time=按实际时长刷取, hybrid=混合(instant失败回退real_time)
+  mode: hybrid
+  # 等时长模式下是否随机化播放进度(模拟真人)
+  random_progress: true
+
+# 答题配置
+answer:
+  # 答题模式: ai=AI答题, tiku=在线题库, manual=手动答题
+  mode: ai
+  # AI答题失败时回退到题库搜索
+  fallback_to_tiku: true
+  # 未找到答案时的默认选项: skip=跳过, random=随机选择
+  no_answer_action: random
+  # 提交前延迟(秒) - 模拟人工操作
+  submit_delay: 2
+  auto_submit: true
+
+# LLM配置 (支持任意OpenAI兼容API)
+llm:
+  base_url: "https://api.deepseek.com/v1"
+  api_key: ""
+  model: "deepseek-chat"
+  temperature: 0.1
+  max_tokens: 4096
+  # 请求超时(秒)
+  timeout: 180
+
+# 在线题库配置
+tiku:
+  enabled: true
+  # 题库搜索超时(秒)
+  timeout: 10
+
+# 本地题库配置 (SQLite)
+question_bank:
+  enabled: true
+  # 数据库文件路径 (相对项目根目录)
+  db_path: "data/question_bank.db"
+  # 自动保存正确答案
+  auto_save: true
+
+# 通知配置
+notification:
+  enabled: false
+  # Server酱推送
+  server_chan:
+    enabled: false
+    sendkey: ""
+  # Bark推送
+  bark:
+    enabled: false
+    key: ""
+    server: "https://api.day.app"
+  # Telegram推送
+  telegram:
+    enabled: false
+    bot_token: ""
+    chat_id: ""
+
+# 高级配置
+advanced:
+  # 请求间隔(秒) - 防止请求过快
+  request_delay: 1.0
+  # 请求间隔随机偏移(秒)
+  request_delay_jitter: 0.5
+  # 最大重试次数
+  max_retries: 3
+  # 重试间隔(秒)
+  retry_delay: 5
+  # 刷学习次数时每章停留秒数(模拟真人浏览间隔)
+  learn_count_dwell: 30
+  # User-Agent轮换
+  rotate_ua: true
+  # 日志级别: DEBUG, INFO, WARNING, ERROR
+  log_level: INFO
+  # 日志文件路径
+  log_file: "logs/autochaoxing.log"
