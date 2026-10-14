@@ -12,8 +12,7 @@ build/
 dist/
 download/
 *.part
-*accounts*.json
-*accounts*.json.*
+*accounts*.json*
 my_config.yml*
 config.local.yml*
 config.*.local.yml*
