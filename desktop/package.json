@@ -1,0 +1,99 @@
+{
+  "name": "courseark-desktop",
+  "version": "2.0.0",
+  "private": true,
+  "description": "CourseArk desktop application",
+  "author": "CourseArk contributors",
+  "main": "src/main.cjs",
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "prepare:runtime": "node scripts/prepare-runtime.cjs",
+    "dev": "npm --prefix ../frontend run build && electron .",
+    "dist:win": "npm --prefix ../frontend run build && npm run prepare:runtime && electron-builder --win --x64",
+    "smoke:runtime": "node scripts/smoke-runtime.cjs",
+    "smoke:packaged": "node scripts/smoke-packaged.cjs"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "org.autocx.webui",
+    "productName": "CourseArk",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../LICENSE",
+        "to": "LICENSE"
+      },
+      {
+        "from": "../app",
+        "to": "app-runtime/app",
+        "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc"]
+      },
+      {
+        "from": "../worker",
+        "to": "app-runtime/worker",
+        "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc"]
+      },
+      {
+        "from": "../cli_copy",
+        "to": "app-runtime/cli_copy",
+        "filter": [
+          "**/*",
+          "!config.yml",
+          "!tests/**",
+          "!**/tests/**",
+          "!.pytest_cache/**",
+          "!**/.pytest_cache/**",
+          "!**/__pycache__/**",
+          "!**/*.pyc",
+          "!logs/**",
+          "!**/logs/**",
+          "!data/**",
+          "!**/data/**",
+          "!download/**",
+          "!**/download/**"
+        ]
+      },
+      {
+        "from": "../webui_static",
+        "to": "app-runtime/webui_static",
+        "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc"]
+      },
+      {
+        "from": "../run.py",
+        "to": "app-runtime/run.py"
+      },
+      {
+        "from": "build/python",
+        "to": "python",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": [
+        {"target": "nsis", "arch": ["x64"]},
+        {"target": "portable", "arch": ["x64"]}
+      ],
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "artifactName": "${productName}-${version}-Setup.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-Portable.${ext}"
+    }
+  }
+}

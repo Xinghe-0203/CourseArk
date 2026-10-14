@@ -1,0 +1,12 @@
+fastapi>=0.110.0
+uvicorn>=0.29.0
+pydantic>=2.6.0
+python-multipart>=0.0.9
+requests>=2.31.0
+pyyaml>=6.0.1
+lxml>=5.1.0
+fonttools>=4.47.0
+Pillow>=10.4.0
+loguru>=0.7.0
+pyDes>=2.0.1
+playwright>=1.48.0

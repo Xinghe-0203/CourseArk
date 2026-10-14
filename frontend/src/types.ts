@@ -1,0 +1,117 @@
+export type View =
+  "overview" | "accounts" | "tasks" | "bank" | "problems" | "settings";
+export interface Account {
+  id: string;
+  label: string;
+  username: string;
+  enabled: boolean;
+  course_count: number;
+  syncing: boolean;
+  last_sync_status?: string;
+  last_sync_at?: number;
+  session?: {
+    has_session?: boolean;
+    fresh?: boolean;
+    fetching?: boolean;
+    last_result?: { ok?: boolean; message?: string };
+  };
+}
+export interface Course {
+  synced_at?: number;
+  course_id: string;
+  class_id: string;
+  cpi: string;
+  name: string;
+  author: string;
+  if_open: boolean;
+  mission_fn: number;
+  mission_all: number;
+}
+export interface Progress {
+  percent: number | null;
+  completed: number;
+  total: number;
+  failed: number;
+  blocked: number;
+  sealed: boolean;
+  active: {
+    id: string;
+    name: string;
+    kind: string;
+    current?: number;
+    total?: number;
+  }[];
+}
+export interface AccountWorkspace {
+  account: Account;
+  courses: Course[];
+  tasks: Task[];
+  recent: Task[];
+  counts: {
+    active: number;
+    pending: number;
+    paused: number;
+    succeeded: number;
+    failed: number;
+  };
+}
+export interface Task {
+  cpi?: string;
+  course_id: string;
+  class_id: string;
+  id: string;
+  account_id: string;
+  account_label: string;
+  course_name: string;
+  feature: string;
+  feature_label: string;
+  status: string;
+  stage: string;
+  error: string;
+  created_at: number;
+  started_at: number;
+  finished_at: number;
+  stats: Record<string, unknown>;
+  params: Record<string, unknown>;
+  progress: Progress;
+  events?: TaskEvent[];
+  activity_events?: TaskEvent[];
+}
+export interface TaskEvent {
+  id: number;
+  event: string;
+  message: string;
+  level: string;
+  stage: string;
+  ts: number;
+  payload: Record<string, unknown>;
+  presentation?: {
+    category: string;
+    title: string;
+    detail: string;
+    action: string;
+    visible: boolean;
+  };
+  narrative: { title: string; detail: string; kind: string };
+}
+export interface Problem {
+  id: number;
+  category: string;
+  level: string;
+  title: string;
+  detail: string;
+  count: number;
+  read_at?: number;
+  last_seen: number;
+  context: { task_id?: string; account_label?: string; course_name?: string };
+}
+export interface BankItem {
+  hash: string;
+  question_hash?: string;
+  question_text: string;
+  question_type: string;
+  answer: string;
+  options?: string[];
+  course_id?: string;
+}
+export type Settings = Record<string, any>;
