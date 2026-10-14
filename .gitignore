@@ -12,10 +12,10 @@ build/
 dist/
 download/
 *.part
-data/*accounts*.json
-data/*accounts*.json.*.tmp
-my_config.yml
-config.local.yml
-config.*.local.yml
+*accounts*.json
+*accounts*.json.*
+my_config.yml*
+config.local.yml*
+config.*.local.yml*
 .venv/
 venv/

@@ -59,7 +59,7 @@ Linux / macOS：
 cp config.yml my_config.yml
 ```
 
-`my_config.yml` 已加入 Git 忽略规则。需要使用 LLM 服务时，在本地文件中填写自己的 API Key；仓库默认配置中该字段为空：
+`my_config.yml`、`config.local.yml` 和 `config.*.local.yml`（含临时副本）已加入 Git 忽略规则。其他自定义配置文件请放在仓库目录之外。需要使用 LLM 服务时，在本地文件中填写自己的 API Key；仓库默认配置中该字段为空：
 
 ```yaml
 llm:
@@ -68,7 +68,7 @@ llm:
 
 使用自定义配置启动：`run.bat -c my_config.yml`（Windows）或 `bash run.sh -c my_config.yml`（Linux / macOS）。
 
-账号密码和登录会话保存在本地账号库，默认路径为 `data/cli_accounts.json`。该文件及含有凭据的配置文件请勿提交到代码仓库或分享给他人。
+账号密码和登录 Cookie 以 JSON 明文保存在本地账号库（文件不加密），默认路径为 `data/cli_accounts.json`。请勿将其放在共享或云同步目录，也不要提交或分享。自定义账号库应放在仓库目录之外；仓库忽略文件名中包含 `accounts` 的 JSON 文件及其临时副本。
 
 ## 离线测试
 
