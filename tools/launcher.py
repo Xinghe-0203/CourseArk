@@ -70,7 +70,7 @@ def main():
         print(json.dumps({'port': port, 'service': service, 'frontend_stale': frontend_stale()}, ensure_ascii=False))
         return
     if service == 'ours':
-        print('学习控制台已经在运行，正在打开浏览器。')
+        print('课舟已经在运行，正在打开浏览器。')
         webbrowser.open(f'http://127.0.0.1:{port}')
         return
     if service == 'occupied':
@@ -79,7 +79,7 @@ def main():
     interpreter = environment / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
     uv = shutil.which('uv')
     if not interpreter.exists():
-        print('正在为学习控制台准备独立运行环境…')
+        print('正在为课舟准备独立运行环境…')
         run([uv, 'venv', str(environment), '--python', sys.executable] if uv else [sys.executable, '-m', 'venv', str(environment)])
     digest = hashlib.sha256((ROOT / 'requirements.txt').read_bytes()).hexdigest()
     marker = environment / 'autocx-requirements.sha256'
@@ -94,7 +94,7 @@ def main():
         print('正在生成最新的网页界面…')
         run([npm, 'ci', '--no-fund', '--no-audit'], ROOT / 'frontend')
         run([npm, 'run', 'build'], ROOT / 'frontend')
-    print(f'启动学习控制台：http://127.0.0.1:{port}；关闭此窗口会停止服务。')
+    print(f'启动课舟：http://127.0.0.1:{port}；关闭此窗口会停止服务。')
     run([str(interpreter), str(ROOT / 'run.py'), '--port', str(port), '--open'])
 
 

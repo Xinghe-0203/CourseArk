@@ -456,6 +456,17 @@ def test_index_page_is_served(app_client):
     assert "无鉴权" not in response.text
 
 
+def test_cross_site_mutations_are_rejected(app_client):
+    evil = app_client.post("/api/tasks/none/retry", headers={"Origin": "https://evil.example"})
+    assert evil.status_code == 403
+    null_origin = app_client.post("/api/tasks/none/retry", headers={"Origin": "null"})
+    assert null_origin.status_code == 403
+    local = app_client.post("/api/tasks/none/retry", headers={"Origin": "http://127.0.0.1:8848"})
+    assert local.status_code == 404  # 本机页面请求进入路由，因任务不存在返回 404
+    read = app_client.get("/api/health", headers={"Origin": "https://evil.example"})
+    assert read.status_code == 200  # 读操作不受来源限制，浏览器仍由 CORS 默认拦截读取
+
+
 def test_missing_vue_build_reports_how_to_rebuild(app_client, monkeypatch, tmp_path):
     from app.main import create_app
     from fastapi.testclient import TestClient

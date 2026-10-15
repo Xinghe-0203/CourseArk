@@ -64,6 +64,7 @@ npm --prefix desktop run smoke:packaged
 - 账号、Cookie、配置、题库、任务数据库和日志均为本机运行数据，不应提交到 GitHub。
 - `data/`、`cli_copy/config.yml`、本地密钥和构建目录已加入 Git 忽略规则。
 - 服务仅绑定 `127.0.0.1`；桌面窗口通过本机服务访问界面。
+- 写操作校验请求来源：跨站网页对本机接口的调用会被拒绝。
 
 ## 架构
 

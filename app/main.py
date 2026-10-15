@@ -19,9 +19,10 @@ import os
 import queue
 import time
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -144,9 +145,27 @@ def create_app() -> FastAPI:
     app = FastAPI(title="CourseArk", docs_url="/api/docs", openapi_url="/api/openapi.json",
                   lifespan=lifespan)
 
+    _guard_cross_site_mutations(app)
     _mount_static(app)
     _register_routes(app)
     return app
+
+
+LOCAL_PAGE_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def _guard_cross_site_mutations(app: FastAPI):
+    """只接受本机页面的写请求，阻止跨站网页向本机服务盲发操作。"""
+
+    @app.middleware("http")
+    async def reject_cross_site_mutations(request: Request, call_next):
+        if request.method not in {"GET", "HEAD", "OPTIONS"}:
+            origin = request.headers.get("origin")
+            if origin:
+                parsed = urlsplit(origin)
+                if parsed.scheme not in {"http", "https"} or parsed.hostname not in LOCAL_PAGE_HOSTS:
+                    return JSONResponse(status_code=403, content={"detail": "仅接受来自本机页面的请求"})
+        return await call_next(request)
 
 
 # ============================================================

@@ -83,6 +83,11 @@ async function main() {
     assert.equal(fs.existsSync(path.join(resources, "app-runtime", "cli_copy", ".pytest_cache")), false);
     assert.equal(fs.existsSync(path.join(resources, "app-runtime", "data", "accounts.json")), false);
     assert.equal(fs.existsSync(path.join(resources, "app-runtime", "data", "webui.db")), false);
+    assert.match(
+      fs.readFileSync(path.join(resources, "app-runtime", "webui_static", "vue", "index.html"), "utf8"),
+      /CourseArk/,
+      "packaged static page must be the CourseArk build",
+    );
 
     await runSmoke(executable, appOut, tempRoot, "unpacked");
     await runSmoke(portable, path.dirname(portable), tempRoot, "portable");
