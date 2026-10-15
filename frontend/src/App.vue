@@ -107,7 +107,7 @@ onUnmounted(() => {
     <aside class="sidebar">
       <a href="#overview" class="brand" @click="navigate('overview')"
         ><span class="brand-mark"><GraduationCap :size="25" /></span
-        ><span>AutoCx<small>学习控制台</small></span></a
+        ><span>课舟<small>超星多账号学习台</small></span></a
       >
       <div class="nav-caption">工作空间</div>
       <nav aria-label="主要导航">
@@ -212,7 +212,7 @@ onUnmounted(() => {
           @select-task="selectTask"
         />
         <SettingsView v-else-if="state.view === 'settings'" />
-        <footer>AutoCx 学习控制台 <span>·</span> 数据保存在本机</footer>
+        <footer>课舟 CourseArk <span>·</span> 数据保存在本机</footer>
       </div>
     </main>
     <TaskDrawer v-if="selected" :task="selected" @close="selected = null" />

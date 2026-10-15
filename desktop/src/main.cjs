@@ -45,6 +45,11 @@ function configureNavigation(window, baseUrl) {
   });
 }
 
+function windowIconPath() {
+  const icon = path.join(__dirname, "..", "assets", "icon.ico");
+  return fs.existsSync(icon) ? icon : undefined;
+}
+
 function createOrReuseWindow(baseUrl) {
   if (!mainWindow || mainWindow.isDestroyed()) {
     mainWindow = new BrowserWindow({
@@ -53,6 +58,10 @@ function createOrReuseWindow(baseUrl) {
       minWidth: 920,
       minHeight: 640,
       show: false,
+      title: "课舟 CourseArk",
+      backgroundColor: "#f5f7fb",
+      autoHideMenuBar: true,
+      icon: windowIconPath(),
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,

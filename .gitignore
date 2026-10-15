@@ -17,6 +17,7 @@ frontend/*.tsbuildinfo
 .pytest_cache/
 .venv/
 .superpowers/
+docs/vue-validation/
 desktop/node_modules/
 desktop/build/
 desktop/dist/
