@@ -15,6 +15,7 @@ import {
 import { state, act } from "../store";
 import { request } from "../api";
 import { active, statuses, features, date } from "../format";
+import { missionState, missionTotals } from "../mission";
 import type { AccountWorkspace, Course, Task } from "../types";
 const emit = defineEmits<{ select: [task: Task] }>();
 const query = ref(""),
@@ -30,6 +31,9 @@ const profiles = computed(() =>
 );
 const courseKey = (account: string, c: Course) =>
   [account, c.course_id, c.class_id, c.cpi].join(":");
+const totalsFor = (p: AccountWorkspace) => missionTotals(p.courses);
+const missionFor = (p: AccountWorkspace, c: Course) =>
+  missionState(c, p.account.syncing);
 const selectedCount = computed(() => state.selectedCourses.length);
 const chosenProfiles = computed(() =>
   state.workspaces.filter((p) => selectedAccounts.value.includes(p.account.id)),
@@ -222,13 +226,17 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
             <strong>{{ p.courses.length }}</strong
             ><span>课程</span>
           </div>
-          <div>
+          <div
+            :class="{
+              attention: totalsFor(p).all && totalsFor(p).fn < totalsFor(p).all,
+            }"
+          >
             <strong
-              >{{ p.courses.reduce((n, c) => n + c.mission_fn, 0)
-              }}<small>
-                / {{ p.courses.reduce((n, c) => n + c.mission_all, 0) }}</small
-              ></strong
-            ><span>平台任务点（缓存）</span>
+              >{{ totalsFor(p).fn
+              }}<small> / {{ totalsFor(p).all || "—" }}</small></strong
+            ><span>{{
+              totalsFor(p).all ? "平台任务点（缓存）" : "任务点未同步"
+            }}</span>
           </div>
           <div>
             <strong
@@ -364,9 +372,11 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
             <div class="workspace-course-main">
               <b>{{ c.name }}</b
               ><small
-                >{{ c.author || "课程" }} · 平台 {{ c.mission_fn }} /
-                {{ c.mission_all }} 点 ·
-                {{ c.if_open ? "开放" : "关闭" }}</small
+                >{{ c.author || "课程" }} ·
+                <span :class="['course-mission', missionFor(p, c).tone]">{{
+                  missionFor(p, c).text
+                }}</span>
+                · {{ c.if_open ? "开放" : "关闭" }}</small
               >
               <div class="course-task-line" v-if="taskFor(p, c)">
                 <span :class="['status', taskFor(p, c)!.status]">{{
@@ -387,14 +397,7 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
                 </button>
               </div>
               <div class="progress-track course-cache-progress">
-                <i
-                  :style="{
-                    width:
-                      (c.mission_all
-                        ? Math.min(100, (c.mission_fn / c.mission_all) * 100)
-                        : 0) + '%',
-                  }"
-                />
+                <i :style="{ width: missionFor(p, c).percent + '%' }" />
               </div>
             </div>
           </article>

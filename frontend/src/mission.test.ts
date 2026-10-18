@@ -1,0 +1,131 @@
+import { describe, expect, it } from "vitest";
+import {
+  canResume,
+  latestUnfinished,
+  missionState,
+  missionTotals,
+  resumableTasks,
+  unfinishedTotal,
+  unfinishedUnits,
+} from "./mission";
+import type { Course, Task } from "./types";
+
+function course(partial: Partial<Course>): Course {
+  return {
+    course_id: "c1",
+    class_id: "k1",
+    cpi: "1",
+    name: "测试课程",
+    author: "老师",
+    if_open: true,
+    mission_fn: 0,
+    mission_all: 0,
+    ...partial,
+  };
+}
+function task(partial: Partial<Task>): Task {
+  return {
+    course_id: "c1",
+    class_id: "k1",
+    id: "t1",
+    account_id: "a1",
+    account_label: "账号 01",
+    course_name: "测试课程",
+    feature: "course_all",
+    feature_label: "课程任务点",
+    status: "interrupted",
+    stage: "",
+    error: "",
+    created_at: 100,
+    started_at: 100,
+    finished_at: 0,
+    stats: {},
+    params: {},
+    progress: {
+      percent: null,
+      completed: 0,
+      total: 0,
+      failed: 0,
+      blocked: 0,
+      sealed: false,
+      active: [],
+    },
+    ...partial,
+  } as Task;
+}
+
+describe("missionState", () => {
+  it("显示已完成 x / y 并在有待完成时高亮", () => {
+    const state = missionState(course({ mission_fn: 109, mission_all: 125 }));
+    expect(state.text).toBe("已完成 109 / 125，待完成 16");
+    expect(state.tone).toBe("pending");
+    expect(state.pending).toBe(16);
+    expect(state.percent).toBe(87);
+  });
+  it("全部完成不显示待完成", () => {
+    const state = missionState(course({ mission_fn: 27, mission_all: 27 }));
+    expect(state.text).toBe("已完成 27 / 27");
+    expect(state.tone).toBe("ok");
+    expect(state.percent).toBe(100);
+  });
+  it("mission_all 为 0 且已同步时提示任务点未同步", () => {
+    expect(
+      missionState(course({ mission_fn: 0, mission_all: 0, synced_at: 1700000000 }))
+        .text,
+    ).toBe("任务点未同步");
+    expect(missionState(course({ mission_fn: 0, mission_all: 0 })).text).toBe(
+      "等待同步",
+    );
+  });
+  it("同步中优先显示同步状态", () => {
+    expect(missionState(course({ mission_fn: 1, mission_all: 5 }), true).text).toBe(
+      "同步中…",
+    );
+  });
+});
+
+describe("missionTotals", () => {
+  it("汇总账号下所有课程的任务点", () => {
+    const totals = missionTotals([
+      course({ mission_fn: 109, mission_all: 125 }),
+      course({ mission_fn: 27, mission_all: 27, synced_at: 1 }),
+    ]);
+    expect(totals).toEqual({ fn: 136, all: 152, synced: true });
+  });
+});
+
+describe("续跑判定", () => {
+  it("优先使用后端 unfinished_units，其次回退 stats.work.units", () => {
+    expect(unfinishedUnits(task({ unfinished_units: 16 }))).toBe(16);
+    expect(
+      unfinishedUnits(
+        task({
+          stats: {
+            work: {
+              units: {
+                "1": { status: "succeeded" },
+                "2": { status: "blocked" },
+                "3": { status: "running" },
+                "4": { status: "failed" },
+                "5": {},
+              },
+            },
+          },
+        }),
+      ),
+    ).toBe(3);
+    expect(unfinishedUnits(task({}))).toBe(0);
+  });
+  it("只有中断/停止/失败且仍有未完成项时提示继续执行", () => {
+    expect(canResume(task({ status: "interrupted" }))).toBe(true);
+    expect(canResume(task({ status: "running" }))).toBe(false);
+    const tasks = [
+      task({ id: "a", status: "interrupted", unfinished_units: 3, created_at: 10 }),
+      task({ id: "b", status: "stopped", unfinished_units: 0, created_at: 20 }),
+      task({ id: "c", status: "failed", unfinished_units: 2, created_at: 30 }),
+    ];
+    expect(resumableTasks(tasks).map((t) => t.id)).toEqual(["a", "c"]);
+    expect(unfinishedTotal(tasks)).toBe(5);
+    expect(latestUnfinished(tasks)?.id).toBe("c");
+  });
+});

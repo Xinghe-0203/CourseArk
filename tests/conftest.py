@@ -38,6 +38,9 @@ def _isolate_cli_data_dir():
 def sandbox(monkeypatch):
     """隔离的 WebUI 数据目录"""
     tmp = tempfile.mkdtemp(prefix="autocxwebui-test-")
+    # 测试期间禁止启动自动同步，避免派生真实同步子进程污染沙箱；需要验证同步逻辑的
+    # 用例自行 delenv 后直接调用 app.main 的辅助函数。
+    monkeypatch.setenv("AUTOCXWEBUI_DISABLE_AUTO_SYNC", "1")
     from app import paths
 
     for name, value in {

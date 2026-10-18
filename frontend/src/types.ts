@@ -146,6 +146,8 @@ export interface Task {
   answers?: AnswerItem[];
   answers_summary?: Partial<AnswersSummary>;
   live?: TaskLive | null;
+  /** 中断/停止/失败任务仍有待处理的单元数，由后端按 stats.work.units 统计。 */
+  unfinished_units?: number;
 }
 export interface TaskEvent {
   id: number;

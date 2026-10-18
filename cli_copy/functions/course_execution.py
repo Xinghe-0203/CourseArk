@@ -1,6 +1,7 @@
 """网页课程执行：先发现工作范围，再按稳定 ID 执行并确认结果。"""
 from core import runtime
 from core.chapter_parser import work_id
+from core.exceptions import RequestException
 from media.video import Video
 from media.live import Live
 from media.work import Work
@@ -67,6 +68,38 @@ class CourseExecution:
                         kind = 'book'
                     self.jobs.append({'id': key, 'name': h.clean_name(prop.get('name')) or chapter.get('name') or '未命名任务',
                                       'kind': kind or 'unsupported', 'chapter': chapter, 'media': media, 'defaults': defaults})
+    def _finish_without_jobs(self, kinds=None):
+        """发现阶段没有任务点时的收尾。
+
+        平台任务点还有未完成（mission_fn < mission_all）却一个都识别不出来时，
+        必须让任务失败：旧行为是静默 succeeded，用户会误以为「已完成，不做了」。
+        """
+        h = self.handler
+        if kinds is not None:
+            detail = '本次没有需要处理的' + '/'.join(sorted(kinds)) + '类型任务点'
+            h.log.info(detail)
+            runtime.emit('work_plan', '任务范围已读取', stage='course', payload={'units': [], 'sealed': True})
+            if h.ui:
+                h.ui.record_course_result(0, 0, 0)
+            return {**self.stats, 'chapters': len(h.mission_list), 'no_pending': True}
+        mission_all = int(getattr(h.course, 'mission_all', 0) or 0)
+        mission_fn = int(getattr(h.course, 'mission_fn', 0) or 0)
+        pending = max(0, mission_all - mission_fn)
+        if mission_all > 0 and pending > 0:
+            raise RequestException(
+                f'平台显示还有 {pending} 个任务点未完成（{mission_fn}/{mission_all}），'
+                f'但未能识别具体任务；请更新到最新版本或查看诊断日志')
+        detail = (f'平台显示课程任务点已完成（{mission_fn}/{mission_all}），本次没有需要处理的任务'
+                  if mission_all > 0 else '课程暂无任务点，本次没有需要处理的任务')
+        h.log.success(detail)
+        runtime.emit('work_plan', '任务范围已读取', stage='course', payload={'units': [], 'sealed': True})
+        runtime.emit('work_result', detail, stage='course',
+                     payload={'id': 'course', 'name': h.course.course_name,
+                              'status': 'succeeded', 'kind': 'course', 'no_pending': True})
+        if h.ui:
+            h.ui.record_course_result(0, 0, 0)
+        return {**self.stats, 'chapters': len(h.mission_list), 'no_pending': True}
+
     def run(self, kinds=None):
         h = self.handler
         if not h.course.if_open:
@@ -77,6 +110,8 @@ class CourseExecution:
         self.discover()
         if kinds is not None:
             self.jobs = [j for j in self.jobs if j['kind'] in kinds or j['kind'] == 'chapter']
+        if not self.jobs:
+            return self._finish_without_jobs(kinds)
         runtime.emit('work_plan', '任务范围已读取', stage='course', payload={
             'units': [{'id': j['id'], 'name': j['name'], 'kind': j['kind']} for j in self.jobs], 'sealed': True})
         videos, exams = [], []

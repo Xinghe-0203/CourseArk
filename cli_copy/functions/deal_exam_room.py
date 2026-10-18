@@ -49,6 +49,47 @@ class DealExamRoom:
         self.exam = DealExam(user, course, log, ui)
         self.exam.active_kind = "考试"
 
+    # ------------------------------------------------------------------ 风控
+    def _try_examcheck(self, notes: dict) -> str:
+        """平台安全验证已通过时，examcheck 会返回 enc；用它补齐入口地址的 ``enc=?``。
+
+        只发 GET，不启动考试。未通过时服务端返回 ``type=captchaVerify``，
+        此时返回空串，由调用方保持安全中止。
+        """
+        exam_id = str(notes.get("exam_id") or "")
+        answer_id = str(notes.get("answer_id") or "")
+        start_url = str(notes.get("start_url") or "")
+        if not exam_id or not start_url:
+            return ""
+        check_url = ("https://mooc1.chaoxing.com/exam/test/examcheck?view=json"
+                     f"&answerId={answer_id}&examId={exam_id}"
+                     f"&classId={self.class_id}&courseId={self.course_id}&cpi={self.cpi}")
+        try:
+            raw = doGet(check_url, headers={"Referer": "https://mooc1.chaoxing.com/exam/test",
+                                            "X-Requested-With": "XMLHttpRequest"})
+        except Exception as e:
+            self.log.warning(f"  考试校验请求失败: {e}")
+            return ""
+        try:
+            data = json.loads(raw or "{}")
+        except ValueError:
+            return ""
+        if not isinstance(data, dict):
+            return ""
+        if not data.get("status"):
+            reason = data.get("msg") or data.get("type") or "未通过"
+            self.log.warning(f"  平台安全验证仍未通过: {reason}")
+            return ""
+        enc = str(data.get("enc") or "")
+        if not enc:
+            return ""
+        if "enc=?" in start_url:
+            return start_url.replace("enc=?", f"enc={enc}", 1)
+        if "enc=" not in start_url:
+            joiner = "&" if "?" in start_url else "?"
+            return f"{start_url}{joiner}enc={enc}"
+        return start_url
+
     # ------------------------------------------------------------------ 入口
     def do_finish(self, selection: dict | None = None):
         """列出考试 -> 按选择进入 -> AI 作答 -> 提交"""
@@ -165,10 +206,12 @@ class DealExamRoom:
         empty = {"questions": 0, "cache_hits": 0, "tiku_hits": 0, "llm_calls": 0,
                  "random_answers": 0, "submit_ok": 0, "submit_fail": 0}
         title = item.get("title") or "考试"
-        paper_id = str(item.get("paper_id") or "")
+        exam_id = str(item.get("exam_id") or item.get("id") or "")
+        if exam_id.startswith("exam:"):
+            exam_id = exam_id.split(":", 1)[1]
         relation_id = str(item.get("relation_id") or "")
-        if not paper_id:
-            self.log.warning(f"  考试'{title}'缺少试卷ID，无法进入")
+        if not exam_id:
+            self.log.warning(f"  考试'{title}'缺少考试ID，无法进入")
             return empty
 
         enc_params = {}
@@ -180,19 +223,51 @@ class DealExamRoom:
         course_enc = str(enc_params.get("examEnc") or enc_params.get("enc") or "")
         exam_enc = str(item.get("enc") or course_enc)
 
-        start_url = self.course.exam_start_url(
-            self.course_id, self.class_id, self.cpi, openc, course_enc,
-            paper_id, relation_id, exam_enc=exam_enc,
-            is_retest=bool(item.get("is_retest")),
-        )
         limit_time = item.get("limit_time")
         if limit_time:
             self.log.info(f"  考试限时 {limit_time} 分钟，截止 {item.get('end_time') or '未知'}；"
                           f"进入后开始计时")
 
+        # 先读「考试说明」封面页：它带真实答题页地址与风控开关，
+        # 命中验证码/考试码这类平台校验时在这里就停下，不去启动真正考试。
+        notes_url = self.course.exam_notes_url(self.course_id, self.class_id, self.cpi, exam_id)
+        notes = {}
+        try:
+            notes_html = doGet(notes_url, headers={"Referer": "https://mooc1.chaoxing.com/exam/test"})
+            notes = self.course.parse_exam_notes(notes_html or "")
+        except Exception as e:
+            self.log.warning(f"  考试说明页读取失败: {e}")
+        if notes.get("found"):
+            self.log.info(f"  考试入口已读取"
+                          + ("（需平台安全验证）" if notes.get("captcha_check") else ""))
+            if notes.get("need_code"):
+                self.log.error("  该考试需要考试码：请在网页端输入考试码进入考试后，"
+                               "再回到本工具重试；程序不会尝试绕过考试码")
+                return empty
+            if notes.get("captcha_check") or notes.get("exam_check"):
+                verified_url = self._try_examcheck(notes)
+                if not verified_url:
+                    self.log.error("  该考试要求平台安全验证（验证码）：学习通对进入考试做了"
+                                   "人机校验，程序无法自动通过，也不会尝试绕过；"
+                                   f"请在浏览器中打开 {notes_url} 手动验证并进入考试，"
+                                   "验证完成后再重新执行本任务")
+                    return empty
+                self.log.info("  平台安全验证已通过，继续进入考试")
+                start_url = verified_url
+            else:
+                start_url = notes.get("start_url") or ""
+        else:
+            start_url = ""
+        if not start_url:
+            start_url = self.course.exam_start_url(
+                self.course_id, self.class_id, self.cpi, openc, course_enc,
+                exam_id, relation_id, exam_enc=exam_enc,
+                is_retest=bool(item.get("is_retest")),
+            )
+
         self.log.info("  正在进入考试...")
         try:
-            html = doGet(start_url, headers={"Referer": "https://mooc1.chaoxing.com/exam/test"})
+            html = doGet(start_url, headers={"Referer": notes_url or "https://mooc1.chaoxing.com/exam/test"})
         except Exception as e:
             self.log.error(f"  进入考试失败: {e}")
             return empty

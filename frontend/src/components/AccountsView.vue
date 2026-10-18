@@ -12,11 +12,14 @@ import { state, act } from "../store";
 import { request } from "../api";
 import type { Account, Course } from "../types";
 import ModalShell from "./ModalShell.vue";
+import { missionState } from "../mission";
 const edit = ref<Partial<Account> | null>(null),
   password = ref(""),
   courses = ref<Course[]>([]),
   showCourses = ref<Account | null>(null),
   remove = ref<Account | null>(null);
+const missionFor = (course: Course) =>
+  missionState(course, showCourses.value?.syncing);
 async function inspect(a: Account) {
   await act(
     "courses-" + a.id,
@@ -224,7 +227,9 @@ function save() {
         <b>{{ course.name }}</b
         ><small
           >{{ course.author }} · {{ course.if_open ? "可学习" : "已关闭" }} ·
-          {{ course.mission_fn }} / {{ course.mission_all }} 个任务点</small
+          <span :class="['course-mission', missionFor(course).tone]">{{
+            missionFor(course).text
+          }}</span></small
         >
       </div>
     </div>

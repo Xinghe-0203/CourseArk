@@ -66,6 +66,62 @@ class Course:
                 f"ClazzId: {self.class_id}\n"
                 f"Cpi: {self.cpi}")
 
+    _MISSION_RATIO = re.compile(r"(\d+)\s*/\s*(\d+)")
+    _MISSION_LABEL = re.compile(r"已完成任务点\s*[:：]?\s*(\d+)\s*/\s*(\d+)")
+
+    @classmethod
+    def parse_mission_progress(cls, html_text: str) -> tuple:
+        """从课程页解析「已完成任务点 x/y」。
+
+        新页面把数字拆在多个节点里（``<span>109</span>`` + 文本 ``/125``），
+        旧的 ``h2/span/text()`` 只能取到分子，会把分母解析成 0；
+        这里统一按页面文本提取，解析失败返回 ``(0, 0)``。
+        """
+        if not html_text:
+            return 0, 0
+        match = cls._MISSION_LABEL.search(html_text)
+        if match:
+            return int(match.group(1)), int(match.group(2))
+        try:
+            ele = etree.HTML(html_text)
+        except Exception:
+            return 0, 0
+        if ele is None:
+            return 0, 0
+        heads = ele.xpath(
+            "//div[contains(concat(' ',normalize-space(@class),' '),' fanyaChapterWhite ')]"
+            "//div[contains(concat(' ',normalize-space(@class),' '),' chapter_head ')]"
+        )
+        candidates = ["".join(head.xpath(".//text()")) for head in heads]
+        candidates.append(" ".join(ele.xpath("//text()")))
+        for text in candidates:
+            compact = re.sub(r"\s+", " ", text or "")
+            if "任务点" not in compact:
+                continue
+            match = cls._MISSION_RATIO.search(compact)
+            if match:
+                return int(match.group(1)), int(match.group(2))
+        return 0, 0
+
+    def get_mission_progress(self) -> tuple:
+        """只读取课程任务点进度（不解析章节），供账号同步进程使用。"""
+        html_text = doGet(
+            url=f"https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/studentcourse?courseid={self.course_id}&clazzid={self.class_id}&cpi={self.cpi}&ut=s&t={int(time.time())}",
+            headers=self.headers
+        )
+        if not html_text:
+            raise RequestException('课程任务点读取失败：平台返回空响应')
+        lowered = html_text.lower()
+        if 'antispider' in lowered or 'captcha' in lowered:
+            raise RequestException('课程任务点读取触发平台验证')
+        ele = etree.HTML(html_text)
+        root = xpath_first(ele, "//div[contains(concat(' ',normalize-space(@class),' '),' fanyaChapterWhite ')]") if ele is not None else None
+        if not hasattr(root, 'xpath'):
+            raise RequestException('课程任务点页面无法识别，请检查登录状态')
+        fn, total = self.parse_mission_progress(html_text)
+        self.mission_fn, self.mission_all = fn, total
+        return fn, total
+
     def get_chapter(self):
         """获取课程章节列表"""
         self.chapter_list.clear()
@@ -81,15 +137,8 @@ class Course:
         if not hasattr(ele_root, 'xpath'):
             raise RequestException('课程章节页面无法识别，请检查登录状态或平台验证')
 
-        # 提取任务完成进度
-        mission_text = xpath_first(ele_root, "./div[1]/h2/span/text()") or "0/0"
-        mission_parts = str(mission_text).split("/")
-        try:
-            self.mission_fn = int(mission_parts[0]) if mission_parts else 0
-            self.mission_all = int(mission_parts[1]) if len(mission_parts) > 1 else 0
-        except (ValueError, TypeError):
-            self.mission_fn = 0
-            self.mission_all = 0
+        # 提取任务完成进度（新页面分母在文本里，不能用 h2/span 直接拆）
+        self.mission_fn, self.mission_all = self.parse_mission_progress(html_text)
 
         logger.info(f"任务进度: {self.mission_fn}/{self.mission_all}")
 
@@ -509,15 +558,82 @@ class Course:
         return args
 
     @staticmethod
+    def exam_notes_url(course_id: str, class_id: str, cpi: str, exam_id: str) -> str:
+        """新版考试说明页（进入考试前的封面，含安全验证配置）。"""
+        return ("https://mooc1.chaoxing.com/exam/test/examcode/examnotes?"
+                f"courseId={course_id}&classId={class_id}&examId={exam_id}&cpi={cpi}")
+
+    @staticmethod
+    def parse_exam_notes(html: str) -> dict:
+        """解析考试说明页里的进入考试入口与风控开关。
+
+        页面把真实答题页地址放在 ``#startBtn[data]``，其中 ``enc=?`` 需要经
+        ``/exam/test/examcheck`` 校验后替换；``#examCheck`` / ``#captchaCheck``
+        为 1 表示必须先通过平台安全验证（验证码），程序无法绕过。
+        """
+        info = {"found": False, "start_url": "", "exam_check": 0, "captcha_check": 0,
+                "need_code": 0, "exam_id": "", "answer_id": "", "title": ""}
+        if not html:
+            return info
+        try:
+            ele = etree.HTML(html)
+        except Exception:
+            return info
+        if ele is None:
+            return info
+
+        def _value(node_id):
+            hit = ele.xpath(f"//*[@id='{node_id}']")
+            if not hit:
+                return ""
+            node = hit[0]
+            if isinstance(node, etree._Element):
+                return (node.get("value") or node.get("data") or "").strip()
+            return ""
+
+        def _int(value):
+            try:
+                return int(str(value).strip())
+            except (TypeError, ValueError):
+                return 0
+
+        start_url = _value("startBtn")
+        if not start_url:
+            return info
+        if start_url.startswith("/"):
+            start_url = "https://mooc1.chaoxing.com" + start_url
+        info.update({
+            "found": True,
+            "start_url": start_url,
+            "exam_check": _int(_value("examCheck")),
+            "captcha_check": _int(_value("captchaCheck")),
+            "need_code": _int(_value("needCode")),
+            "exam_id": _value("examId"),
+            "answer_id": _value("answerId"),
+        })
+        titles = ele.xpath("//span[contains(@class,'overHidden2')]/text()")
+        if titles:
+            info["title"] = str(titles[0]).strip()
+        return info
+
+    @staticmethod
     def exam_start_url(course_id: str, class_id: str, cpi: str, openc: str,
-                       course_enc: str, paper_id: str, relation_id: str,
+                       course_enc: str, exam_id: str, relation_id: str,
                        exam_enc: str = "", is_retest: bool = False) -> str:
-        """构造「进入考试」URL（学生端 reVersionTestStartNew）。"""
-        return (f"https://mooc1.chaoxing.com/exam/test/reVersionTestStartNew?"
-                f"courseId={course_id}&classId={class_id}"
-                f"&tId={paper_id}&id={relation_id}&p=1&tag=1"
-                f"&enc={exam_enc or course_enc}&examsystem=0&cpi={cpi}"
-                f"&openc={openc}&isRetest={'1' if is_retest else '0'}")
+        """构造「进入考试」URL（学生端 reVersionTestStartNew）。
+
+        Args:
+            exam_id: 考试 ID（列表页 goTest 的 tId，也是答题页/testPaperId 的值）
+            relation_id: 考试关系 ID（goTest 的 id / testUserRelationId）
+        """
+        enc = exam_enc or course_enc
+        if is_retest:
+            return (f"https://mooc1.chaoxing.com/exam/test/reVersionTestStartNew?"
+                    f"courseId={course_id}&classId={class_id}&tId={exam_id}&id={relation_id}"
+                    f"&p=1&tag=1&enc={enc}&examsystem=0&cpi={cpi}&openc={openc}&isRetest=1")
+        return (f"https://mooc1.chaoxing.com/exam-ans/exam/test/reVersionTestStartNew?"
+                f"courseId={course_id}&classId={class_id}&tId={exam_id}&id={relation_id}"
+                f"&p=1&tag=1&enc={enc}&cpi={cpi}&openc={openc}&newMooc=true")
 
     def get_count_log(self) -> int:
         """获取课程学习次数"""

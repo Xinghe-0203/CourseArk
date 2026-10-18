@@ -79,6 +79,14 @@ export async function act(
     state.busy.delete(key);
   }
 }
+/** 续跑中断/停止/失败的任务：后端复用原参数快照新建 pending 任务。 */
+export async function resumeTask(task: Task) {
+  await act(
+    "resume-" + task.id,
+    () => request(`/tasks/${task.id}/resume`, "POST"),
+    "已创建续跑任务",
+  );
+}
 let generation = 0;
 export async function refresh() {
   const current = ++generation;

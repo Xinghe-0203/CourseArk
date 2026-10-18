@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { RefreshCw, Radio, LoaderCircle } from "lucide-vue-next";
+import { RefreshCw, Radio, LoaderCircle, ShieldAlert } from "lucide-vue-next";
 import type { AnswerItem, Task, TaskEvent } from "../types";
 import { request } from "../api";
 import { categories, statuses, date, active, terminal } from "../format";
@@ -41,6 +41,15 @@ const liveLine = computed(() => {
   const elapsed = formatDuration(elapsedSeconds(detail.value));
   const eta = value.eta_seconds ? formatEta(value.eta_seconds) : "计算中";
   return `${value.activity || "任务运行中"} · 已用时 ${elapsed} · 预计剩余 ${eta}`;
+});
+const verificationHint = computed(() => {
+  const hit = events.value.find((e) => {
+    const text = `${e.message || ""}`;
+    return (
+      text.includes("安全验证") || text.includes("考试码") || text.includes("验证码")
+    );
+  });
+  return hit ? String(hit.message || "") : "";
 });
 const filtered = computed(() =>
   (tab.value === "activity"
@@ -161,6 +170,13 @@ watch(
     </p>
     <p v-if="detail.error || error" class="alert error">
       {{ detail.error || error }}
+    </p>
+    <p v-if="verificationHint" class="alert warning detail-verify-hint" role="alert">
+      <ShieldAlert :size="15" /><span
+        >该考试需要人工验证，程序未启动考试。请在浏览器中打开考试说明页，完成平台安全验证后再重新创建任务。<small class="muted">{{
+          verificationHint
+        }}</small></span
+      >
     </p>
     <div class="detail-metrics">
       <div>

@@ -5,14 +5,14 @@ import {
   ChevronRight,
   Pause,
   Play,
-  RotateCcw,
   Square,
   Layers,
 } from "lucide-vue-next";
 import type { Task } from "../types";
-import { state, act } from "../store";
+import { state, act, resumeTask } from "../store";
 import { request } from "../api";
 import { runningSummary } from "../live";
+import { canResume, unfinishedUnits } from "../mission";
 import {
   groupTasks,
   statuses,
@@ -89,6 +89,9 @@ function command(task: Task, op: string) {
     () => request(`/tasks/${task.id}/${op}`, "POST"),
     op === "retry" ? "已加入重试队列" : "任务指令已发送",
   );
+}
+function resume(task: Task) {
+  resumeTask(task);
 }
 </script>
 <template>
@@ -173,7 +176,11 @@ function command(task: Task, op: string) {
             <small v-if="liveLine(task)" class="task-live-summary">{{
               liveLine(task)
             }}</small>
-            <small v-else-if="task.progress?.active?.length">{{
+            <small
+              v-else-if="canResume(task) && unfinishedUnits(task)"
+              class="task-resume-note"
+              >还有 {{ unfinishedUnits(task) }} 项未完成，可继续执行</small
+            ><small v-else-if="task.progress?.active?.length">{{
               task.progress.active[0]?.name || "处理中"
             }}</small
             ><small v-else-if="task.progress?.failed"
@@ -216,13 +223,13 @@ function command(task: Task, op: string) {
             >
               <Square :size="15" /></button
             ><button
-              v-if="['failed', 'stopped', 'interrupted'].includes(task.status)"
-              class="icon-button"
-              aria-label="重试任务"
-              :disabled="state.busy.has(task.id)"
-              @click="command(task, 'retry')"
+              v-if="canResume(task)"
+              class="text-link resume-action"
+              :disabled="state.busy.has('resume-' + task.id)"
+              aria-label="继续执行任务"
+              @click="resume(task)"
             >
-              <RotateCcw :size="16" /></button
+              继续执行</button
             ><button
               class="icon-button"
               aria-label="任务详情"

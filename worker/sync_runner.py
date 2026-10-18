@@ -11,6 +11,7 @@
 import json
 import os
 import sys
+import threading
 import traceback
 
 WEBUI_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -96,8 +97,26 @@ def main() -> int:
                   stage="course", payload={"courses": len(user.course_list)})
 
         courses = []
-        with_progress = []
-        for course in user.course_list:
+        course_errors = []
+        total = len(user.course_list)
+        consecutive_errors = 0
+        for index, course in enumerate(user.course_list, 1):
+            mission_fn, mission_all = 0, 0
+            try:
+                mission_fn, mission_all = course.get_mission_progress()
+                consecutive_errors = 0
+            except Exception as exc:  # noqa: BLE001 - 单课失败不中断整体同步
+                consecutive_errors += 1
+                course_errors.append({
+                    "course_id": str(course.course_id),
+                    "name": course.course_name,
+                    "error": str(exc)[:300],
+                })
+                sink.emit("sync_progress",
+                          f"课程任务点读取失败: {course.course_name}",
+                          level="warning", stage="course",
+                          payload={"done": index, "total": total, "course": course.course_name,
+                                   "mission_fn": 0, "mission_all": 0, "error": str(exc)[:200]})
             courses.append({
                 "course_id": str(course.course_id),
                 "class_id": str(course.class_id),
@@ -105,12 +124,26 @@ def main() -> int:
                 "name": course.course_name,
                 "author": course.course_author,
                 "if_open": bool(course.if_open),
-                "mission_fn": 0,
-                "mission_all": 0,
+                "mission_fn": mission_fn,
+                "mission_all": mission_all,
             })
+            if consecutive_errors == 0:
+                sink.emit("sync_progress",
+                          f"任务点进度 {index}/{total}: {course.course_name} {mission_fn}/{mission_all}",
+                          stage="course",
+                          payload={"done": index, "total": total, "course": course.course_name,
+                                   "mission_fn": mission_fn, "mission_all": mission_all})
+            if consecutive_errors >= 5:
+                sink.emit("sync_progress", "连续多门课程任务点读取失败，提前结束本次同步（课程列表已保存）",
+                          level="warning", stage="course",
+                          payload={"done": index, "total": total, "course": "",
+                                   "mission_fn": 0, "mission_all": 0})
+                break
+            if index < total:
+                threading.Event().wait(0.25)
         sink.emit("sync_result", f"同步完成，共 {len(courses)} 门课程", stage="finish",
                   payload={"courses": courses, "display_name": user.name, "uid": user.uid,
-                           "course_errors": with_progress})
+                           "course_errors": course_errors[:20]})
         return 0
 
     except LoginException as exc:

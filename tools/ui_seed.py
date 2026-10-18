@@ -127,7 +127,12 @@ def seed():
             stats.update({'questions': 12, 'cache_hits': 6, 'tiku_hits': 0, 'llm_calls': 5, 'submit_ok': 1,
                           'activity': {'name': '第二章 · 连续与导数'}})
         elif status in ('failed','interrupted'):
+            # 2.2.1：中断/失败任务保留未完成单元（blocked + failed + running），
+            # 供后端 unfinished_units 与前端「继续执行」提示验收。
             work=reduce_progress(work,'work_result',{'id':units[confirmed]['id'],'status':'blocked'})
+            work=reduce_progress(work,'work_result',{'id':units[confirmed+1]['id'],'status':'failed'})
+            for unit in units[confirmed+2:confirmed+4]:
+                work=reduce_progress(work,'work_progress',{'id':unit['id'],'current':240,'total':480})
         stats['work'] = work
         db.create_task({
             "id": task_id,
@@ -187,6 +192,25 @@ def seed():
                  "任务异常: 连续失败10次，终止刷取", level="error", stage="finish")
     db.add_event("task-ui-6", account_ids[5], "interrupted",
                  "WebUI 重启，未找到对应的 Worker 进程", level="warning", stage="recovery")
+    # 2.2.1：考试说明页触发平台安全验证而安全中止，供详情提示条验收。
+    # 用 info 级 log 事件：不会顶掉 live 的 stage 兜底文案，但可被提示条与诊断日志读到。
+    db.add_event("task-ui-7", account_ids[2], "log",
+                 "考试说明页需要平台安全验证（captchaCheck=1），已安全中止，未启动考试计时",
+                 level="info", stage="exam")
+
+    # 2.2.1：失败/中断任务的未完成工作单元（work_plan + 部分 work_result），
+    # 供后端 unfinished_units 推导「继续执行」入口与总览提示条验收。
+    for task_id, account_id in (("task-ui-5", account_ids[4]),
+                                ("task-ui-6", account_ids[5])):
+        unit_ids = [f"{task_id}-u{n + 1}" for n in range(8)]
+        db.add_event(task_id, account_id, "work_plan", "任务点计划", level="info", stage="plan",
+                     payload={"units": [{"id": uid, "name": f"任务点 {n + 1}", "kind": "video"}
+                                        for n, uid in enumerate(unit_ids)], "sealed": True},
+                     ts=now - 1500)
+        for n, uid in enumerate(unit_ids[:4]):
+            db.add_event(task_id, account_id, "work_result", f"任务点 {n + 1} 已完成",
+                         level="success", stage="video",
+                         payload={"id": uid, "status": "succeeded"}, ts=now - 1400 + n * 20)
 
     # 运行中任务的实时进度事件：供「运行进度小窗」与任务行摘要验收
     for offset, (name, current, total) in enumerate([

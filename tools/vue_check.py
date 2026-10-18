@@ -217,6 +217,24 @@ def check(url, output):
         dialog.get_by_role('button',name='加载考试列表',exact=False).click()
         page.locator('.catalog-item').first.wait_for()
         assert dialog.locator('.catalog-item input:checked').count()>=1
+        # 2.2.1：考试说明页需要平台安全验证，列表提供说明与「在浏览器中打开」
+        open_calls = []
+        open_pattern = re.compile(r'/api/accounts/[^/]+/open-chaoxing$')
+        def open_route(route):
+            open_calls.append(route.request.post_data_json)
+            route.fulfill(status=200, content_type='application/json',
+                          body=json.dumps({'ok': True}))
+        page.route(open_pattern, open_route)
+        dialog.get_by_text('进入前可能需要平台安全验证', exact=False).first.wait_for()
+        open_button = dialog.get_by_label('在浏览器中打开考试')
+        assert open_button.count() >= 1
+        open_button.first.click()
+        page.get_by_text('已用浏览器打开考试说明页', exact=False).wait_for()
+        assert open_calls, open_calls
+        assert 'mooc1.chaoxing.com/exam/test/examcode/examnotes' in open_calls[-1]['url']
+        assert 'examId=exam-a' in open_calls[-1]['url']
+        page.unroute(open_pattern)
+        passed('考试列表提示平台安全验证，并可用已保存会话在浏览器中打开说明页')
         dialog.get_by_role('button',name='全选考试',exact=False).click()
         assert dialog.locator('.catalog-item input:checked').count()==0
         dialog.locator('.catalog-item input:not(:disabled)').first.check()
@@ -241,6 +259,12 @@ def check(url, output):
         live_line=page.locator('.detail-live-line')
         live_line.get_by_text('AI 正在作答考试').wait_for()
         assert '已用时' in live_line.inner_text()
+        verify_hint = page.locator('.detail-verify-hint')
+        verify_hint.wait_for()
+        assert '人工验证' in verify_hint.inner_text()
+        assert '安全验证' in verify_hint.inner_text()
+        page.screenshot(path=str(output/'desktop-exam-verify.png'))
+        passed('考试任务详情提示需要人工验证且程序未启动考试')
         page.get_by_role('button',name='AI 做题',exact=False).click()
         page.locator('.answer-empty').wait_for()
         assert page.locator('.answer-card').count()==0
@@ -257,6 +281,52 @@ def check(url, output):
         page.keyboard.press('Escape')
         assert dialog.count()==0
         passed('AI 做题明细按题渲染，摘要含来源分布且未识别题目标注原因')
+        # 2.2.1：中断/停止/失败任务可继续执行（resume 用 route mock，避免依赖后端实现进度）
+        resume_pattern = re.compile(r'/api/tasks/[^/]+/resume$')
+        resume_calls = []
+        def resume_route(route):
+            resume_calls.append(route.request.url)
+            route.fulfill(status=201, content_type='application/json',
+                          body=json.dumps({'id': 'task-ui-resume', 'status': 'pending'}))
+        page.get_by_label('任务状态').select_option('all')
+        page.locator('.task-row', has_text='已中断').first.wait_for()
+        page.route(resume_pattern, resume_route)
+        interrupted_row = page.locator('.task-row', has_text='已中断').first
+        assert interrupted_row.locator('.resume-action').count() == 1
+        assert '项未完成' in interrupted_row.inner_text()
+        interrupted_row.locator('.resume-action').click()
+        page.get_by_text('已创建续跑任务', exact=True).wait_for()
+        assert resume_calls and resume_calls[-1].endswith('/resume'), resume_calls
+        passed('中断任务显示未完成项与继续执行按钮，点击后创建续跑任务')
+        # 总览顶部提示条：上次任务未完成，共 N 项
+        nav.get_by_role('button', name='工作总览').click()
+        banner = page.locator('.resume-banner')
+        banner.wait_for()
+        assert '上次任务未完成，共' in banner.inner_text()
+        banner.scroll_into_view_if_needed()
+        page.wait_for_timeout(200)
+        page.screenshot(path=str(output / 'desktop-resume.png'))
+        passed('总览顶部提示上次任务未完成项数')
+        # 课程任务点文案在「账号与课程」页的课程弹窗里，先切过去再断言
+        nav.get_by_role('button', name='账号与课程').click()
+        page.get_by_role('button', name='查看课程').first.click()
+        course_dialog = page.get_by_role('dialog')
+        course_dialog.wait_for()
+        mission = course_dialog.locator('.course-mission').first
+        mission.wait_for()
+        assert '已完成' in mission.inner_text() and '/' in mission.inner_text(), mission.inner_text()
+        page.screenshot(path=str(output / 'desktop-mission.png'))
+        passed('课程任务点显示已完成 x / y 与待完成数量')
+        page.get_by_role('button', name='关闭面板').click()
+        nav.get_by_role('button', name='工作总览').click()
+        banner = page.locator('.resume-banner')
+        banner.wait_for()
+        banner.get_by_role('button', name='继续执行', exact=True).click()
+        page.get_by_text('已创建续跑任务', exact=True).wait_for()
+        assert len(resume_calls) >= 2
+        page.unroute(resume_pattern)
+        passed('总览顶部提示上次任务未完成项数，可直接继续执行')
+
         nav.get_by_role('button',name='偏好设置').click()
         assert page.get_by_role('button',name='外部通知',exact=True).count()==0
         page.get_by_role('button',name='AI 服务',exact=True).click()
@@ -269,6 +339,12 @@ def check(url, output):
         page.get_by_role('button',name='AI 服务',exact=True).click()
         assert page.get_by_label('模型名称',exact=True).input_value()=='vue-validation-model'
         passed('取消外部通知设置、配置持久化、密钥保存后不回显')
+        page.get_by_role('button', name='运行与存储', exact=True).click()
+        sync_switch = page.get_by_label('启动时自动同步课程', exact=True)
+        sync_switch.wait_for()
+        assert sync_switch.is_checked()
+        passed('偏好设置提供启动时自动同步课程开关且默认开启')
+
         from app import main
         for i in range(101):
             main.db.upsert_notification(category='font',title=f'分页验收 {i}',detail='测试通知',level='warning',dedupe_key=f'pagination-{i}')

@@ -8,11 +8,17 @@ import {
   Pause,
   Square,
   ChevronRight,
+  History,
 } from "lucide-vue-next";
-import { state, act, navigate } from "../store";
+import { state, act, navigate, resumeTask } from "../store";
 import { request } from "../api";
 import { features, statuses, date } from "../format";
 import { executionProfiles } from "../overview";
+import {
+  latestUnfinished,
+  resumableTasks,
+  unfinishedTotal,
+} from "../mission";
 import type { Task } from "../types";
 const emit = defineEmits<{ select: [task: Task] }>();
 const profiles = computed(() => executionProfiles(state.workspaces));
@@ -60,6 +66,15 @@ const phase = computed(() => [
     color: "blue",
   },
 ]);
+const unfinished = computed(() => ({
+  total: unfinishedTotal(state.tasks),
+  items: resumableTasks(state.tasks),
+  latest: latestUnfinished(state.tasks),
+}));
+function resumeLatest() {
+  const task = unfinished.value.latest;
+  if (task) resumeTask(task);
+}
 async function control(id: string, op: string) {
   await act(
     "overview-" + id + op,
@@ -75,6 +90,25 @@ async function control(id: string, op: string) {
 }
 </script>
 <template>
+  <div v-if="unfinished.total" class="resume-banner" role="status">
+    <span class="resume-icon"><History :size="20" /></span>
+    <div class="resume-copy">
+      <b>上次任务未完成，共 {{ unfinished.total }} 项</b>
+      <p v-if="unfinished.latest">
+        {{ unfinished.latest.course_name }} ·
+        {{ date(unfinished.latest.created_at) }} 中断，可从中断处继续，无需重新开始。
+      </p>
+      <p v-else>可以从中断处继续，无需重新开始。</p>
+    </div>
+    <button
+      class="primary"
+      :disabled="state.busy.has('resume-' + unfinished.latest?.id)"
+      @click="resumeLatest"
+    >
+      继续执行
+    </button>
+    <button class="text-link" @click="navigate('tasks')">查看任务</button>
+  </div>
   <div class="metrics overview-metrics">
     <div>
       <span>执行中的账号</span

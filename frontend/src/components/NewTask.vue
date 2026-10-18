@@ -223,6 +223,46 @@ function toggleAllCatalogs() {
     else ids.forEach((id) => slot.selected.add(id));
   });
 }
+// 考试说明页需要学习通登录态；把会话带到浏览器里，让用户手动完成平台安全验证。
+const openingExam = reactive<Record<string, boolean>>({});
+const examOpeningKey = (
+  t: { account_id: string; course_id: string },
+  item: CatalogItem,
+) => `${catalogKey(t)}::${item.id}`;
+const isExamOpening = (
+  t: { account_id: string; course_id: string },
+  item: CatalogItem,
+) => !!openingExam[examOpeningKey(t, item)];
+function examNotesUrl(
+  t: { course_id: string; class_id?: string; cpi?: string },
+  item: CatalogItem,
+) {
+  const query = new URLSearchParams({
+    courseId: t.course_id,
+    classId: t.class_id || "",
+    examId: String(item.id),
+    cpi: t.cpi || "",
+  });
+  return `https://mooc1.chaoxing.com/exam/test/examcode/examnotes?${query.toString()}`;
+}
+async function openExamInBrowser(
+  t: { account_id: string; course_id: string; class_id?: string; cpi?: string },
+  item: CatalogItem,
+) {
+  const openingId = examOpeningKey(t, item);
+  if (openingExam[openingId]) return;
+  openingExam[openingId] = true;
+  try {
+    await request(`/accounts/${t.account_id}/open-chaoxing`, "POST", {
+      url: examNotesUrl(t, item),
+    });
+    state.toast = "已用浏览器打开考试说明页，请先完成平台安全验证";
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    openingExam[openingId] = false;
+  }
+}
 let generation = 0,
   alive = true;
 watch(selectedAccounts, (ids) => {
@@ -558,6 +598,25 @@ function back() {
                           part
                         }}</span>
                       </small>
+                      <span
+                        v-if="kind === 'exam' && isSelectable(item)"
+                        class="catalog-note"
+                        ><small
+                          >进入前可能需要平台安全验证，可先在浏览器中完成验证。</small
+                        ><button
+                          type="button"
+                          class="text-link"
+                          :disabled="isExamOpening(t, item)"
+                          aria-label="在浏览器中打开考试"
+                          @click.stop.prevent="openExamInBrowser(t, item)"
+                        >
+                          {{
+                            isExamOpening(t, item)
+                              ? "正在打开…"
+                              : "在浏览器中打开"
+                          }}
+                        </button></span
+                      >
                     </span>
                   </label>
                 </template>

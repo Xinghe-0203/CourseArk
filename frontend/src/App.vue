@@ -58,8 +58,19 @@ function connect() {
   stream = new EventSource("/api/events/stream");
   stream.onopen = () => (state.online = true);
   stream.onerror = () => (state.online = false);
-  stream.onmessage = () => {
+  stream.onmessage = (event) => {
     state.eventRevision += 1;
+    let name = "";
+    try {
+      name = JSON.parse(event.data).event || "";
+    } catch {
+      name = "";
+    }
+    // 课程同步结束立即刷新课程与任务点，其余事件沿用 500ms 合并刷新。
+    if (name === "sync_completed" || name === "sync_failed") {
+      refresh();
+      return;
+    }
     if (!debounce)
       debounce = setTimeout(() => {
         debounce = undefined;

@@ -173,9 +173,10 @@ def show_work(exam, work):
 
 
 def show_exam(course, item, fetch_start=False):
-    """打印一场考试的元信息与将要请求的地址；默认不发起「开始考试」请求。"""
+    """打印一场考试的元信息、入口地址与风控开关；默认不发起「开始考试」请求。"""
     title = item.get("title") or "未命名考试"
-    print(f"\n=== {title} examId={item.get('exam_id')} 状态={item.get('status')} ===")
+    exam_id = str(item.get("exam_id") or item.get("id") or "").replace("exam:", "")
+    print(f"\n=== {title} examId={exam_id} 状态={item.get('status')} ===")
     print(f"考试窗口: {item.get('start_time') or '-'} 至 {item.get('end_time') or '-'}")
     print(f"限时: {item.get('limit_time') or '未知'} 分钟 · "
           f"relationId={item.get('relation_id')} paperId={item.get('paper_id')}")
@@ -187,22 +188,48 @@ def show_exam(course, item, fetch_start=False):
         print(f"!! 取课程 enc 参数失败：{exc}")
     openc = str(params.get("openc") or "")
     exam_enc = str(params.get("examEnc") or "")
-    start_url = course.exam_start_url(
-        course.course_id, getattr(course, "class_id", "") or "", getattr(course, "cpi", "") or "",
-        openc, str(params.get("enc") or ""), item.get("paper_id") or "",
-        item.get("relation_id") or "", exam_enc=exam_enc, is_retest=bool(item.get("is_retest")))
-    print(f"开始考试地址（未请求）: {start_url[:150]}")
+    course_id = course.course_id
+    class_id = getattr(course, "class_id", "") or ""
+    cpi = getattr(course, "cpi", "") or ""
+
+    # 考试说明页（封面）：安全校验在这里，读它是只读行为
+    notes_url = course.exam_notes_url(course_id, class_id, cpi, exam_id)
+    print(f"考试入口页: {notes_url}")
+    from core.request_client import get as http_get
+
+    notes = {}
+    try:
+        notes = course.parse_exam_notes(http_get(notes_url) or "")
+    except Exception as exc:
+        print(f"!! 读取考试入口页失败：{exc}")
+    start_url = ""
+    if notes.get("found"):
+        print(f"入口地址: {notes['start_url'][:150]}")
+        print(f"风控开关: examCheck={notes.get('exam_check')} "
+              f"captchaCheck={notes.get('captcha_check')} needCode={notes.get('need_code')}")
+        if notes.get("need_code"):
+            print("!! 该考试需要考试码：程序不会绕过，请在网页端输入考试码后进入")
+        elif notes.get("captcha_check") or notes.get("exam_check"):
+            print("!! 该考试要求平台安全验证（验证码）：程序无法自动通过，"
+                  "请在浏览器中手动验证并进入考试")
+        start_url = notes.get("start_url") or ""
+    else:
+        print("!! 未识别考试入口页，回退到构造地址")
+    if not start_url:
+        start_url = course.exam_start_url(
+            course_id, class_id, cpi, openc, str(params.get("enc") or ""),
+            exam_id, item.get("relation_id") or "", exam_enc=exam_enc,
+            is_retest=bool(item.get("is_retest")))
+        print(f"构造的开始考试地址: {start_url[:150]}")
 
     if not fetch_start:
         print("（默认只读：不请求开始考试地址，因为它会启动计时。"
               "确需检查答题页请加 --fetch-start）")
         return True
 
-    from core.request_client import get as http_get
-
     print("!! 正在请求「开始考试」地址：这会开始考试计时，请自行确认后果")
     try:
-        html = http_get(start_url, headers={"Referer": "https://mooc1.chaoxing.com/exam/test"})
+        html = http_get(start_url, headers={"Referer": notes_url})
     except Exception as exc:
         print(f"!! 请求失败：{exc}")
         return False

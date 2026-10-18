@@ -55,7 +55,12 @@ Electron ── Python runtime ── FastAPI ── Vue 页面
 ```text
 考试列表 GET /exam/test?courseId&classId&ut=s&cpi&openc&enc
    └─ models/course.py::get_exam_list：解析 goTest(courseId, examId, relationId, endTime, paperId, isRetest, examEnc)
-        └─ models/course.py::exam_start_url → /exam/test/reVersionTestStartNew?tId=paperId&id=relationId…
+   └─ models/course.py::exam_notes_url：GET /exam/test/examcode/examnotes?courseId&classId&examId&cpi
+        └─ parse_exam_notes：取 #startBtn[data] 的真实入口 + examCheck/captchaCheck/needCode
+             ├─ needCode=1 → 提示需要考试码，中止（不启动考试）
+             ├─ captchaCheck=1 或 examCheck=1 → 提示需要平台安全验证，中止（不启动考试）
+             └─ 无风控 → 请求 #startBtn[data]（/exam-ans…&newMooc=true）
+   └─ models/course.py::exam_start_url（回退）：tId=考试ID、id=relationId、newMooc=true；重考才走 /exam 旧路径
    └─ functions/deal_exam_room.py
         ├─ exam_form.parse_questions / parse_form / detect_submit_endpoints
         ├─ 一页一题（is_single_question_mode）→ 安全中止，不提交任何答案
@@ -63,10 +68,33 @@ Electron ── Python runtime ── FastAPI ── Vue 页面
 ```
 
 - 考试列表里的 `examEnc` 是「这场考试」自己的 enc，与课程 `enc`、作业 `enc_work` 均不可互换。
+- `tId` 必须是**考试 ID**（列表页 `goTest` 的第 2 个参数），不是 `paperId`；新版入口主机是
+  `mooc1.chaoxing.com/exam-ans/...`，且带 `newMooc=true`。
+- 学习通对进入考试有人机校验（`captchaCheck` / `examCheck`，手机端同样如此）。这是账号级的平台策略，
+  程序不尝试绕过：命中即记录原因并中止，**不会开始考试计时**，也不会替用户交白卷。
 - 考试**没有**可靠的整卷临时保存语义，因此本版本不会「先保存再补交」；识别不了页面就中止。
 - PC 端交卷端点无公开可靠证据，优先回放页面表单；没有表单时只从页面内联脚本探测候选，
   探测不到即中止（不猜测端点）。手机协议（`reVersionSubmitTestNew` + 签名）调研结果见
   [`docs/research-exam.md`](research-exam.md)，尚未实现。
+
+## 课程同步与续跑（v2.2.1）
+
+```text
+启动 → app/main.py lifespan
+   └─ scheduler.sync_on_start（默认 true）→ sync_service.sync_account(blocking=True)
+        └─ worker/sync_runner.py（子进程）
+             ├─ User.get_courses()
+             ├─ 逐课 Course.get_mission_progress()：平台「已完成任务点 N/M」
+             ├─ 逐课 emit sync_progress {done,total,course,mission_fn,mission_all}
+             └─ emit sync_result {courses[...], course_errors[...]} → app 写 courses 表
+```
+
+- 任务点数量只能来自平台页面；解析失败不编造数字，宁可保留旧快照并写 `course_errors`。
+- 发现阶段 0 个任务点时，`CourseExecution._finish_without_jobs()` 用 `mission_fn/mission_all`
+  判断：还有未完成 → 直接失败并说明；确实全完成 → 明确成功并说明「没有需要处理的任务」。
+- 续跑：`POST /api/tasks/{id}/resume` 对 `interrupted/stopped/failed` 用原 `params_json`
+  重新排队（`retry_task` 语义），已完成部分由平台状态跳过；`paused/pausing` 仍是暂停恢复。
+
 
 ## 事件与前端
 

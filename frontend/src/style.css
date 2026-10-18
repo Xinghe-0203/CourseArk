@@ -3462,3 +3462,116 @@ footer span {
     animation: none;
   }
 }
+
+/* ===== 2.2.1 任务点同步与中断续跑 ===== */
+.course-mission {
+  font-weight: 600;
+}
+.course-mission.pending {
+  color: #c47c12;
+}
+.course-mission.ok {
+  color: #2f8a5b;
+}
+.course-mission.muted {
+  color: var(--muted);
+  font-weight: 500;
+}
+.resume-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  border: 1px solid #f0d8ab;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fffaf0, #fffdf8);
+  box-shadow: 0 1px 2px rgb(23 35 56 / 4%);
+}
+.resume-banner .resume-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  color: #b8741a;
+  background: #fdf0d8;
+}
+.resume-copy {
+  flex: 1;
+  min-width: 0;
+}
+.resume-copy b {
+  display: block;
+  font-size: 13px;
+  color: var(--ink);
+}
+.resume-copy p {
+  margin: 3px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.resume-banner .primary {
+  flex: none;
+}
+.task-resume-note {
+  color: #b8741a !important;
+  font-weight: 600;
+}
+.resume-action {
+  white-space: nowrap;
+  font-weight: 600;
+}
+@media (max-width: 900px) {
+  .resume-banner {
+    flex-wrap: wrap;
+    padding: 12px 14px;
+  }
+  .resume-banner .primary,
+  .resume-banner .text-link {
+    flex: 1;
+    justify-content: center;
+  }
+  .resume-copy {
+    flex-basis: calc(100% - 52px);
+  }
+}
+
+/* 2.2.1 考试安全验证：列表小字 + 浏览器打开按钮，详情顶部提示条 */
+.catalog-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 3px;
+  line-height: 1.5;
+}
+.catalog-note small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.catalog-note .text-link {
+  font-size: 11px;
+  padding: 0;
+}
+.detail-verify-hint {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 8px;
+  line-height: 1.55;
+}
+.detail-verify-hint svg {
+  flex: none;
+  margin-top: 2px;
+  color: #b8741a;
+}
+.detail-verify-hint small {
+  display: block;
+  margin-top: 2px;
+  color: #9a6a20;
+  overflow-wrap: anywhere;
+}

@@ -15,8 +15,10 @@ Web 进程不直接持有超星账号 Session，不在 API 请求线程执行长
 import asyncio
 import hmac
 import json
+import logging
 import os
 import queue
+import threading
 import time
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
@@ -36,6 +38,8 @@ from .task_model import (FEATURE_LABELS, RunCreateRequest, build_tasks,
                          is_terminal)
 
 paths.ensure_dirs()
+
+_logger = logging.getLogger("courseark.autosync")
 
 
 class _Lazy:
@@ -134,6 +138,9 @@ def create_app() -> FastAPI:
         except Exception:
             pass  # 配置导入失败不应阻止服务启动
         manager.start()
+        # v2.2.1：启动后后台同步已登录账号，解决课程列表一直 0/0 任务点。
+        # 线程为 daemon 且不参与启动等待；测试可用 AUTOCXWEBUI_DISABLE_AUTO_SYNC=1 关闭。
+        _start_auto_sync()
         try:
             yield
         finally:
@@ -152,6 +159,67 @@ def create_app() -> FastAPI:
 
 
 LOCAL_PAGE_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+AUTO_SYNC_DISABLE_ENV = "AUTOCXWEBUI_DISABLE_AUTO_SYNC"
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _auto_sync_disabled() -> bool:
+    """测试/排障可整体关闭启动自动同步（环境变量优先于设置项）"""
+    return os.environ.get(AUTO_SYNC_DISABLE_ENV, "").strip().lower() in _TRUTHY
+
+
+def _auto_sync_enabled() -> bool:
+    if _auto_sync_disabled():
+        return False
+    try:
+        scheduler = (settings.load() or {}).get("scheduler") or {}
+    except Exception:
+        return True
+    value = scheduler.get("sync_on_start", True)
+    if isinstance(value, str):
+        return value.strip().lower() in _TRUTHY
+    return bool(value)
+
+
+def _auto_sync_accounts():
+    """后台串行同步登录状态为 ok 的账号；失败只记通知，不影响启动"""
+    try:
+        account_list = accounts.list_accounts(public=False)
+    except Exception:
+        _logger.warning("启动自动同步：读取账号列表失败", exc_info=True)
+        return
+    for account in account_list:
+        account_id = str(account.get("id") or "")
+        if not account_id or account.get("login_state") != "ok":
+            continue
+        try:
+            if sync_service.is_syncing(account_id):
+                continue
+        except Exception:
+            continue
+        try:
+            sync_service.sync_account(db, hub, account_id, blocking=True)
+        except Exception as exc:
+            _logger.warning("启动自动同步账号 %s 失败：%s", account_id, exc)
+            try:
+                manager.notifications.record(
+                    event="sync_failed", level="error",
+                    message=f"启动自动同步失败：{exc}",
+                    account_id=account_id, account_label=str(account.get("label") or ""),
+                    stage="sync")
+            except Exception:
+                _logger.warning("启动自动同步：写入通知失败", exc_info=True)
+
+
+def _start_auto_sync():
+    """按设置启动自动同步守护线程；未启用时返回 None（便于测试断言）"""
+    if not _auto_sync_enabled():
+        return None
+    thread = threading.Thread(target=_auto_sync_accounts,
+                              name="courseark-auto-sync", daemon=True)
+    thread.start()
+    return thread
 
 
 def _guard_cross_site_mutations(app: FastAPI):
@@ -529,7 +597,30 @@ def _register_routes(app: FastAPI):
 
     @app.post("/api/tasks/{task_id}/resume")
     def resume_task(task_id: str):
-        return _control(manager.resume, task_id)
+        """
+        继续任务
+
+        - interrupted / stopped / failed：用原参数快照新建 pending 任务（Worker 会按平台
+          状态重新发现未完成任务点），返回新任务视图，并给出 resumed_from / new_task_id
+        - paused / pausing：恢复原 Worker（v2.1 行为，保持不变）
+        - 其它状态：409
+        """
+        row = db.get_task(task_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        status = row.get("status", "")
+        if status in ("interrupted", "stopped", "failed"):
+            try:
+                new_row = manager.retry_task(task_id)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="任务不存在")
+            detail = _task_view(new_row)
+            detail["resumed_from"] = task_id
+            detail["new_task_id"] = new_row["id"]
+            return detail
+        if status in ("paused", "pausing"):
+            return _control(manager.resume, task_id)
+        raise HTTPException(status_code=409, detail="仅中断、已停止或失败的任务可以继续执行")
 
     @app.post("/api/tasks/{task_id}/stop")
     def stop_task(task_id: str):
@@ -911,6 +1002,41 @@ def _json(text, default=None):
         return default if default is not None else {}
 
 
+# 恢复未完成单元时最多扫描的 work_result 事件条数
+WORK_EVENT_LIMIT = 2000
+
+
+def _unfinished_units(task_id: str):
+    """
+    未完成任务点数（中断续跑入口用）
+
+    执行历史从未落库到 stats.work，只能从事件流恢复：取最近一条 work_plan 的 units，
+    减去其后的 work_result 中 status=succeeded 的项。没有 work_plan 时返回 None，
+    前端按“未知”处理而不是误报 0。
+    """
+    plans = db.list_events(task_id, limit=1, event="work_plan", latest=True)
+    if not plans:
+        return None
+    plan = plans[-1]
+    payload = redact_data(_json(plan.get("payload_json")))
+    units = payload.get("units") if isinstance(payload, dict) else None
+    if not isinstance(units, list):
+        return None
+    planned = [unit for unit in units if isinstance(unit, dict) and unit.get("id") is not None]
+    done = set()
+    try:
+        after = int(plan.get("id") or 0)
+    except (TypeError, ValueError):
+        after = 0
+    for row in db.list_events(task_id, after_id=after, limit=WORK_EVENT_LIMIT, event="work_result"):
+        result = redact_data(_json(row.get("payload_json")))
+        if not isinstance(result, dict) or result.get("status") != "succeeded":
+            continue
+        if result.get("id") is not None:
+            done.add(str(result.get("id")))
+    return sum(1 for unit in planned if str(unit.get("id")) not in done)
+
+
 def _task_view(row: dict) -> dict:
     from .work_progress import summarize
     stats = redact_data(_json(row.get("stats_json")))
@@ -931,6 +1057,9 @@ def _task_view(row: dict) -> dict:
         "params": _json(row.get("params_json")),
         "stats": stats,
         "progress": summarize(stats.get("work", {})),
+        # v2.2.1：从 work_plan/work_result 事件恢复的未完成任务点数；无计划事件为 None
+        "unfinished_units": (0 if row.get("status") == "succeeded"
+                             else _unfinished_units(row["id"])),
         "error": redact(row.get("error", "")),
         "created_at": row.get("created_at"),
         "started_at": row.get("started_at"),

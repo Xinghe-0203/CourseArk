@@ -36,6 +36,8 @@ DEFAULT_SETTINGS = {
     "scheduler": {
         "max_active_workers": 8,
         "stop_grace_seconds": 25,
+        # 启动时自动同步已登录账号的课程（v2.2.1：解决课程列表永远 0/0 任务点）
+        "sync_on_start": True,
     },
     "defaults": {
         "video": {
@@ -153,6 +155,11 @@ def normalize(data) -> dict:
     scheduler = data["scheduler"]
     scheduler["max_active_workers"] = _clamp(scheduler.get("max_active_workers"), 1, 20, 8)
     scheduler["stop_grace_seconds"] = _clamp(scheduler.get("stop_grace_seconds"), 3, 300, 25)
+    # 允许配置导入/手改成字符串；统一归一化为布尔，避免 "false" 被当成真值
+    sync_on_start = scheduler.get("sync_on_start", True)
+    if isinstance(sync_on_start, str):
+        sync_on_start = sync_on_start.strip().lower() in {"1", "true", "yes", "on"}
+    scheduler["sync_on_start"] = bool(sync_on_start)
     data["server"]["port"] = _clamp(data["server"].get("port"), 1, 65535, 8848)
     # 只允许回环地址：即使配置被人为改成 0.0.0.0 也强制收回本机
     host = str(data["server"].get("host") or "").strip()

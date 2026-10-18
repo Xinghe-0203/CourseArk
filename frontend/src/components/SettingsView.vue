@@ -7,7 +7,11 @@ import type { Settings } from "../types";
 import ParameterForm from "./ParameterForm.vue";
 const form = reactive<Settings>(JSON.parse(JSON.stringify(state.settings))),
   tab = ref("learning");
+// 2.2.1 新增字段：老配置里没有 sync_on_start 时按默认开启展示。
+if (form.scheduler && typeof form.scheduler.sync_on_start !== "boolean")
+  form.scheduler.sync_on_start = true;
 const labels: Record<string, string> = {
+  "scheduler.sync_on_start": "启动时自动同步课程",
   "scheduler.max_active_workers": "同时执行的任务数",
   "scheduler.stop_grace_seconds": "停止任务的等待时间（秒）",
   "llm.base_url": "AI 接口地址",
