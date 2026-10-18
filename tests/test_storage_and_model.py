@@ -167,6 +167,28 @@ def test_feature_names_and_labels_match_design():
         assert task_model.FEATURE_LABELS[key]
 
 
+def test_exam_url_params_in_snapshot_and_optional():
+    url = ("https://mooc1.chaoxing.com/exam-ans/exam/test/reVersionTestStartNew?"
+           "courseId=244694077&classId=151670988&tId=11021171&id=171477623"
+           "&enc=b4acbaa84dfa579ce1c7884985a2eeee&cpi=518380181&newMooc=true")
+    params = task_model.TaskParams.from_settings({"exam": {"url": url}})
+    snapshot = params.for_feature("exam")
+    assert snapshot["exam"]["url"] == url
+    assert "selection" in snapshot
+
+    # 不填 URL 时保持空字符串（回到「按考试列表处理」模式）
+    empty = task_model.TaskParams.from_settings({}).for_feature("exam")
+    assert empty["exam"]["url"] == ""
+
+
+def test_exam_url_params_reject_non_answer_page():
+    with pytest.raises(Exception):
+        task_model.TaskParams.model_validate({"exam": {"url": "https://example.com/x"}})
+    with pytest.raises(Exception):
+        task_model.TaskParams.model_validate(
+            {"exam": {"url": "https://mooc1.chaoxing.com/exam/test?courseId=1"}})
+
+
 def test_run_request_requires_known_feature_and_targets(sandbox):
     with pytest.raises(Exception):
         task_model.RunCreateRequest(feature="nope", targets=[{"account_id": "a", "course_id": "c"}])

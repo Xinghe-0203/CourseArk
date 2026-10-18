@@ -20,8 +20,12 @@
   进入考试页后用同一套 AI 作答链路逐题作答，并优先按页面真实表单回放交卷。
   「一页一题」的考试会被识别并安全中止（不会提交半份答案）。若平台要求在进入考试前完成
   人机校验（验证码）或输入考试码，程序会明确提示并**不会启动考试、也不会尝试绕过**；
-  可在考试列表点「在浏览器中打开」手动完成验证。说明见
-  [`docs/release-2.2.md`](docs/release-2.2.md)、[`docs/release-2.2.1.md`](docs/release-2.2.1.md)。
+  可在考试列表点「在浏览器中打开」手动完成验证。
+  **v2.2.2 起推荐「粘贴答题页地址」**：在浏览器里进入考试后，把地址栏里带 `enc=` 的答题页
+  地址粘贴到新建考试任务里，程序即可逐题 AI 作答、自动下一题并交卷（真实考试验证可用）。
+  说明见 [`docs/release-2.2.md`](docs/release-2.2.md)、
+  [`docs/release-2.2.1.md`](docs/release-2.2.1.md)、
+  [`docs/release-2.2.2.md`](docs/release-2.2.2.md)。
 - AI 做题：只保留 AI 作答链路，逐题实时展示题干、选项、答案与来源（AI / 答题缓存 / 随机 / 未识别），
   答案先过题型校验（判断题归一为 true/false，选择题必须落在选项字母内）；无法可靠作答时按策略跳过。
   提示词会带上课程与作答内容（作业/考试名称）的上下文，并要求模型给出最可能答案而不是留空。
@@ -60,8 +64,8 @@ python run.py
 
 在 [GitHub Releases](https://github.com/Xinghe-0203/CourseArk/releases) 下载：
 
-- `CourseArk-2.2.1-Setup.exe`：Windows x64 安装版。
-- `CourseArk-2.2.1-Portable.exe`：Windows x64 便携版。
+- `CourseArk-2.2.2-Setup.exe`：Windows x64 安装版。
+- `CourseArk-2.2.2-Portable.exe`：Windows x64 便携版。
 
 桌面版内置 Python 运行时，不要求最终用户安装 Python 或 Node.js。关闭应用时会停止本机服务和 Worker。为兼容现有安装，桌面数据目录继续使用 `%APPDATA%\AutoCxWebUI`；安装包不包含账号、配置、答题缓存或任务数据库。
 
@@ -74,6 +78,7 @@ python run.py
 python tools/check_work_page.py --list                              # 列出账号下的课程
 python tools/check_work_page.py --course-id 244694077 --limit 1      # 检查一个待处理作业
 python tools/check_work_page.py --course-id 244694077 --kind exam    # 只读列出可作答考试
+python tools/check_work_page.py --exam-url "<答题页地址>"            # 只读核对粘进来的考试页
 ```
 
 脚本只发送 GET 请求读取作业页面，**不会提交答案、不会调用 AI**，也不打印任何密钥。输出包含：
@@ -99,13 +104,25 @@ python tools/check_work_page.py --course-id 244694077 --kind exam    # 只读列
 
 学习通对进入考试做了平台侧校验，考试说明页里的 `captchaCheck` / `examCheck` 为 1 时，
 必须先通过人机验证（或考试码）才会跳到答题页。这类校验与账号绑定，程序**不会**尝试绕过，
-遇到时只会记录原因并安全中止（不启动考试计时、不提交任何答案）。处理方式是：
+遇到时只会记录原因并安全中止（不启动考试计时、不提交任何答案）。
 
-1. 在考试列表点「在浏览器中打开」，用已登录的会话手动完成验证并进入考试；
-2. 验证完成后重新执行该考试任务：程序会先只读查询验证状态，已通过就继续进入考试，
-   不会重复开始考试、也不会绕过校验；
-3. 若只想核对解析结果，可用 `python tools/check_work_page.py --kind exam --course-id <课程ID>`
-   （只读，不请求开始考试地址）。
+**推荐做法（v2.2.2，真实考试已验证）**：
+
+1. 在浏览器里打开该考试，完成平台验证并进入答题页；
+2. 复制地址栏里的完整地址（形如
+   `https://mooc1.chaoxing.com/exam-ans/exam/test/reVersionTestStartNew?...&enc=...`，
+   必须带 `reVersionTestStartNew` 与 `enc` 参数）；
+3. 在 CourseArk 新建「独立考试」任务，把地址粘贴到「考试答题页地址（推荐）」后执行：
+   程序逐题 AI 作答、保存、自动进入下一题，最后一题后交卷；任务详情「AI 做题」可见每题答案。
+
+地址里的 `enc` 有时效，过期后重新进入考试再复制一次即可。若提示「答题页没有前进」，
+刷新考试页并重新复制地址。
+
+仍按考试列表处理（不粘贴地址）时：可以在考试列表点「在浏览器中打开」手动完成验证，
+验证后重新执行考试任务，程序会先只读查询验证状态，通过才继续进入考试。
+若只想核对解析结果，可用
+`python tools/check_work_page.py --exam-url "<答题页地址>"`（只读，不提交答案），
+或 `python tools/check_work_page.py --kind exam --course-id <课程ID>`（只读，不请求开始考试地址）。
 
 任务执行过程中的逐题记录在任务详情「AI 做题」页签，逐题显示题干、选项、答案来源与失败原因。
 

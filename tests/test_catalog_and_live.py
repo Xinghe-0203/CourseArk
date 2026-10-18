@@ -92,7 +92,8 @@ def test_selection_is_kept_for_exam_and_independent_homework(sandbox):
     assert params.for_feature("exam")["selection"]["ids"] == ["exam-1"]
 
     exam_snapshot = task_model.TaskParams.from_settings(feature="exam").for_feature("exam")
-    assert set(exam_snapshot) == {"answer", "advanced", "selection"}
+    assert set(exam_snapshot) == {"answer", "advanced", "selection", "exam"}
+    assert exam_snapshot["exam"] == {"url": ""}
     assert exam_snapshot["selection"] == {"mode": "all", "ids": []}
 
     # 其它功能不携带选择参数

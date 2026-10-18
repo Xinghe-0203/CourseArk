@@ -240,12 +240,20 @@ def check(url, output):
         dialog.locator('.catalog-item input:not(:disabled)').first.check()
         assert '已选 1' in dialog.inner_text()
         page.screenshot(path=str(output/'desktop-exam-selection.png'))
+        # 2.2.2：粘贴带 enc 的答题页地址，按该地址逐题作答（平台验证由用户在浏览器完成）
+        exam_url = ('https://mooc1.chaoxing.com/exam-ans/exam/test/reVersionTestStartNew?'
+                    'courseId=244694077&classId=151670988&tId=11021171&id=171477623&p=1&tag=1'
+                    '&enc=b4acbaa84dfa579ce1c7884985a2eeee&cpi=518380181&newMooc=true')
+        dialog.locator('.exam-url-input').fill(exam_url)
+        page.screenshot(path=str(output/'desktop-exam-url.png'))
+        passed('独立考试提供答题页地址输入框，可粘贴带 enc 的考试地址')
         with page.expect_response(lambda r:r.url.endswith('/api/runs') and r.request.method=='POST') as created:
             dialog.get_by_role('button',name=re.compile(r'创建 \d+ 项任务'),exact=False).click()
         payload=created.value.request.post_data_json
         assert payload['feature']=='exam'
         assert payload['params']['selection']['mode']=='selected'
         assert len(payload['params']['selection']['ids'])==1
+        assert payload['params']['exam']['url']==exam_url
         page.wait_for_selector('.modal',state='detached')
         page.unroute(catalog_pattern)
         passed('独立考试可加载待做考试，默认全选、取消全选与单选后提交 selected 范围')

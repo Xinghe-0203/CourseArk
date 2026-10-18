@@ -282,8 +282,14 @@ def run_feature(user, course, task: dict, ui: TaskStatsUI, sink) -> dict:
         return {}
 
     if feature == "exam":
-        from functions.deal_exam_room import DealExamRoom
-        DealExamRoom(user, course, sink, ui).do_finish(selection=params.get("selection"))
+        exam_params = params.get("exam") or {}
+        exam_url = str(exam_params.get("url") or "").strip()
+        if exam_url:
+            from functions.exam_room_url import ExamRoomByUrl
+            ExamRoomByUrl(user, course, sink, ui).do_finish(exam_url)
+        else:
+            from functions.deal_exam_room import DealExamRoom
+            DealExamRoom(user, course, sink, ui).do_finish(selection=params.get("selection"))
         return {}
 
     if feature == "video":

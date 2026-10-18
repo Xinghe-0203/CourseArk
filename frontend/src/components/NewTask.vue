@@ -140,6 +140,18 @@ const selectionStates = computed(() =>
 const selection = computed<SelectionParams>(() =>
   collectSelection(selectionStates.value, catalogsReady.value),
 );
+const examUrl = ref("");
+const examUrlMode = computed(
+  () => feature.value === "exam" && examUrl.value.trim().length > 0,
+);
+const examUrlError = computed(() => {
+  const value = examUrl.value.trim();
+  if (!value || feature.value !== "exam") return "";
+  if (!/chaoxing\.com/i.test(value) || !/reVersionTestStartNew/i.test(value)) {
+    return "请粘贴「考试答题页」地址：在浏览器进入考试看到题目后复制地址栏 URL（需包含 reVersionTestStartNew 与 enc）";
+  }
+  return "";
+});
 const selectedCount = computed(() =>
   selectionStates.value.reduce(
     (sum, slot) =>
@@ -338,9 +350,13 @@ function submit() {
     error.value = "请至少选择一门可学习课程";
     return;
   }
+  if (feature.value === "exam" && examUrl.value.trim() && examUrlError.value) {
+    error.value = examUrlError.value;
+    return;
+  }
   if (independent.value) {
     const invalid = selectionError(kind.value, selection.value, catalogsReady.value);
-    if (invalid) {
+    if (invalid && !examUrlMode.value) {
       error.value = invalid;
       return;
     }
@@ -348,6 +364,8 @@ function submit() {
   const finalParams = JSON.parse(JSON.stringify(params));
   if (independent.value) finalParams.selection = selection.value;
   else delete finalParams.selection;
+  if (examUrlMode.value) finalParams.exam = { url: examUrl.value.trim() };
+  else delete finalParams.exam;
   void act(
     "create-run",
     async () => {
@@ -507,6 +525,31 @@ function back() {
           </button>
         </div>
         <template v-if="independent">
+          <div v-if="kind === 'exam'" class="exam-url-block">
+            <div class="picker-heading">
+              <h3>考试答题页地址（推荐）</h3>
+            </div>
+            <p class="muted">
+              先在浏览器里登录学习通并进入考试，看到题目后复制地址栏 URL
+              粘贴到这里：程序会直接在这场考试里逐题作答并交卷。留空则按下方考试列表处理。
+              程序不会绕过平台的任何安全验证，考试计时以平台为准。
+            </p>
+            <input
+              v-model="examUrl"
+              type="url"
+              class="exam-url-input"
+              placeholder="https://mooc1.chaoxing.com/exam-ans/exam/test/reVersionTestStartNew?...&enc=..."
+              aria-label="考试答题页地址"
+              spellcheck="false"
+            />
+            <p v-if="examUrlError" class="alert error" role="alert">
+              {{ examUrlError }}
+            </p>
+            <p class="muted">
+              地址里通常带有 enc 参数；复制完整地址（路径含 reVersionTestStartNew
+              的那一条）才能让程序直接进入答题页。
+            </p>
+          </div>
           <div class="picker-heading">
             <h3>选择{{ catalogKindName }}范围</h3>
             <small v-if="catalogsReady"
@@ -694,3 +737,17 @@ function back() {
     </form>
   </ModalShell>
 </template>
+
+<style scoped>
+.exam-url-block .exam-url-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  margin: 6px 0 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.exam-url-block .alert {
+  margin: 4px 0;
+}
+</style>

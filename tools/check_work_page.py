@@ -17,6 +17,7 @@
     python tools/check_work_page.py --course-id 244694077 --class-id 151670988 --cpi 518380181
     python tools/check_work_page.py --course-id 244694077 --kind exam
     python tools/check_work_page.py --course-id 244694077 --kind exam --fetch-start --limit 1
+    python tools/check_work_page.py --exam-url "https://mooc1.chaoxing.com/exam-ans/exam/test/reVersionTestStartNew?..."
     python tools/check_work_page.py --course-id 244694077 --data-dir D:\\path\\to\\data
 """
 
@@ -34,7 +35,7 @@ for path in (WEBUI_ROOT, CLI_COPY):
 
 from loguru import logger  # noqa: E402
 
-from core import exam_form, work_form  # noqa: E402
+from core import exam_answer_page, exam_form, work_form  # noqa: E402
 from core.config import Config  # noqa: E402
 from functions.deal_exam import DealExam  # noqa: E402
 from models.user import User  # noqa: E402
@@ -251,9 +252,51 @@ def show_exam(course, item, fetch_start=False):
     return bool(questions)
 
 
+def show_answer_page(url):
+    """只读检查「粘贴的考试答题页地址」：解析一页、打印提交报文，不提交答案。"""
+    try:
+        entry = exam_answer_page.parse_exam_url(url)
+    except exam_answer_page.ExamUrlError as exc:
+        print(f"!! 地址无法识别：{exc}")
+        return False
+    print(f"\n=== 考试答题页检查 ===")
+    print(f"courseId={entry['course_id']} classId={entry['class_id']} "
+          f"examId={entry['exam_id']} relationId={entry['relation_id']}")
+    from core.request_client import get as http_get
+
+    try:
+        html = http_get(entry["url"], headers={"Referer": "https://mooc1.chaoxing.com/exam/test"})
+    except Exception as exc:
+        print(f"!! 读取答题页失败：{exc}")
+        return False
+    page = exam_answer_page.parse_answer_page(html or "")
+    print(f"页面长度: {len(html or '')} · 交卷成功页={page['finished']} · 被拦={page['blocked']}")
+    if page["finished"]:
+        print("该场考试已交卷完成，无需再作答。")
+        return True
+    if page["blocked"]:
+        print("!! 页面被平台拦截（无权限/已结束/需要验证），程序不会绕过。")
+        return False
+    print(f"试卷: {page['media'] or '-'} · 第 {page['index'] + 1} 题 / 共 {page['total'] or '?'} 题"
+          f" · 剩余 {page['remain'] or '?'} 秒")
+    print(f"题目: id={page['qid']} 类型={page['type_name']}({page['type_code']})")
+    print(f"题干: {page['stem'][:90]}")
+    for option in page["options"]:
+        print(f"   {option['key']}. {option['text'][:60]}")
+    if not page["fields"]:
+        print("!! 未找到 #submitTest 表单字段：页面结构与预期不一致")
+        return False
+    print(f"提交URL(参考答案时不带): {exam_answer_page.submit_url(page['form_action'], entry['cpi'], True)[:150]}")
+    print(f"表单字段数: {len(page['fields'])}")
+    if not page["options"] and page["type_code"] in (0, 1):
+        print("!! 选择题未解析出选项：请把该页 HTML 反馈给开发者")
+        return False
+    return True
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="只读核对作业页面解析与提交报文")
-    parser.add_argument("--data-dir", default="", help="数据目录（默认桌面版 %APPDATA%\\AutoCxWebUI）")
+    parser.add_argument("--data-dir", default="", help="数据目录（默认桌面版 %%APPDATA%%\\AutoCxWebUI）")
     parser.add_argument("--account", default="", help="账号 id 或手机号，默认第一个可用账号")
     parser.add_argument("--course-id", default="", help="课程 id；留空则列出课程")
     parser.add_argument("--class-id", default="", help="班级 id，一般从课程列表自带")
@@ -264,6 +307,8 @@ def main(argv=None):
     parser.add_argument("--fetch-start", action="store_true",
                         help="考试模式下允许请求「开始考试」地址（会开始计时，慎用）")
     parser.add_argument("--list", action="store_true", help="只列出账号下的课程")
+    parser.add_argument("--exam-url", default="",
+                        help="只读检查粘贴的考试答题页地址（含 reVersionTestStartNew 与 enc）")
     args = parser.parse_args(argv)
 
     quiet_logging()
@@ -285,6 +330,9 @@ def main(argv=None):
     user = User(Config.get("account.phone"), Config.get("account.password"))
     courses = user.get_courses() or user.course_list
     print(f"课程数: {len(courses)}")
+
+    if args.exam_url:
+        return 0 if show_answer_page(args.exam_url) else 1
 
     if args.list or not args.course_id:
         print_courses(courses)

@@ -72,10 +72,33 @@ Electron ── Python runtime ── FastAPI ── Vue 页面
   `mooc1.chaoxing.com/exam-ans/...`，且带 `newMooc=true`。
 - 学习通对进入考试有人机校验（`captchaCheck` / `examCheck`，手机端同样如此）。这是账号级的平台策略，
   程序不尝试绕过：命中即记录原因并中止，**不会开始考试计时**，也不会替用户交白卷。
-- 考试**没有**可靠的整卷临时保存语义，因此本版本不会「先保存再补交」；识别不了页面就中止。
-- PC 端交卷端点无公开可靠证据，优先回放页面表单；没有表单时只从页面内联脚本探测候选，
-  探测不到即中止（不猜测端点）。手机协议（`reVersionSubmitTestNew` + 签名）调研结果见
-  [`docs/research-exam.md`](research-exam.md)，尚未实现。
+
+## 考试答题页直连（v2.2.2）
+
+```text
+用户浏览器完成平台验证 → 复制带 enc 的答题页地址
+   └─ app/task_model.py::ExamParams.url（校验 reVersionTestStartNew + chaoxing.com）
+        └─ worker/runner.py：exam 且 url 非空 → functions/exam_room_url.py::ExamRoomByUrl
+             ├─ core/exam_answer_page.parse_exam_url：courseId/classId/tId/id/enc/cpi/openc
+             ├─ GET 该答题页（Referer=考试列表）
+             │    ├─ finished（交卷成功页）→ 记录已完成，不再作答
+             │    └─ blocked（无权限/已结束/需验证）→ 中止，不绕过
+             ├─ 循环：parse_answer_page（当前题/题型/选项/题量/剩余时间/隐藏字段）
+             │    ├─ DealExam._answer_question（AI/缓存，复用作业链路）→ normalize_answer
+             │    ├─ POST reVersionSubmitTestNew（tempSave=true，answer<qid>=答案）
+             │    ├─ 响应 data=lastUpdateTime|remainTime|enc → build_next_url 取下一题
+             │    └─ 末题（index>=total-1）→ 再 POST tempSave=false 交卷
+             └─ 交卷成功后写答题缓存 + emit answer_result/work_progress/exam_stats
+```
+
+- 提交 query 只保留 `classId/courseId/testPaperId/testUserRelationId` + `cpi/tempSave/version=1`；
+  多带 `keyboardDisplayRequiresUserAction=1` 会被服务端判「无效操作」。表单 action 的 `&amp;`
+  必须 `html.unescape`。服务端接受不带 `pos` 签名的提交。
+- 进度与统计沿用作业事件：每题 `answer_result` + `work_progress{current,total}`，
+  整卷成功才有 `work_result`，失败抛出服务器原文，不伪造成功。
+- 旧路径（不带 URL）保持不变：仍按考试列表处理，在平台验证处安全中止。
+- 协议调研（逐题提交、`data` 滚动令牌、`tempSave`、超时自动交卷、`pos` 签名）见
+  [`docs/research-exam.md`](research-exam.md)，本版本按真实 PC 页面行为实现并已真机验证。
 
 ## 课程同步与续跑（v2.2.1）
 

@@ -151,6 +151,22 @@ class CourseAllParams(BaseModel):
     answer: Optional[AnswerParams] = None
 
 
+class ExamParams(BaseModel):
+    """考试参数：url 非空时按「答题页直连」模式作答该场考试"""
+    url: str = ""
+
+    @field_validator("url")
+    @classmethod
+    def _url(cls, value):
+        value = str(value or "").strip()
+        if not value:
+            return ""
+        lowered = value.lower()
+        if "chaoxing.com" not in lowered or "reversionteststartnew" not in lowered:
+            raise ValueError("请粘贴学习通考试答题页地址（含 reVersionTestStartNew 与 enc 参数）")
+        return value
+
+
 class TaskParams(BaseModel):
     """单个子任务的完整参数快照"""
     video: VideoParams = Field(default_factory=VideoParams)
@@ -159,6 +175,7 @@ class TaskParams(BaseModel):
     download: DownloadParams = Field(default_factory=DownloadParams)
     selection: SelectionParams = Field(default_factory=SelectionParams)
     course_all: CourseAllParams = Field(default_factory=CourseAllParams)
+    exam: ExamParams = Field(default_factory=ExamParams)
     advanced: Dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
@@ -172,6 +189,7 @@ class TaskParams(BaseModel):
             "download": dict(base.get("download", {})),
             "selection": dict(base.get("selection", {})),
             "course_all": dict(base.get("course_all", {})),
+            "exam": dict(base.get("exam", {})),
             "advanced": dict(settings.resolve("advanced", {}) or {}),
         }
         for key, value in (overrides or {}).items():
@@ -198,7 +216,7 @@ class TaskParams(BaseModel):
             "course_all": ("video", "answer", "course_all", "advanced"),
             "chapter_exam": ("answer", "advanced"),
             "independent_homework": ("answer", "advanced", "selection"),
-            "exam": ("answer", "advanced", "selection"),
+            "exam": ("answer", "advanced", "selection", "exam"),
             "video": ("video", "advanced"),
             "learn_count": ("learn_count", "advanced"),
             "download": ("download", "advanced"),
