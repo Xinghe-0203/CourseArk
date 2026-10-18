@@ -42,11 +42,10 @@ def build_config(job: dict) -> dict:
     return {
         "account": {"phone": job["username"], "password": job["password"]},
         "video": {"max_workers": 1, "mode": "instant", "random_progress": False},
-        "answer": {"mode": "manual", "fallback_to_tiku": False, "no_answer_action": "skip",
+        "answer": {"mode": "manual", "no_answer_action": "skip",
                    "submit_delay": 0, "auto_submit": False},
         "llm": {"base_url": "", "api_key": "", "model": "", "temperature": 0, "max_tokens": 0,
                 "timeout": 30},
-        "tiku": {"enabled": False, "timeout": 5},
         "question_bank": {"enabled": False, "db_path": job["question_bank_path"], "auto_save": False},
         "notification": {"enabled": False},
         "advanced": {

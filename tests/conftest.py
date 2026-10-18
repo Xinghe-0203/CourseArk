@@ -15,6 +15,25 @@ if CLI_COPY not in sys.path:
     sys.path.insert(0, CLI_COPY)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_cli_data_dir():
+    """会话级兜底：测试与它们派生的子进程都不得把运行期文件写进 cli_copy。
+
+    cli_copy 副本目录约定只读；未设置 AUTOCXWEBUI_DATA_DIR 时其默认数据目录就是
+    副本目录本身，一旦有测试（或子进程）走到默认路径就会留下 config.yml。
+    """
+    default_dir = tempfile.mkdtemp(prefix="autocxwebui-session-")
+    previous = os.environ.get("AUTOCXWEBUI_DATA_DIR")
+    if not previous:
+        os.environ["AUTOCXWEBUI_DATA_DIR"] = default_dir
+    try:
+        yield default_dir
+    finally:
+        if not previous:
+            os.environ.pop("AUTOCXWEBUI_DATA_DIR", None)
+        shutil.rmtree(default_dir, ignore_errors=True)
+
+
 @pytest.fixture()
 def sandbox(monkeypatch):
     """隔离的 WebUI 数据目录"""

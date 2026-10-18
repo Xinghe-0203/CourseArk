@@ -227,9 +227,8 @@ async function control(id: string, op: string) {
                 ></span
               >
               <span
-                >答题 {{ t.stats.questions || 0 }} · 缓存
-                {{ t.stats.cache_hits || 0 }} · 题库
-                {{ t.stats.tiku_hits || 0 }} · AI
+                >答题 {{ t.stats.questions || 0 }} · 缓存命中
+                {{ t.stats.cache_hits || 0 }} · AI
                 {{ t.stats.llm_calls || 0 }}</span
               ><span
                 >提交接受 {{ t.stats.submit_ok || 0 }} · 随机答案

@@ -302,7 +302,6 @@ class TaskManager:
             "course_name": row.get("course_name", ""),
             "params": self._load_params(row),
             "llm": config.get("llm", {}),
-            "tiku": config.get("tiku", {}),
             "notification": config.get("notification", {}),
             "question_bank_path": paths.QUESTION_BANK_FILE,
             "question_bank_auto_save": bool(question_bank.get("auto_save", True)),

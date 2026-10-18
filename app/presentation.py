@@ -13,6 +13,20 @@ ACTIONS = {'llm': '检查 AI 服务地址、密钥与模型权限。', 'login': 
 
 def describe(event, message, level='info', stage='', payload=None):
     payload = payload or {}
+    if event == 'answer_result':
+        # 逐题作答结果：分类固定为答题，标题按状态给，详情展示题型与答案
+        status = str(payload.get('status') or '')
+        title = {'answered': 'AI 已作答', 'skipped': '已跳过',
+                 'unreadable': '题面未识别'}.get(status, 'AI 作答')
+        question_type = str(payload.get('question_type') or '').strip()
+        answer = str(payload.get('answer') or '').strip()
+        note = str(payload.get('note') or '').strip()
+        parts = [part for part in (question_type, answer) if part]
+        if note and status != 'answered':
+            parts.append(note)
+        return {'category': 'exam', 'title': title,
+                'detail': ' · '.join(parts) or narrative._clean(message),
+                'action': '', 'visible': True}
     notice = notifications.classify(event, level, message, stage)
     category = notice[0] if notice else stage if stage in CATEGORIES else 'progress'
     if event.startswith('work_'):

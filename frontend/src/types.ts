@@ -55,6 +55,73 @@ export interface AccountWorkspace {
     failed: number;
   };
 }
+export type AnswerSource = "ai" | "cache" | "random" | "failed";
+export type AnswerStatus = "answered" | "skipped" | "unreadable";
+export interface AnswerItem {
+  key: string;
+  index: number;
+  total: number;
+  media: string;
+  question_type: string;
+  question: string;
+  options?: string[];
+  answer: string;
+  source: AnswerSource | string;
+  status: AnswerStatus | string;
+  note?: string;
+  ts: number;
+  time?: string;
+}
+export interface AnswersSummary {
+  answered: number;
+  skipped: number;
+  total: number;
+  ai: number;
+  cache: number;
+  random: number;
+  failed: number;
+  submit_ok: number;
+  submit_fail: number;
+}
+export interface CatalogItem {
+  id: string;
+  title: string;
+  status?: string;
+  valid?: boolean;
+  time_left?: string;
+  start_time?: string;
+  end_time?: string;
+  limit_time?: number | string;
+  url?: string;
+  relation_id?: string;
+  paper_id?: string;
+}
+export interface CatalogResponse {
+  account_id: string;
+  course_id: string;
+  kind: string;
+  items: CatalogItem[];
+  fetched_at?: number;
+  from_cache?: boolean;
+  error?: string;
+}
+export interface SelectionParams {
+  mode: "all" | "selected";
+  ids: string[];
+}
+export interface LiveUnit {
+  label: string;
+  current: number;
+  total: number;
+}
+export interface TaskLive {
+  activity?: string;
+  activity_at?: number;
+  elapsed_seconds?: number | null;
+  unit?: LiveUnit | null;
+  eta_seconds?: number | null;
+  eta_source?: string | null;
+}
 export interface Task {
   cpi?: string;
   course_id: string;
@@ -76,6 +143,9 @@ export interface Task {
   progress: Progress;
   events?: TaskEvent[];
   activity_events?: TaskEvent[];
+  answers?: AnswerItem[];
+  answers_summary?: Partial<AnswersSummary>;
+  live?: TaskLive | null;
 }
 export interface TaskEvent {
   id: number;

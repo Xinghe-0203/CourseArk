@@ -8,10 +8,26 @@
 
 - 多账号课程工作台：查看账号状态、课程、执行中的任务和最近结果。
 - 课程任务点：处理章节内的视频、音频、阅读、文档、图书、测验，以及平台已有的投票和讨论任务点。
-- 独立作业：单独创建并处理课程“作业”页中待处理且未过期的作业。
+- 独立作业：单独创建并处理课程“作业”页中待处理且未过期的作业；按作业页面里真实的
+  `<form>` 回放提交（token、`totalQuestionNum`、`answerwqbid` 等字段与浏览器 `serialize()` 一致），
+  提交前先调用平台的 `work/validate` 校验作业是否可提交。新建任务时可先「加载列表」，
+  勾选要处理的作业（默认全选）。
+- 独立考试（v2.2）：读取课程的考试列表（状态、考试窗口、限时），可勾选要作答的考试；
+  进入考试页后用同一套 AI 作答链路逐题作答，并优先按页面真实表单回放交卷。
+  「一页一题」的考试会被识别并安全中止（不会提交半份答案），说明见
+  [`docs/release-2.2.md`](docs/release-2.2.md)。
+- AI 做题：只保留 AI 作答链路，逐题实时展示题干、选项、答案与来源（AI / 答题缓存 / 随机 / 未识别），
+  答案先过题型校验（判断题归一为 true/false，选择题必须落在选项字母内）；无法可靠作答时按策略跳过。
+  提示词会带上课程与作答内容（作业/考试名称）的上下文，并要求模型给出最可能答案而不是留空。
+- 进度小窗：任务运行时右下角浮动小窗显示「正在做什么、已用时、预计剩余」，任务列表同步显示一行摘要。
+- 答题缓存：AI 答对的题会存进本机 SQLite 缓存，下次遇到相同题目直接复用，不再重复调用 AI；
+  缓存可在「答题缓存」页搜索、导入、导出、单条删除或一键清空。
 - 任务控制：按账号或跨账号暂停、继续、停止；查看任务进度、历史和问题通知。
-- 本地题库与可选 AI 答题接口；题目、选项和字体识别均经过校验，未确认的结果会保留为待处理状态。
 - 诊断日志和站内通知便于定位问题；默认不启用外部推送。
+
+> v2.1 起**移除了在线题库**（enncy / icodef / datam 及其 token 配置），旧配置里的 `tiku` 组
+> 与 `answer.fallback_to_tiku` 会在读取时自动丢弃，旧 `answer.mode: tiku` 归一化为 `ai`。
+> 变更与根因说明见 [`docs/release-2.1.md`](docs/release-2.1.md)。
 
 ## 使用
 
@@ -38,10 +54,32 @@ python run.py
 
 在 [GitHub Releases](https://github.com/Xinghe-0203/CourseArk/releases) 下载：
 
-- `CourseArk-2.0.0-Setup.exe`：Windows x64 安装版。
-- `CourseArk-2.0.0-Portable.exe`：Windows x64 便携版。
+- `CourseArk-2.2.0-Setup.exe`：Windows x64 安装版。
+- `CourseArk-2.2.0-Portable.exe`：Windows x64 便携版。
 
-桌面版内置 Python 运行时，不要求最终用户安装 Python 或 Node.js。关闭应用时会停止本机服务和 Worker。为兼容现有安装，桌面数据目录继续使用 `%APPDATA%\AutoCxWebUI`；安装包不包含账号、配置、题库或任务数据库。
+桌面版内置 Python 运行时，不要求最终用户安装 Python 或 Node.js。关闭应用时会停止本机服务和 Worker。为兼容现有安装，桌面数据目录继续使用 `%APPDATA%\AutoCxWebUI`；安装包不包含账号、配置、答题缓存或任务数据库。
+
+### 独立作业失败怎么排查
+
+作业页面的结构和提交参数会随平台更新而变化。遇到「提交失败」「题干识别成课程标题」「题目数明显偏少」
+这类问题时，先用只读自检脚本核对解析与提交报文：
+
+```powershell
+python tools/check_work_page.py --list                              # 列出账号下的课程
+python tools/check_work_page.py --course-id 244694077 --limit 1      # 检查一个待处理作业
+python tools/check_work_page.py --course-id 244694077 --kind exam    # 只读列出可作答考试
+```
+
+脚本只发送 GET 请求读取作业页面，**不会提交答案、不会调用 AI**，也不打印任何密钥。输出包含：
+
+- 解析到的题目数、题型、题干与选项（以及无法识别的原因）；
+- 提交 URL 与将要提交的全部表单字段（可与浏览器 `$("#submitForm").serialize()` 对照）；
+- 提交前置校验结果（平台 `work/validate` 返回「可提交 / 需要验证码 / 状态异常」）。
+
+考试默认只列出列表与将要请求的「开始考试」地址，**不会真的发起该请求**（发起即开始计时）；
+只有显式加 `--fetch-start` 才会去读答题页，请自行确认后果。
+
+任务执行过程中的逐题记录在任务详情「AI 做题」页签，逐题显示题干、选项、答案来源与失败原因。
 
 ### 从源码构建桌面版
 
@@ -61,7 +99,8 @@ npm --prefix desktop run smoke:packaged
 ## 数据与隐私
 
 - 网页版运行数据保存在项目的 `data/` 目录；桌面版保存在当前 Windows 用户的 `%APPDATA%\AutoCxWebUI`。
-- 账号、Cookie、配置、题库、任务数据库和日志均为本机运行数据，不应提交到 GitHub。
+- 账号、Cookie、配置、答题缓存、任务数据库和日志均为本机运行数据，不应提交到 GitHub。
+- 作业页面内容只在本机解析，不会落盘保存；自检脚本也不写入任何页面内容。
 - `data/`、`cli_copy/config.yml`、本地密钥和构建目录已加入 Git 忽略规则。
 - 服务仅绑定 `127.0.0.1`；桌面窗口通过本机服务访问界面。
 - 写操作校验请求来源：跨站网页对本机接口的调用会被拒绝。
@@ -70,7 +109,7 @@ npm --prefix desktop run smoke:packaged
 
 ```text
 Vue 3 / TypeScript ── HTTP / SSE ── FastAPI
-                                      ├─ SQLite：账号设置、任务、事件、课程缓存、题库
+                                      ├─ SQLite：账号设置、任务、事件、课程缓存、答题缓存
                                       └─ Worker：课程任务、作业、同步和会话子进程
 
 Electron ── 启动本机 Python/FastAPI ── 加载同一套 Vue 页面
@@ -93,7 +132,8 @@ python tools/vue_check.py
 python tools/ui_check.py --serve --port 8899
 ```
 
-浏览器检查使用临时数据并停用调度器，不连接学习通，也不执行真实学习任务。
+浏览器检查使用临时数据并停用调度器，不连接学习通，也不执行真实学习任务。需要连接真实账号核对
+作业解析时，使用上面的 `tools/check_work_page.py`（只读）。
 
 ## 来源与致谢
 

@@ -12,6 +12,7 @@ import {
 import type { Task } from "../types";
 import { state, act } from "../store";
 import { request } from "../api";
+import { runningSummary } from "../live";
 import {
   groupTasks,
   statuses,
@@ -42,14 +43,18 @@ async function load() {
         : filter.value;
   try {
     const data = await request<{ items: Task[]; total: number }>(
-      `/tasks?q=${encodeURIComponent(query.value)}&status=${status}&account_id=${account.value}&feature=course_all,independent_homework&limit=100&offset=${offset.value}`,
+      `/tasks?q=${encodeURIComponent(query.value)}&status=${status}&account_id=${account.value}&limit=100&offset=${offset.value}`,
     );
     if (current === generation) {
       if (offset.value && offset.value >= data.total) {
         offset.value = Math.max(0, Math.floor((data.total - 1) / 100) * 100);
         return;
       }
-      fetched.value = data.items;
+      fetched.value = data.items.map((task) =>
+        state.liveById[task.id]
+          ? { ...task, live: state.liveById[task.id] }
+          : task,
+      );
       count.value = data.total;
     }
   } catch (e) {
@@ -68,9 +73,16 @@ onUnmounted(() => {
   clearTimeout(debounce);
 });
 const visible = computed(() =>
-  props.filters ? fetched.value || [] : props.tasks,
+  (props.filters ? fetched.value || [] : props.tasks).map((task) =>
+    state.liveById[task.id] ? { ...task, live: state.liveById[task.id] } : task,
+  ),
 );
 const groups = computed(() => groupTasks(visible.value));
+function liveLine(task: Task) {
+  const summary = runningSummary(task);
+  if (!summary) return "";
+  return `${summary.activity} · 预计剩余 ${summary.eta}`;
+}
 function command(task: Task, op: string) {
   act(
     task.id,
@@ -158,7 +170,10 @@ function command(task: Task, op: string) {
             >
               <i :style="{ width: (percent(task) ?? 0) + '%' }" />
             </div>
-            <small v-if="task.progress?.active?.length">{{
+            <small v-if="liveLine(task)" class="task-live-summary">{{
+              liveLine(task)
+            }}</small>
+            <small v-else-if="task.progress?.active?.length">{{
               task.progress.active[0]?.name || "处理中"
             }}</small
             ><small v-else-if="task.progress?.failed"

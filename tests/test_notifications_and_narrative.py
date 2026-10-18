@@ -149,8 +149,10 @@ def test_exam_progress_reports_sources():
                               payload={"media": "第三章测验", "current": 5, "total": 20,
                                        "cache_hits": 2, "llm_calls": 3})
     assert item["progress"] == 25
-    assert "题库缓存 2" in item["detail"]
+    assert "答题缓存 2" in item["detail"]
     assert "AI 作答 3" in item["detail"]
+    assert "在线题库" not in item["detail"]
+    assert "题库" not in item["detail"].replace("答题缓存", "")
 
 
 def test_submit_result_readable():

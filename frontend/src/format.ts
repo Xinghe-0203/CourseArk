@@ -16,6 +16,7 @@ export const statuses: Record<string, string> = {
 export const features: Record<string, string> = {
   course_all: "课程任务点",
   independent_homework: "独立作业",
+  exam: "独立考试",
 };
 export const categories: Record<string, string> = {
   video: "视频学习",
@@ -35,7 +36,7 @@ export const categories: Record<string, string> = {
   chapter: "章节解析",
   network: "网络连接",
   antispider: "平台验证",
-  bank: "题库",
+  bank: "答题缓存",
   worker: "运行服务",
   task: "任务结果",
   general: "其他问题",

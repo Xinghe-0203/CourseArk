@@ -14,13 +14,14 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from . import settings
 
-FEATURES = ("course_all", "chapter_exam", "independent_homework", "video",
+FEATURES = ("course_all", "chapter_exam", "independent_homework", "exam", "video",
             "learn_count", "download")
 
 FEATURE_LABELS = {
     "course_all": "一键完成课程任务",
     "chapter_exam": "章节测验答题",
     "independent_homework": "独立作业答题",
+    "exam": "独立考试",
     "video": "刷取视频时长",
     "learn_count": "刷取学习次数",
     "download": "下载课程资源",
@@ -76,7 +77,6 @@ class VideoParams(BaseModel):
 
 class AnswerParams(BaseModel):
     mode: str = "ai"
-    fallback_to_tiku: bool = True
     no_answer_action: str = "skip"
     submit_delay: float = Field(default=2, ge=0, le=600)
     auto_submit: bool = True
@@ -84,8 +84,11 @@ class AnswerParams(BaseModel):
     @field_validator("mode")
     @classmethod
     def _mode(cls, value):
-        if value not in {"ai", "tiku", "manual"}:
-            raise ValueError("答题模式必须是 ai / tiku / manual")
+        # v2.1 删除在线题库：旧预设/旧任务里的 tiku 归一化为 ai，不报错
+        if value == "tiku":
+            return "ai"
+        if value not in {"ai", "manual"}:
+            raise ValueError("答题模式必须是 ai / manual")
         return value
 
     @field_validator("no_answer_action")
@@ -121,6 +124,27 @@ class DownloadParams(BaseModel):
         return self
 
 
+class SelectionParams(BaseModel):
+    """作业/考试的选择范围：全部待做，或只做勾选的条目"""
+    mode: str = "all"
+    ids: List[str] = Field(default_factory=list)
+
+    @field_validator("mode")
+    @classmethod
+    def _mode(cls, value):
+        if value not in {"all", "selected"}:
+            raise ValueError("选择方式必须是 all 或 selected")
+        return value
+
+    @model_validator(mode="after")
+    def _normalize(self):
+        self.ids = list(dict.fromkeys(
+            str(item).strip() for item in self.ids if str(item).strip()))
+        if self.mode == "selected" and not self.ids:
+            raise ValueError("选择模式下至少选择一项")
+        return self
+
+
 class CourseAllParams(BaseModel):
     """一键完成课程任务点的参数（不含独立作业：那是独立功能）"""
     video: Optional[VideoParams] = None
@@ -133,6 +157,7 @@ class TaskParams(BaseModel):
     answer: AnswerParams = Field(default_factory=AnswerParams)
     learn_count: LearnCountParams = Field(default_factory=LearnCountParams)
     download: DownloadParams = Field(default_factory=DownloadParams)
+    selection: SelectionParams = Field(default_factory=SelectionParams)
     course_all: CourseAllParams = Field(default_factory=CourseAllParams)
     advanced: Dict[str, Any] = Field(default_factory=dict)
 
@@ -145,6 +170,7 @@ class TaskParams(BaseModel):
             "answer": dict(base.get("answer", {})),
             "learn_count": dict(base.get("learn_count", {})),
             "download": dict(base.get("download", {})),
+            "selection": dict(base.get("selection", {})),
             "course_all": dict(base.get("course_all", {})),
             "advanced": dict(settings.resolve("advanced", {}) or {}),
         }
@@ -153,6 +179,9 @@ class TaskParams(BaseModel):
                 continue
             if key == "advanced":
                 merged["advanced"] = {**merged["advanced"], **value}
+            elif key == "selection" and isinstance(value, dict):
+                # ids 是列表：用户提交了什么就整体替换，不与默认值拼接
+                merged["selection"] = {**merged.get("selection", {}), **value}
             elif isinstance(value, dict):
                 merged[key] = {**merged.get(key, {}), **value}
         if feature and feature != 'download':
@@ -168,7 +197,8 @@ class TaskParams(BaseModel):
         keep = {
             "course_all": ("video", "answer", "course_all", "advanced"),
             "chapter_exam": ("answer", "advanced"),
-            "independent_homework": ("answer", "advanced"),
+            "independent_homework": ("answer", "advanced", "selection"),
+            "exam": ("answer", "advanced", "selection"),
             "video": ("video", "advanced"),
             "learn_count": ("learn_count", "advanced"),
             "download": ("download", "advanced"),

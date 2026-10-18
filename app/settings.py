@@ -1,7 +1,7 @@
 """
 WebUI 全局设置
 
-- data/settings.json 保存全局默认值、Worker 上限、LLM/在线题库/通知和存储位置
+- data/settings.json 保存全局默认值、Worker 上限、LLM/通知和存储位置
 - 首次启动时可以从源 CLI 的 config.yml 只读导入一次（源文件永不写回）
 - 对外 API 只返回敏感值的“是否已配置”，不返回明文
 """
@@ -20,9 +20,6 @@ SETTINGS_KEY = "global"
 # 敏感字段：API 只返回是否存在，不返回值
 SECRET_PATHS = (
     "llm.api_key",
-    "tiku.enncy-token",
-    "tiku.icodef-token",
-    "tiku.datam-token",
     "notification.server_chan.sendkey",
     "notification.bark.key",
     "notification.telegram.bot_token",
@@ -48,7 +45,6 @@ DEFAULT_SETTINGS = {
         },
         "answer": {
             "mode": "ai",
-            "fallback_to_tiku": True,
             "no_answer_action": "skip",
             "submit_delay": 2,
             "auto_submit": True,
@@ -73,14 +69,6 @@ DEFAULT_SETTINGS = {
         "temperature": 0.1,
         "max_tokens": 4096,
         "timeout": 180,
-    },
-    "tiku": {
-        "enabled": True,
-        "timeout": 10,
-        "order": ["enncy", "icodef", "datam"],
-        "enncy-token": "",
-        "icodef-token": "",
-        "datam-token": "",
     },
     "question_bank": {
         "enabled": True,
@@ -170,11 +158,17 @@ def normalize(data) -> dict:
     host = str(data["server"].get("host") or "").strip()
     data["server"]["host"] = host if host in LOOPBACK_HOSTS else "127.0.0.1"
 
+    # v2.1：在线题库已删除。旧配置里残留的 tiku 组与 fallback_to_tiku 直接丢弃，
+    # 旧 answer.mode == "tiku" 归一化为 "ai"（不报错，避免旧配置导入失败）。
+    data.pop("tiku", None)
     defaults = data["defaults"]
+    defaults["answer"].pop("fallback_to_tiku", None)
     if defaults["video"].get("mode") not in {"instant", "real_time", "hybrid"}:
         defaults["video"]["mode"] = "hybrid"
     defaults["video"]["max_workers"] = _clamp(defaults["video"].get("max_workers"), 0, 200, 8)
-    if defaults["answer"].get("mode") not in {"ai", "tiku", "manual"}:
+    if defaults["answer"].get("mode") == "tiku":
+        defaults["answer"]["mode"] = "ai"
+    if defaults["answer"].get("mode") not in {"ai", "manual"}:
         defaults["answer"]["mode"] = "ai"
     if defaults["answer"].get("no_answer_action") not in {"skip", "random"}:
         defaults["answer"]["no_answer_action"] = "skip"
@@ -209,7 +203,6 @@ _SOURCE_MAPPING = {
     "video": "defaults.video",
     "answer": "defaults.answer",
     "llm": "llm",
-    "tiku": "tiku",
     "notification": "notification",
 }
 _SOURCE_ADVANCED_KEYS = ("request_delay", "request_delay_jitter", "max_retries",
@@ -221,7 +214,7 @@ def _apply_source_config(data: dict, legacy: dict, only_empty: bool = False) -> 
     把源 CLI 配置合并进设置字典
 
     only_empty=True（默认）时，只有当本地值仍等于 WebUI 默认值（即用户没改过）
-    才用源配置填充；这样既能补齐 LLM Key、题库 Token 等空缺，
+    才用源配置填充；这样既能补齐 LLM Key 等空缺，
     又不会覆盖用户在设置页里手动修改过的值。
     返回实际生效的字段路径列表。
     """
@@ -246,9 +239,9 @@ def _apply_source_config(data: dict, legacy: dict, only_empty: bool = False) -> 
             continue
         for key, value in section.items():
             if key == "db_path":
-                continue  # 题库路径由 WebUI 自己管理
-            if key == "enabled" and source_key == "tiku":
-                continue
+                continue  # 本地答题缓存路径由 WebUI 自己管理
+            if key == "fallback_to_tiku":
+                continue  # v2.1 已删除在线题库回退开关
             assign(f"{target_root}.{key}", value)
 
     advanced = legacy.get("advanced")
@@ -270,22 +263,19 @@ def source_config_info() -> dict:
     """源配置可用性（界面用于显示可导入项）"""
     legacy = _read_source_config()
     llm = legacy.get("llm", {}) if isinstance(legacy.get("llm"), dict) else {}
-    tiku = legacy.get("tiku", {}) if isinstance(legacy.get("tiku"), dict) else {}
     return {
         "exists": bool(legacy),
         "path": paths.SOURCE_CONFIG,
         "has_llm_key": bool(str(llm.get("api_key", "")).strip()),
         "llm_model": llm.get("model", ""),
         "llm_base_url": llm.get("base_url", ""),
-        "has_tiku_token": any(str(tiku.get(f"{name}-token", "")).strip()
-                              for name in ("enncy", "icodef", "datam")),
         "has_notification": bool(legacy.get("notification", {}).get("enabled")),
     }
 
 
 def import_from_source_config(only_empty: bool = True) -> dict:
     """
-    从源 CLI 的 config.yml 导入 LLM / 题库 / 通知 / 请求参数并持久化到本地数据库
+    从源 CLI 的 config.yml 导入 LLM / 通知 / 请求参数并持久化到本地数据库
 
     only_empty=True（默认）只填充本地未自定义的字段，不覆盖用户在 WebUI 里保存的设置。
     """

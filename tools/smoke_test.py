@@ -1,4 +1,4 @@
-"""
+﻿"""
 本地 Web smoke test
 
 真实启动 WebUI 服务与 Worker 子进程，验证端到端链路：
@@ -7,7 +7,7 @@
 3. 创建批次 -> Worker 子进程启动 -> 事件落库 -> SSE 推送
 4. 暂停/继续/停止控制
 5. 重启后遗留任务标记为“被打断”
-6. 共享题库导入导出
+6. 答题缓存导入导出
 
 使用 --mock 时不会访问真实超星：任务会在登录阶段失败，
 但仍能验证调度、事件协议、状态机和控制的完整链路。
@@ -296,7 +296,7 @@ sys.exit(1)
     check("运行态任务禁止暂停",
           httpx.post(f"{base}/api/tasks/{retry.json()['id']}/pause", timeout=10).status_code in (200, 409))
 
-    print("\n== 8. 题库导入导出（共享单库） ==")
+    print("\n== 8. 答题缓存导入导出（共享单库） ==")
     payload = json.dumps([
         {"question_text": f"冒烟题目{i}", "answer": "A", "question_type": "单选题"}
         for i in range(5)
@@ -308,9 +308,9 @@ sys.exit(1)
     committed = httpx.post(f"{base}/api/question-bank/import", json={
         "content": payload, "format": "json",
     }, timeout=10).json()
-    check("题库写入成功", committed["imported"] == 5)
+    check("答题缓存写入成功", committed["imported"] == 5)
     stats = httpx.get(f"{base}/api/question-bank/stats", timeout=10).json()
-    check("题库统计与写入一致", stats["total"] == 5, str(stats["total"]))
+    check("答题缓存统计与写入一致", stats["total"] == 5, str(stats["total"]))
     exported = httpx.get(f"{base}/api/question-bank/export?format=csv", timeout=10)
     check("CSV 导出成功", exported.status_code == 200 and "冒烟题目" in exported.text)
 

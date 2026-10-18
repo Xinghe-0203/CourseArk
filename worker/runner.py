@@ -36,6 +36,7 @@ FEATURE_LABELS = {
     "course_all": "一键完成课程任务",
     "chapter_exam": "章节测验答题",
     "independent_homework": "独立作业答题",
+    "exam": "独立考试答题",
     "video": "刷取视频时长",
     "learn_count": "刷取学习次数",
     "download": "下载课程资源",
@@ -173,7 +174,6 @@ def build_config(task: dict) -> dict:
     answer = params.get("answer", {})
     advanced = params.get("advanced", {})
     llm = task.get("llm", {})
-    tiku = task.get("tiku", {})
 
     return {
         "account": {"phone": task["username"], "password": task["password"]},
@@ -184,7 +184,6 @@ def build_config(task: dict) -> dict:
         },
         "answer": {
             "mode": answer.get("mode", "ai"),
-            "fallback_to_tiku": bool(answer.get("fallback_to_tiku", True)),
             "no_answer_action": answer.get("no_answer_action", "skip"),
             "submit_delay": float(answer.get("submit_delay", 2)),
             "auto_submit": bool(answer.get("auto_submit", True)),
@@ -196,14 +195,6 @@ def build_config(task: dict) -> dict:
             "temperature": float(llm.get("temperature", 0.1)),
             "max_tokens": int(llm.get("max_tokens", 4096)),
             "timeout": int(llm.get("timeout", 180)),
-        },
-        "tiku": {
-            "enabled": bool(tiku.get("enabled", True)),
-            "timeout": int(tiku.get("timeout", 10)),
-            "order": tiku.get("order", ["enncy", "icodef", "datam"]),
-            "enncy-token": tiku.get("enncy-token", ""),
-            "icodef-token": tiku.get("icodef-token", ""),
-            "datam-token": tiku.get("datam-token", ""),
         },
         "question_bank": {
             "enabled": True,
@@ -287,7 +278,12 @@ def run_feature(user, course, task: dict, ui: TaskStatsUI, sink) -> dict:
 
     if feature == "independent_homework":
         from functions.deal_homework import DealHomework
-        DealHomework(user, course, sink, ui).do_finish()
+        DealHomework(user, course, sink, ui).do_finish(selection=params.get("selection"))
+        return {}
+
+    if feature == "exam":
+        from functions.deal_exam_room import DealExamRoom
+        DealExamRoom(user, course, sink, ui).do_finish(selection=params.get("selection"))
         return {}
 
     if feature == "video":

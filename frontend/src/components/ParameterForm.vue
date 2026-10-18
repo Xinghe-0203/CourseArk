@@ -17,12 +17,12 @@ defineProps<{ params: Settings; feature: string }>();
           type="number"
           min="0"
           max="200" /></label></template
-    ><template v-if="['course_all', 'independent_homework'].includes(feature)"
+    ><template
+      v-if="['course_all', 'independent_homework', 'exam'].includes(feature)"
       ><label class="field"
-        >答题来源<select v-model="params.answer.mode">
-          <option value="ai">题库 + AI</option>
-          <option value="tiku">仅使用题库</option>
-          <option value="manual">由我手动答题</option>
+        >答题方式<select v-model="params.answer.mode">
+          <option value="ai">AI 作答</option>
+          <option value="manual">只抓题，由我手动作答</option>
         </select></label
       ><label class="field"
         >没有可靠答案时<select v-model="params.answer.no_answer_action">
@@ -34,11 +34,6 @@ defineProps<{ params: Settings; feature: string }>();
           v-model="params.answer.auto_submit"
           type="checkbox"
         />自动提交答案</label
-      ><label class="check"
-        ><input
-          v-model="params.answer.fallback_to_tiku"
-          type="checkbox"
-        />使用在线题库</label
       ><label class="field"
         >提交前等待（秒）<input
           v-model.number="params.answer.submit_delay"

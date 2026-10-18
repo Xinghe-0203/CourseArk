@@ -97,15 +97,18 @@ def seed():
         ("task-ui-2", "run-ui-1", 1, 1, "course_all", "running", "video",
          {"current": 12, "total": 20, "success": 10, "failed": 1}),
         ("task-ui-3", "run-ui-1", 2, 2, "independent_homework", "paused", "exam",
-         {"questions": 40, "cache_hits": 18, "tiku_hits": 6, "llm_calls": 14,
+         {"questions": 40, "cache_hits": 18, "tiku_hits": 0, "llm_calls": 20,
           "random_answers": 2, "submit_ok": 36, "submit_fail": 4}),
         ("task-ui-4", "run-ui-2", 3, 3, "independent_homework", "succeeded", "finish",
-         {"questions": 22, "cache_hits": 12, "tiku_hits": 4, "llm_calls": 5,
+         {"questions": 22, "cache_hits": 12, "tiku_hits": 0, "llm_calls": 9,
           "random_answers": 1, "submit_ok": 22, "submit_fail": 0}),
         ("task-ui-5", "run-ui-2", 4, 2, "course_all", "failed", "finish",
          {"success": 6, "failed": 4}),
         ("task-ui-6", "run-ui-2", 5, 3, "independent_homework", "interrupted", "homework",
          {"success": 14, "failed": 2, "skipped": 5, "download_ok": 14, "download_fail": 2}),
+        # 独立考试：暂停态、带选择范围参数、无业务事件，用于详情 stage=exam 文案验收
+        ("task-ui-7", "run-ui-2", 2, 0, "exam", "paused", "exam",
+         {"questions": 0, "llm_calls": 0, "submit_ok": 0, "submit_fail": 0}),
     ]
 
     for task_id, run_id, account_index, course_index, feature, status, stage, stats in task_specs:
@@ -121,7 +124,7 @@ def seed():
         if status in ('running','paused'):
             for unit in units[confirmed:confirmed+2]:
                 work=reduce_progress(work,'work_progress',{'id':unit['id'],'current':240,'total':480})
-            stats.update({'questions': 12, 'cache_hits': 6, 'tiku_hits': 2, 'llm_calls': 4, 'submit_ok': 1,
+            stats.update({'questions': 12, 'cache_hits': 6, 'tiku_hits': 0, 'llm_calls': 5, 'submit_ok': 1,
                           'activity': {'name': '第二章 · 连续与导数'}})
         elif status in ('failed','interrupted'):
             work=reduce_progress(work,'work_result',{'id':units[confirmed]['id'],'status':'blocked'})
@@ -139,8 +142,11 @@ def seed():
             "status": status,
             "params": {
                 "video": {"mode": "hybrid", "max_workers": 8, "random_progress": True},
-                "answer": {"mode": "ai", "fallback_to_tiku": True,
-                           "no_answer_action": "skip", "submit_delay": 2, "auto_submit": True},
+                "answer": {"mode": "ai", "no_answer_action": "skip",
+                           "submit_delay": 2, "auto_submit": True},
+                **({"selection": {"mode": "selected",
+                                  "ids": ["exam-1001", "exam-1002"]}}
+                   if feature == "exam" else {}),
             },
             "created_at": now - 1800 + account_index * 120,
         })
@@ -165,8 +171,8 @@ def seed():
         ("log", "反爬虫冷却中，等待 96+7 秒", "warning", "log"),
         ("exam_stats", "答题进度", "info", "exam"),
         ("log", "  单选 不定积分的定义是.. -> B (缓存)", "info", "log"),
-        ("log", "  多选 下列哪些是连续函数.. -> ABD (题库)", "info", "log"),
-        ("log", "  判断 可导必连续 -> true (LLM)", "info", "log"),
+        ("log", "  多选 下列哪些是连续函数.. -> ABD (AI)", "info", "log"),
+        ("log", "  判断 可导必连续 -> true (AI)", "info", "log"),
         ("task_progress", "任务统计更新", "info", "progress"),
         ("log", "  提交 12 道题的答案...", "info", "log"),
         ("log", "  提交成功!", "success", "log"),
@@ -181,6 +187,46 @@ def seed():
                  "任务异常: 连续失败10次，终止刷取", level="error", stage="finish")
     db.add_event("task-ui-6", account_ids[5], "interrupted",
                  "WebUI 重启，未找到对应的 Worker 进程", level="warning", stage="recovery")
+
+    # 运行中任务的实时进度事件：供「运行进度小窗」与任务行摘要验收
+    for offset, (name, current, total) in enumerate([
+        ("第二讲 · 连续与导数", 240, 480),
+        ("第二讲 · 连续与导数", 360, 480),
+    ]):
+        db.add_event(
+            "task-ui-2", account_ids[1], "work_progress", f"正在学习 {name}",
+            level="info", stage="video",
+            payload={"id": "task-ui-2-u1", "kind": "video", "name": name,
+                     "current": current, "total": total},
+            ts=now - 120 + offset * 45,
+        )
+
+    # 逐题作答明细：供任务详情「AI 做题」页签验收
+    answer_seed = [
+        ("第4章组件", 1, 10, "单选题",
+         "组件的生命周期钩子函数中，在组件挂载完成后调用的是哪个?",
+         ["A. created", "B. mounted", "C. updated", "D. destroyed"],
+         "B", "ai", "answered", ""),
+        ("第4章组件", 2, 10, "简答题", "在 Vue 组件中，data 必须是一个函数。",
+         [], "正确", "ai", "answered", ""),
+        ("第4章组件", 3, 10, "单选题", "下列哪个指令用于条件渲染?",
+         ["A. v-for", "B. v-if", "C. v-bind", "D. v-on"], "B", "cache", "answered", ""),
+        ("第4章组件", 4, 10, "单选题", "v-model 默认在哪个事件上同步输入值?",
+         ["A. change", "B. input", "C. blur", "D. keyup"], "B", "random", "answered",
+         "AI 未返回可用答案，按兜底策略随机选择"),
+        ("第4章组件", 5, 10, "填空题", "Vue 3 中创建响应式对象的函数是 ____。",
+         [], "", "failed", "unreadable", "题面字体未能解码，已跳过"),
+    ]
+    for index, (media, seq, total, qtype, question, options,
+                answer, source, status, note) in enumerate(answer_seed):
+        db.add_event("task-ui-3", account_ids[2], "answer_result", "答题结果",
+                     level="warning" if status != "answered" else "info", stage="exam",
+                     payload={"index": seq, "total": total, "media": media,
+                              "question_id": f"seed{index + 1}",
+                              "question_type": qtype, "question": question,
+                              "options": options, "answer": answer,
+                              "source": source, "status": status, "note": note},
+                     ts=now - 620 + index * 15)
 
     # 题库
     bank._connect().close()

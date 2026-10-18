@@ -4,7 +4,7 @@ AutoChaoxingCLI - 答题/作业处理器
 负责：
 1. 获取课程中所有待完成的作业（含章节测验和独立作业）
 2. 解析作业页面中的题目
-3. 三级回退答题：本地缓存 → 在线题库 → LLM
+3. 两级回退答题：本地答题缓存 → AI 作答
 4. 提交答案到服务器
 
 支持的题型：单选题、多选题、判断题、填空题、简答题
@@ -19,14 +19,13 @@ from urllib.parse import urlencode
 from loguru import logger
 from lxml import etree
 
-from core import runtime
+from core import runtime, work_form
 from core.config import Config
 from core.font_decoder import FontDecoder, SECRET_FONT_PREDICATE
 from functions.deal_course import _clean_name
 from core.request_client import get as doGet, post as doPost, xpath_first
 from utils.llm_client import LLMClient
 from utils.question_bank import QuestionBank
-from utils.tiku_provider import TikuProvider
 
 # 题型图标
 TYPE_ICONS = {
@@ -41,7 +40,7 @@ QUESTION_TYPE_MAP = {
 }
 QUESTION_TYPE_REVERSE = {v: k for k, v in QUESTION_TYPE_MAP.items()}
 
-SUBMIT_URL = "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNew"
+SUBMIT_URL = "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNewWeb"
 WORK_API_URL = "https://mooc1.chaoxing.com/mooc-ans/api/work"
 
 
@@ -58,7 +57,7 @@ class DealExam:
     课程测验与作业处理器
 
     支持章节测验和独立作业的自动答题。
-    三级回退：本地缓存 → 在线题库 → LLM
+    两级回退：本地答题缓存 → AI 作答
     """
 
     def __init__(self, user, course, log, ui=None):
@@ -75,7 +74,7 @@ class DealExam:
         # 字体解密器
         self.font_decoder = FontDecoder()
 
-        # 题库缓存
+        # 答题缓存（本地 SQLite，命中即复用，不再查询任何在线题库）
         exam_config = Config.data().get("question_bank", {})
         if exam_config.get("enabled", True):
             self.question_bank = QuestionBank(
@@ -83,13 +82,6 @@ class DealExam:
             )
         else:
             self.question_bank = None
-
-        # 在线题库
-        tiku_config = Config.data().get("tiku", {})
-        if tiku_config.get("enabled", True):
-            self.tiku = TikuProvider(tiku_config)
-        else:
-            self.tiku = None
 
         # LLM客户端
         llm_config = Config.data().get("llm", {})
@@ -104,9 +96,15 @@ class DealExam:
         self.auto_submit = Config.get("answer.auto_submit", True)
         self.submit_delay = Config.get("answer.submit_delay", 2)
         self.answer_mode = str(Config.get("answer.mode", "ai")).lower()
-        self.fallback_to_tiku = Config.get("answer.fallback_to_tiku", True)
+        if self.answer_mode == "tiku":   # 在线题库已移除，历史配置归一为 AI
+            self.answer_mode = "ai"
         self.no_answer_action = str(Config.get("answer.no_answer_action", "skip")).lower()
         self.auto_save = exam_config.get("auto_save", True)
+
+        # 当前作答单元（供 LLM 提示词携带课程/作业上下文，提升答题准确率）
+        self.active_unit_id = ""
+        self.active_media_name = ""
+        self.active_kind = "作业"
 
     def do_finish(self):
         from functions.deal_course import DealCourse
@@ -190,11 +188,12 @@ class DealExam:
         if not result:
             self.log.warning(f"'{media_name}' 未获取到题目")
             return empty_stats
-        questions, hidden_fields = result
+        questions, hidden_fields, page_form = result
 
         return self._answer_and_submit(
             questions, hidden_fields, media_name,
             work_id=work_id, defaults=defaults, jobid=jobid, enc=enc, ktoken=ktoken,
+            page_form=page_form,
         )
 
     def answer_independent_work(self, work_item: dict) -> dict:
@@ -228,7 +227,7 @@ class DealExam:
         if not result:
             self.log.warning(f"'{media_name}' 未获取到题目")
             return empty_stats
-        questions, hidden_fields = result
+        questions, hidden_fields, page_form = result
 
         if not questions:
             self.log.warning(f"'{media_name}' 题目列表为空（可能教师未创建完成该测验）")
@@ -246,15 +245,20 @@ class DealExam:
         return self._answer_and_submit(
             questions, hidden_fields, media_name,
             work_id=work_id, defaults=defaults, jobid=jobid, enc=enc, ktoken=None,
+            page_form=page_form, page_url=page_url,
         )
 
     def _answer_and_submit(self, questions: list, hidden_fields: dict, media_name: str,
                            work_id: str, defaults: dict, jobid: str,
-                           enc: str | None, ktoken: str | None) -> dict:
-        """共享的答题与提交流程（章节测验与独立作业复用）"""
+                           enc: str | None, ktoken: str | None,
+                           page_form: dict = None, page_url: str = "",
+                           kind: str = "作业") -> dict:
+        """共享的答题与提交流程（章节测验、独立作业与考试复用）"""
         self.log.info(f"[答题] '{media_name}' 共 {len(questions)} 道题，开始答题...")
+        self.active_media_name = media_name
+        self.active_kind = kind
 
-        cache_hits = tiku_hits = llm_calls = random_answers = 0
+        cache_hits = llm_calls = random_answers = 0
         answered = []
         for idx, q in enumerate(questions, 1):
             # 每题之间是暂停/停止的安全边界
@@ -268,18 +272,18 @@ class DealExam:
                 source = ans.get("source", "")
                 if source == "cache":
                     cache_hits += 1
-                elif source == "tiku":
-                    tiku_hits += 1
                 elif source == "llm":
                     llm_calls += 1
                 elif source == "random":
                     random_answers += 1
+            # 逐题实时上报，供界面展示「AI 做题」明细
+            self._emit_answer_result(q, ans, idx, len(questions), media_name)
             runtime.emit("exam_stats", "答题进度", stage="exam", payload={
                 "media": media_name,
                 "current": idx,
                 "total": len(questions),
                 "cache_hits": cache_hits,
-                "tiku_hits": tiku_hits,
+                "tiku_hits": 0,
                 "llm_calls": llm_calls,
                 "random_answers": random_answers,
             })
@@ -299,7 +303,8 @@ class DealExam:
                 submit_fail += missing_id_count
             if self.auto_submit and submittable:
                 ok, fail = self._submit_answers(
-                    work_id, submittable, defaults, jobid, enc, ktoken, hidden_fields
+                    work_id, submittable, defaults, jobid, enc, ktoken, hidden_fields,
+                    page_form=page_form, page_url=page_url,
                 )
                 submit_ok += ok
                 submit_fail += fail
@@ -322,12 +327,43 @@ class DealExam:
         return {
             "questions": len(questions),
             "cache_hits": cache_hits,
-            "tiku_hits": tiku_hits,
+            "tiku_hits": 0,
             "llm_calls": llm_calls,
             "random_answers": random_answers,
             "submit_ok": submit_ok,
             "submit_fail": submit_fail,
         }
+
+    def _emit_answer_result(self, question: dict, answer: dict | None, index: int,
+                            total: int, media_name: str):
+        """逐题上报作答结果，前端据此渲染「AI 做题」明细。"""
+        try:
+            if answer is None:
+                source = "failed"
+                status = "unreadable" if question.get("unreadable") else "skipped"
+                ans_text = ""
+                note = question.get("unreadable_reason") or (
+                    "手动模式，未作答" if self.answer_mode == "manual" else "未获得可靠答案")
+            else:
+                source = "ai" if answer.get("source") == "llm" else answer.get("source", "")
+                status = "answered"
+                ans_text = answer.get("answer", "")
+                note = ""
+            runtime.emit("answer_result", "答题结果", stage="exam", payload={
+                "index": index,
+                "total": total,
+                "media": media_name,
+                "question_id": question.get("question_id", ""),
+                "question_type": question.get("question_type", ""),
+                "question": (question.get("question_text") or "")[:300],
+                "options": question.get("options", []),
+                "answer": ans_text,
+                "source": source,
+                "status": status,
+                "note": note,
+            })
+        except Exception as e:
+            logger.debug(f"上报答题结果失败: {e}")
 
     def _fetch_independent_work_page(self, page_url: str, work_id: str, answer_id: str = ""):
         """
@@ -340,7 +376,7 @@ class DealExam:
         3. 直接调用题目接口(api/work)，以 workId+workAnswerId 定位
 
         Returns:
-            tuple(list, dict) 或 None
+            tuple(list, dict, dict) 或 None：(题目, 隐藏字段, 提交表单)
         """
         _headers = {"Referer": "https://mooc1.chaoxing.com/mooc2/work/list"}
 
@@ -371,14 +407,16 @@ class DealExam:
         return self._fetch_independent_via_api(work_id, answer_id)
 
     def _extract_independent_page(self, html: str):
-        """从作业页面提取题目与隐藏字段，无题目时返回None"""
+        """从作业页面提取题目、隐藏字段与提交表单，无题目时返回None"""
         if not html:
             return None
         decoded = self.font_decoder.decode_page(html)
         questions = self._parse_questions_from_html(decoded)
         if not questions:
             return None
-        return (questions, self._extract_form_hidden_fields(html))
+        hidden = self._extract_form_hidden_fields(decoded)
+        form = work_form.parse_form(decoded)
+        return (questions, hidden, form)
 
     @staticmethod
     def _find_work_question_url(html: str) -> str:
@@ -486,9 +524,10 @@ class DealExam:
             if not rsp:
                 return None
             decoded = self.font_decoder.decode_page(rsp)
-            hidden = self._extract_form_hidden_fields(rsp)
+            hidden = self._extract_form_hidden_fields(decoded)
             questions = self._parse_questions_from_html(decoded)
-            return (questions, hidden)
+            form = work_form.parse_form(decoded)
+            return (questions, hidden, form)
         except Exception as e:
             logger.error(f"获取作业题目失败: {e}")
             return None
@@ -508,13 +547,22 @@ class DealExam:
             return {}
 
     def _parse_questions_from_html(self, html: str) -> list[dict]:
-        """从HTML中解析题目"""
+        """从HTML中解析题目。
+
+        优先使用 work_form 的新版解析器（div.questionLi 结构，2024+ 页面），
+        无结果时回退到旧版 TiMu 选择器与正则兜底。
+        """
         questions = []
         try:
+            questions = work_form.parse_questions(html)
+            if questions:
+                logger.debug(f"新版解析器识别到 {len(questions)} 道题")
+                return questions
+
             ele = etree.HTML(html)
             timu_elements = ele.xpath("//div[@class='TiMu']")
             if not timu_elements:
-                timu_elements = ele.xpath("//div[contains(@class, 'TiMu')]")
+                timu_elements = ele.xpath("//div[contains(@class, 'questionLi')]")
             if not timu_elements:
                 timu_elements = ele.xpath("//div[contains(@class, 'question')]")
 
@@ -664,13 +712,20 @@ class DealExam:
         return questions
 
     def _answer_question(self, question: dict, idx: int = 0, total: int = 0) -> dict | None:
-        """回答单道题目（三级回退：缓存→题库→LLM）"""
+        """回答单道题目（回退链：答题缓存 → LLM → 随机/跳过）"""
         q_text = question.get("question_text", "")
         q_type = question.get("question_type", "单选题")
         options = question.get("options", [])
         q_id = question.get("question_id", "")
         icon = TYPE_ICONS.get(q_type, "未知")
         progress = f"[{idx}/{total}]" if total > 0 else ""
+
+        meta = {
+            "question_id": q_id, "question_text": q_text,
+            "question_type": q_type, "options": options,
+            "kind": question.get("kind"), "blank_count": question.get("blank_count", 0),
+            "answer_type": question.get("answer_type", ""),
+        }
 
         if not q_text:
             return None
@@ -685,63 +740,39 @@ class DealExam:
 
         display_text = q_text[:50] + "..." if len(q_text) > 50 else q_text
 
-        # 第1步：查本地缓存
+        # 第1步：查本地答题缓存
         if self.question_bank:
             cached = self.question_bank.lookup(q_text, options)
-            if cached and self._normalize_answer(q_type, cached, options):
-                cached = self._normalize_answer(q_type, cached, options)
-                self.log.info(f"  {progress}{icon} {display_text} -> {cached} (缓存)")
-                return {
-                    "question_id": q_id, "question_text": q_text,
-                    "question_type": q_type, "options": options,
-                    "answer": cached, "source": "cache",
-                }
+            normalized = self._normalize_answer(q_type, cached, options) if cached else ""
+            if normalized:
+                self.log.info(f"  {progress}{icon} {display_text} -> {normalized} (缓存)")
+                return {**meta, "answer": normalized, "source": "cache"}
 
-        # 第2步：查在线题库（tiku模式必用，ai模式由fallback开关控制）
-        use_tiku = self.answer_mode == "tiku" or (
-            self.answer_mode == "ai" and self.fallback_to_tiku
-        )
-        if self.tiku and use_tiku:
-            try:
-                tiku_answer = self.tiku.query(q_text, options)
-                if tiku_answer:
-                    final_answer = tiku_answer
-                    final_answer = self._normalize_answer(q_type, final_answer, options)
-                    if not final_answer:
-                        tiku_answer = None
-                    else:
-                        self.log.info(f"  {progress}{icon} {display_text} -> {final_answer} (题库)")
-                        return {
-                            "question_id": q_id, "question_text": q_text,
-                            "question_type": q_type, "options": options,
-                            "answer": final_answer, "source": "tiku",
-                        }
-            except Exception as e:
-                logger.debug(f"在线题库查询异常: {e}")
-
-        # 第3步：ai模式调用LLM
+        # 第2步：AI 作答（提示词携带课程/作业上下文，首次空答时用严格模式重试一次）
         if self.answer_mode == "ai":
             self.log.info(f"  {progress}{icon} {display_text}")
             self.log.info("    -> 调用 LLM...")
-            llm_result = self.llm.answer_single(question)
-            if llm_result:
-                answer = self._normalize_answer(q_type, llm_result, options)
-                if answer:
-                    self.log.info(f"    -> 答案: {answer} (LLM)")
-                    return {
-                        "question_id": q_id, "question_text": q_text,
-                        "question_type": q_type, "options": options,
-                        "answer": answer, "source": "llm",
-                    }
+            context = {
+                "course": self.course_name,
+                "media": self.active_media_name or "",
+                "kind": self.active_kind,
+            }
+            llm_result = self.llm.answer_single(question, context=context)
+            answer = self._normalize_answer(q_type, llm_result, options) if llm_result else ""
+            if not answer:
+                self.log.info("    -> 首次未得到可用答案，使用严格模式重试...")
+                llm_result = self.llm.answer_single(question, context=context, strict=True)
+                answer = self._normalize_answer(q_type, llm_result, options) if llm_result else ""
+            if answer:
+                self.log.info(f"    -> 答案: {answer} (LLM)")
+                return {**meta, "answer": answer, "source": "llm"}
+            self.log.warning(f"    -> LLM 返回内容无法用于该题型: {str(llm_result)[:60]}")
 
+        # 第3步：无答案时的兜底策略
         random_answer = self._random_answer(q_type, options)
         if random_answer:
             self.log.warning(f"  {progress}{icon} {display_text} -> {random_answer} (随机)")
-            return {
-                "question_id": q_id, "question_text": q_text,
-                "question_type": q_type, "options": options,
-                "answer": random_answer, "source": "random",
-            }
+            return {**meta, "answer": random_answer, "source": "random"}
 
         self.log.warning(f"  {progress}{icon} {display_text} -> 获取失败")
         return None
@@ -764,26 +795,27 @@ class DealExam:
         return None
 
     def _save_submitted_answers(self, answered: list[dict]):
-        """仅在服务器接受提交后写入缓存；缓存命中项无需重写。"""
+        """仅在服务器接受提交后写入缓存；缓存命中项与随机答案不重复写入。"""
         if not self.question_bank or not self.auto_save:
             return
         for item in answered:
-            if not item.get('verified_correct') or not item.get("answer"):
+            if item.get("source") != "llm" or not item.get("answer"):
                 continue
-            self.question_bank.save(
-                question_text=item.get("question_text", ""),
-                question_type=item.get("question_type", ""),
-                answer=item.get("answer", ""),
-                options=item.get("options", []),
-                course_id=self.course_id,
-            )
+            try:
+                self.question_bank.save(
+                    question_text=item.get("question_text", ""),
+                    question_type=item.get("question_type", ""),
+                    answer=item.get("answer", ""),
+                    options=item.get("options", []),
+                    course_id=self.course_id,
+                )
+            except Exception as e:  # 缓存失败不影响提交结果
+                logger.debug(f"答题缓存写入失败: {e}")
 
-    def _submit_answers(self, work_id: str, answered: list[dict], defaults: dict,
-                        jobid: str, enc: str | None, ktoken: str | None,
-                        hidden_fields: dict = None) -> tuple[int, int]:
-        """提交答案到服务器"""
-        self.log.info(f"  提交 {len(answered)} 道题的答案...")
-
+    def _legacy_submission(self, work_id: str, answered: list[dict], defaults: dict,
+                           jobid: str, enc: str | None,
+                           hidden_fields: dict | None) -> tuple[str, dict]:
+        """旧版表单拼装：页面缺少 form 时兜底使用。"""
         type_code_map = {
             "单选题": "0", "多选题": "1", "填空题": "2", "判断题": "3", "简答题": "4",
         }
@@ -792,7 +824,6 @@ class DealExam:
         if hidden_fields:
             form_data.update(hidden_fields)
 
-        # 清除已有的答案字段
         keys_to_remove = [k for k in form_data if
                           k.startswith("answerEditor") or
                           (k.startswith("answer") and not k.startswith("answerwqbid")
@@ -816,10 +847,6 @@ class DealExam:
             "userId": str(self.user.uid or ""),
         })
 
-        if "totalQuestionNum" not in form_data or not form_data.get("totalQuestionNum"):
-            form_data["totalQuestionNum"] = str(len(answered))
-
-        # 添加每道题的答案
         for item in answered:
             idx = item.get("question_id", "")
             answer = item.get("answer", "")
@@ -840,39 +867,74 @@ class DealExam:
                 for bi in range(1, tk_size + 1):
                     blank_answer = blanks[bi - 1].strip() if bi - 1 < len(blanks) else ""
                     form_data[f"answerEditor{idx}{bi}"] = blank_answer
-            else:
-                if answer:
-                    form_data[f"answer{idx}"] = answer
+            elif answer:
+                form_data[f"answer{idx}"] = answer
 
             form_data[f"answertype{idx}"] = type_code
 
-        # 提交端点与参数位置
-        #
-        # 修复：原先提交到 addStudentWorkNewWeb 并把参数拼在查询串里，
-        # 服务端会返回“无效的参数：code-2”（源 CLI 日志中同样存在该失败）。
-        # 改为与同类开源实现一致的做法：POST addStudentWorkNew，
-        # 全部参数放在表单体中，查询串不带参数。
-        submit_url = SUBMIT_URL  # https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNew
         form_data.update({
             "_classId": str(defaults.get("clazzId", self.class_id)),
             "courseid": str(self.course_id),
             "token": form_data.get("enc_work", ""),
-            # 独立作业可能没有 workRelationId，回退用 workId
             "workid": form_data.get("workRelationId") or str(work_id),
             "testmooc2": "1",
             "wMicroNodeId": form_data.get("wMicroNodeId", "0"),
         })
-        # totalQuestionNum 保持题库页面下发的隐藏值（服务端下发的令牌，
-        # 不是题目数量）；缺失时才回退为实际题数
+        # totalQuestionNum 是页面下发的 32 位令牌，不是题目数量。
+        # 缺失时不能拿题数顶替（会被服务端判为无效参数），只提示后原样提交。
         if not form_data.get("totalQuestionNum"):
-            form_data["totalQuestionNum"] = str(len(answered))
+            logger.warning("提交表单缺少 totalQuestionNum 令牌，服务端可能拒绝本次提交")
+        return (SUBMIT_URL, form_data)
+
+    def _check_submit_ready(self) -> tuple[bool, str]:
+        """提交前校验作业状态：1=异常 2=需要验证码 3=正常。
+
+        校验失败不阻断提交（接口可能变动），只在校验明确给出异常/验证码时拦截，
+        避免把「验证码未过」误报成难以理解的 code-2 参数错误。
+        """
+        try:
+            url = (f"https://mooc1.chaoxing.com/mooc-ans/work/validate?"
+                   f"courseId={self.course_id}&classId={self.class_id}"
+                   f"&cpi={self.cpi}&wMicroNodeId=")
+            rsp = doGet(url=url, headers=self.headers)
+            if not rsp:
+                return (True, "")
+            data = json.loads(rsp)
+            if str(data.get("status")) == "1":
+                return (False, "作业提交校验未通过（账号或课程状态异常）")
+            if str(data.get("status")) == "2":
+                return (False, "作业提交需要验证码，请在网页端完成验证后再试")
+        except Exception as e:
+            logger.debug(f"提交前校验失败，按可提交处理: {e}")
+        return (True, "")
+
+    def _submit_answers(self, work_id: str, answered: list[dict], defaults: dict,
+                        jobid: str, enc: str | None, ktoken: str | None,
+                        hidden_fields: dict = None, page_form: dict = None,
+                        page_url: str = "") -> tuple[int, int]:
+        """提交答案到服务器。
+
+        学习通现行页面把提交端点与令牌写在页面 form 的 action 查询串里
+        （addStudentWorkNewWeb?_classId=..&courseid=..&token=..&totalQuestionNum=..），
+        因此优先按页面真实表单构造请求，仅在拿不到 form 时回退旧拼装方式。
+        """
+        self.log.info(f"  提交 {len(answered)} 道题的答案...")
+
+        if page_form and page_form.get("found") and page_form.get("controls"):
+            submit_url, form_data = work_form.build_submission(page_form, answered)
+            logger.debug(f"按页面表单提交: {submit_url}")
+        else:
+            submit_url, form_data = self._legacy_submission(
+                work_id, answered, defaults, jobid, enc, hidden_fields)
+            logger.warning("页面未提供提交表单，使用兼容模式提交")
 
         try:
+            referer = page_url or (f"https://mooc1.chaoxing.com/mooc-ans/work/doHomeWorkNew?"
+                                   f"workId={work_id}&courseid={self.course_id}"
+                                   f"&clazzid={defaults.get('clazzId', self.class_id)}"
+                                   f"&knowledgeid={defaults.get('knowledgeid', '')}&jobid={jobid}")
             _headers = {
-                "Referer": (f"https://mooc1.chaoxing.com/mooc-ans/work/doHomeWorkNew?"
-                            f"workId={work_id}&courseid={self.course_id}"
-                            f"&clazzid={defaults.get('clazzId', self.class_id)}"
-                            f"&knowledgeid={defaults.get('knowledgeid', '')}&jobid={jobid}"),
+                "Referer": referer,
                 "X-Requested-With": "XMLHttpRequest",
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             }
@@ -880,6 +942,10 @@ class DealExam:
 
             # 延迟提交（模拟人工操作，可配置），等待期间可暂停/停止
             runtime.sleep(self.submit_delay)
+            ready, reason = self._check_submit_ready()
+            if not ready:
+                self.log.error(f"  提交前校验未通过: {reason}")
+                return (0, len(answered))
             rsp = doPost(url=submit_url, headers=_headers, data=form_data)
             if not rsp:
                 self.log.error("  提交失败: 无响应")

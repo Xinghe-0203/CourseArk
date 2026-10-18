@@ -16,14 +16,8 @@ const labels: Record<string, string> = {
   "llm.temperature": "回答随机程度",
   "llm.max_tokens": "最大输出长度",
   "llm.timeout": "响应等待时间（秒）",
-  "tiku.enabled": "启用在线题库",
-  "tiku.timeout": "题库等待时间（秒）",
-  "tiku.order": "题库查询顺序（逗号分隔）",
-  "tiku.enncy-token": "Enncy Token",
-  "tiku.icodef-token": "ICodef Token",
-  "tiku.datam-token": "Datam Token",
-  "question_bank.enabled": "启用本地题库",
-  "question_bank.auto_save": "保存已验证的答案",
+  "question_bank.enabled": "启用答题缓存",
+  "question_bank.auto_save": "自动保存已验证的答案",
   "advanced.request_delay": "请求间隔（秒）",
   "advanced.request_delay_jitter": "随机间隔（秒）",
   "advanced.max_retries": "失败重试次数",
@@ -35,7 +29,7 @@ const labels: Record<string, string> = {
 };
 const groups: Record<string, string[]> = {
   ai: ["llm"],
-  bank: ["tiku", "question_bank"],
+  bank: ["question_bank"],
   advanced: ["scheduler", "advanced", "server", "storage"],
 };
 function get(path: string): any {
@@ -62,14 +56,6 @@ function update(event: Event, path: string) {
   if (input.type === "checkbox") set(path, input.checked);
   else if (input.type === "number")
     set(path, input.value === "" ? "" : Number(input.value));
-  else if (path === "tiku.order")
-    set(
-      path,
-      input.value
-        .split(/[,，]/)
-        .map((x) => x.trim())
-        .filter(Boolean),
-    );
   else set(path, input.value);
 }
 function fields() {
@@ -130,7 +116,7 @@ function importSource() {
         v-for="(name, key) in {
           learning: '学习方式',
           ai: 'AI 服务',
-          bank: '题库来源',
+          bank: '答题缓存',
 
           advanced: '运行与存储',
         }"
@@ -156,7 +142,7 @@ function importSource() {
           {{
             {
               ai: "AI 服务",
-              bank: "题库来源",
+              bank: "答题缓存",
 
               advanced: "运行与存储",
             }[tab]
@@ -168,7 +154,7 @@ function importSource() {
               ? "填写兼容接口与模型。已保存的密钥不会显示，留空会保留。"
               : tab === "advanced"
                 ? "调整后台并发与等待策略。端口变更需要重启服务。"
-                : "按需要启用并保存配置。"
+                : "答题缓存用于复用已验证的答案；清空或导入请前往「答题缓存」页面。"
           }}
         </p>
         <div class="form-grid">

@@ -1,5 +1,5 @@
 """多账号 Vue 验收：临时数据目录、停用调度，不连接学习通。"""
-import json, socket, sys, threading, time
+import json, re, socket, sys, threading, time
 from pathlib import Path
 import uvicorn
 from playwright.sync_api import sync_playwright
@@ -24,9 +24,22 @@ def check(url, output):
         assert heights==[520,520]
         assert page.locator('.execution-dashboard').count()==1
         passed('总览只显示执行中的两个账号与课程，固定520px卡片与真实进度仪表盘')
+        # 运行中进度小窗：当前动作、已用时、预计剩余，可最小化/展开
+        win=page.locator('.progress-window')
+        win.wait_for()
+        text=win.inner_text()
+        assert '已用时' in text and '预计剩余' in text
+        page.wait_for_function('document.querySelector(".progress-window-activity")?.textContent.includes("正在学习")',timeout=10000)
+        assert re.search(r'\d{2}:\d{2}:\d{2}',win.inner_text())
+        win.get_by_role('button',name='最小化进度小窗').click()
+        page.wait_for_function('document.querySelectorAll(".progress-window-body").length===0')
+        win.get_by_role('button',name='展开进度小窗').click()
+        page.locator('.progress-window-body').wait_for()
+        page.screenshot(path=str(output/'desktop-progress-window.png'))
+        passed('运行进度小窗显示当前动作/已用时/预计剩余，可最小化与展开')
         for width,height,name in [(1920,1080,'wide'),(1440,1000,'desktop'),(390,844,'mobile')]:
             page.set_viewport_size({'width':width,'height':height})
-            for title in ['工作总览','账号与课程','学习任务','我的题库','问题中心','偏好设置']:
+            for title in ['工作总览','账号与课程','学习任务','答题缓存','问题中心','偏好设置']:
                 page.get_by_role('navigation',name='主要导航').get_by_role('button',name=title).click()
                 page.get_by_role('heading',name=title,exact=True).wait_for()
                 page.wait_for_timeout(180)
@@ -80,7 +93,7 @@ def check(url, output):
         dialog.locator('.course-option input:checked').first.wait_for()
         assert dialog.locator('.course-picker section').count()==2
         assert dialog.locator('.course-option input:checked').count()==4
-        assert [s.strip() for s in dialog.locator('.feature-grid button').all_text_contents()]==['课程任务点','独立作业']
+        assert [s.strip() for s in dialog.locator('.feature-grid button').all_text_contents()]==['课程任务点','独立作业','独立考试']
         dialog.get_by_role('button',name='上一步：选择账号',exact=True).click()
         dialog.locator('.wizard-account input:checked').first.uncheck()
         dialog.get_by_role('button',name='下一步：选择课程',exact=True).click()
@@ -137,6 +150,13 @@ def check(url, output):
         passed('空账号禁止下一步，读取失败分账号提示，全选排除关闭课程')
         page.get_by_role('button',name='任务记录与历史',exact=True).click()
         page.get_by_label('任务状态').select_option('all')
+        summary=page.locator('.task-live-summary').first
+        summary.wait_for()
+        page.wait_for_function('''() => Array.from(document.querySelectorAll(".task-live-summary")).some((el) => el.textContent.includes("预计剩余"))''')
+        texts=[t for t in page.locator('.task-live-summary').all_inner_texts() if t]
+        assert texts and all('预计剩余' in t for t in texts), ascii(texts)
+        assert any(('正在' in t) or ('暂停' in t) for t in texts), ascii(texts)
+        passed('任务列表运行中行显示当前动作与预计剩余时间')
         page.get_by_label('任务详情',exact=True).first.click()
         dialog.wait_for()
         page.get_by_role('button',name='诊断日志',exact=True).click()
@@ -156,16 +176,87 @@ def check(url, output):
         assert after==before-1
         page.keyboard.press('Escape');assert notice.count()==0
         passed('站内通知栏读取、标记处理与 Escape 关闭')
-        nav.get_by_role('button',name='我的题库').click()
-        page.get_by_role('button',name='导入题库',exact=True).click()
-        page.get_by_label('题库内容').fill(json.dumps([{'question_text':'Vue界面验收','answer':'A','options':['A.甲','B.乙'],'question_type':'单选题'}],ensure_ascii=False))
+        nav.get_by_role('button',name='答题缓存').click()
+        page.get_by_role('button',name='导入缓存',exact=True).click()
+        page.get_by_label('缓存内容').fill(json.dumps([{'question_text':'Vue界面验收','answer':'A','options':['A.甲','B.乙'],'question_type':'单选题'}],ensure_ascii=False))
         page.get_by_role('button',name='检查并预览').click()
         page.get_by_text('已识别 1 道题',exact=False).wait_for()
         page.get_by_role('button',name='确认导入').click()
         page.wait_for_selector('.modal',state='detached')
-        page.get_by_label('搜索题库').fill('Vue界面验收')
+        page.get_by_label('搜索答题缓存').fill('Vue界面验收')
         page.get_by_text('Vue界面验收',exact=True).wait_for()
-        passed('题库导入预览、确认与搜索')
+        passed('答题缓存导入预览、确认与搜索')
+        page.get_by_label('搜索答题缓存').fill('')
+        page.get_by_role('button',name='清空全部',exact=True).click()
+        page.get_by_role('button',name='确认清空全部',exact=True).click()
+        page.wait_for_selector('.modal',state='detached')
+        assert page.request.get(url+'/api/question-bank/stats').json()['total']==0
+        passed('清空全部答题缓存需二次确认，清空后总量为 0')
+        # 独立考试：加载列表、全选/取消全选、单选后按 selected 范围提交
+        def catalog_route(route):
+            exam='kind=exam' in route.request.url
+            items=([{'id':'exam-a','title':'期末考试 A','status':'待做','start_time':'10/20 09:00',
+                     'end_time':'10/20 11:00','limit_time':90,'valid':True},
+                    {'id':'exam-b','title':'章节小测 B','status':'已完成','valid':False}] if exam else
+                   [{'id':'hw-a','title':'第三章作业','status':'待做','time_left':'2 天','valid':True}])
+            route.fulfill(status=200,content_type='application/json',body=json.dumps({
+                'account_id':'','course_id':'','kind':'exam' if exam else 'work',
+                'items':items,'fetched_at':time.time(),'from_cache':False,'error':''},ensure_ascii=False))
+        catalog_pattern=re.compile(r'/api/accounts/[^/]+/courses/[^/]+/catalog')
+        page.route(catalog_pattern,catalog_route)
+        nav.get_by_role('button',name='学习任务').click()
+        page.get_by_role('button',name='新建学习任务',exact=True).click()
+        dialog.wait_for()
+        dialog.get_by_role('button',name='清除账号选择',exact=True).click()
+        dialog.locator('.wizard-account input').first.check()
+        dialog.get_by_role('button',name='下一步：选择课程',exact=True).click()
+        page.wait_for_function('document.querySelectorAll(".course-option").length>0')
+        dialog.get_by_role('button',name='全选可学习课程',exact=True).click()
+        page.wait_for_function('document.querySelectorAll(".course-option").length>0')
+        dialog.get_by_role('button',name='独立考试',exact=True).click()
+        dialog.get_by_role('button',name='加载考试列表',exact=False).click()
+        page.locator('.catalog-item').first.wait_for()
+        assert dialog.locator('.catalog-item input:checked').count()>=1
+        dialog.get_by_role('button',name='全选考试',exact=False).click()
+        assert dialog.locator('.catalog-item input:checked').count()==0
+        dialog.locator('.catalog-item input:not(:disabled)').first.check()
+        assert '已选 1' in dialog.inner_text()
+        page.screenshot(path=str(output/'desktop-exam-selection.png'))
+        with page.expect_response(lambda r:r.url.endswith('/api/runs') and r.request.method=='POST') as created:
+            dialog.get_by_role('button',name=re.compile(r'创建 \d+ 项任务'),exact=False).click()
+        payload=created.value.request.post_data_json
+        assert payload['feature']=='exam'
+        assert payload['params']['selection']['mode']=='selected'
+        assert len(payload['params']['selection']['ids'])==1
+        page.wait_for_selector('.modal',state='detached')
+        page.unroute(catalog_pattern)
+        passed('独立考试可加载待做考试，默认全选、取消全选与单选后提交 selected 范围')
+        nav.get_by_role('button',name='学习任务').click()
+        page.get_by_role('button',name='任务记录与历史',exact=True).click()
+        page.get_by_label('任务状态').select_option('paused')
+        page.wait_for_timeout(300)
+        # 独立考试任务：stage=exam 的运行文案，且老任务无逐题明细时给空状态
+        page.locator('.task-row',has_text='中国近现代史纲要').filter(has_text='已暂停').first.get_by_label('任务详情',exact=True).click()
+        dialog.wait_for()
+        live_line=page.locator('.detail-live-line')
+        live_line.get_by_text('AI 正在作答考试').wait_for()
+        assert '已用时' in live_line.inner_text()
+        page.get_by_role('button',name='AI 做题',exact=False).click()
+        page.locator('.answer-empty').wait_for()
+        assert page.locator('.answer-card').count()==0
+        page.keyboard.press('Escape')
+        passed('独立考试任务详情显示 AI 正在作答考试与运行时长，无明细时给空状态')
+        # 独立作业任务：逐题明细与来源摘要
+        page.locator('.task-row',has_text='大学英语综合').filter(has_text='已暂停').first.get_by_label('任务详情',exact=True).click()
+        dialog.wait_for()
+        page.get_by_role('button',name='AI 做题',exact=False).click()
+        page.wait_for_function('document.querySelectorAll(".answer-card").length>=4')
+        assert page.locator('.answer-summary').count()==1
+        assert page.get_by_text('未识别',exact=True).count()>=1
+        page.screenshot(path=str(output/'desktop-ai-answers.png'))
+        page.keyboard.press('Escape')
+        assert dialog.count()==0
+        passed('AI 做题明细按题渲染，摘要含来源分布且未识别题目标注原因')
         nav.get_by_role('button',name='偏好设置').click()
         assert page.get_by_role('button',name='外部通知',exact=True).count()==0
         page.get_by_role('button',name='AI 服务',exact=True).click()
@@ -188,6 +279,9 @@ def check(url, output):
         page.get_by_label('标为已处理',exact=True).click()
         page.wait_for_function('document.querySelectorAll(".problem-card").length===100')
         passed('最后一页通知处理后回到有效页，其余通知仍可访问')
+        win.get_by_role('button',name='关闭进度小窗').click()
+        page.wait_for_function('document.querySelectorAll(".progress-window").length===0')
+        passed('进度小窗可关闭，关闭后不再遮挡页面')
         browser.close()
     checks.append({'name':'浏览器没有运行错误','ok':not errors})
     report={'checks':checks,'errors':errors,'passed':sum(c['ok'] for c in checks)}

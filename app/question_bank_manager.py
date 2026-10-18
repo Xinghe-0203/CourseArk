@@ -1,7 +1,7 @@
 """
-共享题库管理
+共享答题缓存管理
 
-所有账号与 Worker 使用同一个 data/question_bank.db：
+所有账号与 Worker 使用同一个 data/question_bank.db（本地答题缓存，只做同题复用）：
 - 统计：总数、命中、按题型、按课程、最近写入
 - 搜索：按题干模糊查询
 - 导出：JSON / CSV
@@ -536,5 +536,19 @@ def delete_by_hash(question_hash: str) -> bool:
         cursor = conn.execute("DELETE FROM question_cache WHERE hash = ?", (question_hash,))
         conn.commit()
         return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def clear_cache() -> int:
+    """清空全部本地答题缓存（含命中统计计数），返回删除的题目条数"""
+    conn = _connect()
+    try:
+        _immediate_transaction(conn)
+        cursor = conn.execute("DELETE FROM question_cache")
+        deleted = cursor.rowcount
+        conn.execute("DELETE FROM question_stats")
+        conn.commit()
+        return int(deleted or 0)
     finally:
         conn.close()

@@ -23,6 +23,7 @@ FEATURE_TEXT = {
     "course_all": ("一键完成课程任务", "完成课程任务点"),
     "chapter_exam": ("章节测验答题", "完成章节测验"),
     "independent_homework": ("独立作业答题", "完成独立作业"),
+    "exam": ("独立考试", "完成独立考试"),
     "video": ("刷取视频时长", "刷取视频"),
     "learn_count": ("刷取学习次数", "刷取学习次数"),
     "download": ("下载课程资源", "下载资源"),
@@ -189,19 +190,51 @@ def describe(event: str, message: str, level: str = "info", stage: str = "",
         scope = f"进度 {current}/{total} 题" if (current and total) else "开始作答"
         sources = []
         if payload.get("cache_hits"):
-            sources.append(f"题库缓存 {payload['cache_hits']}")
-        if payload.get("tiku_hits"):
-            sources.append(f"在线题库 {payload['tiku_hits']}")
+            sources.append(f"答题缓存 {payload['cache_hits']}")
+        # tiku_hits 仅为兼容旧事件保留 key，v2.1 已删除在线题库，不再展示
         if payload.get("llm_calls"):
             sources.append(f"AI 作答 {payload['llm_calls']}")
         if payload.get("random_answers"):
             sources.append(f"随机作答 {payload['random_answers']}")
+        if stage == "exam":
+            title = f"AI 正在作答考试：{media}"
+        else:
+            title = f"正在作答：{media}"
         return {
             "kind": "answer",
             "actor": "答题",
-            "title": f"正在作答：{media}",
+            "title": title,
             "detail": scope + (" · " + " · ".join(sources) if sources else ""),
             "level": "info",
+            "progress": progress,
+        }
+
+    # ---- 逐题作答结果 ----
+    if event == "answer_result":
+        media = payload.get("media") or name or "作业"
+        index, total = payload.get("index"), payload.get("total")
+        status = str(payload.get("status") or "")
+        scope = f"第 {index}/{total} 题" if (index and total) else (f"第 {index} 题" if index else "")
+        question_type = str(payload.get("question_type") or "")
+        answer = str(payload.get("answer") or "")
+        note = str(payload.get("note") or "")
+        if status == "answered":
+            title, level_text = "AI 已作答", "info"
+            detail = " · ".join(part for part in (scope, question_type,
+                                                 f"答案 {answer}" if answer else "") if part)
+        elif status == "skipped":
+            title, level_text = "已跳过", "warning"
+            detail = " · ".join(part for part in (scope, note or "未作答") if part)
+        else:
+            title, level_text = "题面未识别", "warning"
+            detail = " · ".join(part for part in (scope, note, question_type) if part)
+        progress = round(index / total * 100) if index and total else None
+        return {
+            "kind": "answer",
+            "actor": "答题",
+            "title": f"{title}：{media}",
+            "detail": detail,
+            "level": level_text,
             "progress": progress,
         }
 

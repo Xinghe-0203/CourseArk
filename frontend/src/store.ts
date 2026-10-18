@@ -1,10 +1,12 @@
 import { reactive } from "vue";
 import { request } from "./api";
+import { active } from "./format";
 import type {
   Account,
   Task,
   Problem,
   Settings,
+  TaskLive,
   View,
   AccountWorkspace,
 } from "./types";
@@ -27,7 +29,37 @@ export const state = reactive({
   newTask: false,
   newTaskFeature: "course_all",
   newTaskAccount: "",
+  // SSE 事件计数：任务详情等局部视图据此按需刷新。
+  eventRevision: 0,
+  // 运行中快照缓存（进度小窗 / 任务列表行摘要共享），键为任务 id。
+  liveById: {} as Record<string, TaskLive | null>,
 });
+/** 写入运行中快照，同时同步任务列表中的行摘要。 */
+export function setTaskLive(id: string, live?: TaskLive | null) {
+  state.liveById[id] = live ?? null;
+  const task = state.tasks.find((item) => item.id === id);
+  if (task) task.live = live ?? null;
+}
+// 列表接口不含 live：按任务节流补齐运行中快照（小窗与任务行摘要共用）。
+const liveFetchedAt: Record<string, number> = {};
+async function refreshLives() {
+  const now = Date.now();
+  const running = state.tasks.filter(
+    (task) => active(task) || task.status === "paused",
+  );
+  await Promise.all(
+    running.map(async (task) => {
+      if (now - (liveFetchedAt[task.id] || 0) < 2500) return;
+      liveFetchedAt[task.id] = now;
+      try {
+        const detail = await request<Task>(`/tasks/${task.id}`);
+        setTaskLive(task.id, detail.live);
+      } catch {
+        liveFetchedAt[task.id] = 0;
+      }
+    }),
+  );
+}
 export async function act(
   key: string,
   action: () => Promise<unknown>,
@@ -53,9 +85,7 @@ export async function refresh() {
   try {
     const values = await Promise.all([
       request<{ items: Account[] }>("/accounts"),
-      request<{ items: Task[]; total: number }>(
-        "/tasks?limit=100&feature=course_all,independent_homework",
-      ),
+      request<{ items: Task[]; total: number }>("/tasks?limit=100"),
       request<{ items: Problem[]; unread: number }>(
         "/notifications?include_read=false",
       ),
@@ -63,7 +93,10 @@ export async function refresh() {
     ]);
     if (current !== generation) return;
     state.accounts = values[0].items;
-    state.tasks = values[1].items;
+    // 列表接口不带 live，用最近一次小窗轮询的快照补齐，避免行摘要闪回。
+    state.tasks = values[1].items.map((task) =>
+      state.liveById[task.id] ? { ...task, live: state.liveById[task.id] } : task,
+    );
     state.totalTasks = values[1].total;
     state.problems = values[2].items;
     state.unreadProblems = values[2].unread;
@@ -87,6 +120,7 @@ export async function refresh() {
       validCourses.has(key),
     );
     state.online = true;
+    void refreshLives();
   } catch (error) {
     state.online = false;
     if (!state.accounts.length)

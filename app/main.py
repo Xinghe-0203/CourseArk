@@ -7,7 +7,7 @@ FastAPI + Uvicorn。Web 进程职责：
 - 调度 Worker 子进程
 - 接收结构化事件并写入数据库
 - 通过 SSE 向浏览器推送事件
-- 提供题库统计、搜索、导入和导出
+- 提供答题缓存的统计、搜索、导入和导出
 
 Web 进程不直接持有超星账号 Session，不在 API 请求线程执行长时间刷课。
 """
@@ -28,8 +28,8 @@ from pydantic import BaseModel, Field
 
 from .log_redaction import redact, redact_data
 
-from . import (accounts, events, narrative, paths, question_bank_manager,
-               session_service, settings, sync_service)
+from . import (accounts, catalog_service, events, narrative, paths,
+               question_bank_manager, session_service, settings, sync_service)
 from .database import Database
 from .task_manager import TaskManager
 from .task_model import (FEATURE_LABELS, RunCreateRequest, build_tasks,
@@ -394,6 +394,22 @@ def _register_routes(app: FastAPI):
             "syncing": sync_service.is_syncing(account_id),
         }
 
+    # ---------------- 课程目录（独立作业 / 独立考试） ----------------
+
+    @app.get("/api/accounts/{account_id}/courses/{course_id}/catalog")
+    def course_catalog(account_id: str, course_id: str, kind: str = "work",
+                       refresh: bool = False):
+        """列出课程下待做的作业 / 考试；默认缓存 600 秒，refresh=true 强制重取"""
+        try:
+            return catalog_service.fetch_catalog(db, account_id, course_id,
+                                                 kind=kind, refresh=refresh)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="账号不存在")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+
     # ---------------- 批次与任务 ----------------
 
     @app.get('/api/workspace/accounts')
@@ -500,6 +516,11 @@ def _register_routes(app: FastAPI):
         detail = _task_view(row)
         detail["events"] = [_event_view(item) for item in db.list_events(task_id, limit=50, latest=True)]
         detail["activity_events"] = [_event_view(item) for item in db.list_events(task_id, limit=50, latest=True, business=True)]
+        # 逐题作答明细：老任务没有 answer_result 事件时返回空数组与零值汇总
+        answers = _task_answers(task_id)
+        detail["answers"] = answers
+        detail["answers_summary"] = _answers_summary(answers, detail.get("stats") or {})
+        detail["live"] = _live_view(row)
         return detail
 
     @app.post("/api/tasks/{task_id}/pause")
@@ -719,11 +740,16 @@ def _register_routes(app: FastAPI):
             raise HTTPException(status_code=404, detail="预设不存在")
         return {"ok": True}
 
-    # ---------------- 题库 ----------------
+    # ---------------- 答题缓存 ----------------
 
     @app.get("/api/question-bank/stats")
     def bank_stats(days: int = Query(default=7, ge=1, le=365)):
         return question_bank_manager.stats(days)
+
+    @app.delete("/api/question-bank")
+    def bank_clear():
+        """清空全部本地答题缓存（只删 WebUI 自己的缓存，不动源 CLI 的题库文件）"""
+        return {"deleted": question_bank_manager.clear_cache()}
 
     @app.get("/api/question-bank/search")
     def bank_search(q: str = "", question_type: str = "",
@@ -909,6 +935,207 @@ def _task_view(row: dict) -> dict:
         "created_at": row.get("created_at"),
         "started_at": row.get("started_at"),
         "finished_at": row.get("finished_at"),
+    }
+
+
+# 逐题作答明细最多回放的 answer_result 事件条数：长作业也只需最近 500 条
+ANSWER_EVENT_LIMIT = 500
+
+
+def _answer_view(row: dict) -> dict:
+    """把一条 answer_result 事件转成逐题明细（payload 已通过 redact_data 脱敏）"""
+    payload = redact_data(_json(row.get("payload_json")))
+    if not isinstance(payload, dict):
+        payload = {}
+    media = str(payload.get("media") or "")
+    index = payload.get("index")
+    options = payload.get("options")
+    if not isinstance(options, list):
+        options = []
+    ts = row.get("ts") or time.time()
+    return {
+        "key": f"{media}#{index}",
+        "index": index,
+        "total": payload.get("total"),
+        "media": media,
+        "question_type": str(payload.get("question_type") or ""),
+        "question": str(payload.get("question") or ""),
+        "options": [str(item) for item in options],
+        "answer": str(payload.get("answer") or ""),
+        "source": str(payload.get("source") or ""),
+        "status": str(payload.get("status") or ""),
+        "note": str(payload.get("note") or ""),
+        "ts": ts,
+        "time": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(ts)),
+    }
+
+
+def _task_answers(task_id: str) -> list:
+    """按 (media, index) 去重取最新一条，保持题目首次出现的顺序返回平铺数组"""
+    rows = db.list_events(task_id, limit=ANSWER_EVENT_LIMIT, event="answer_result", latest=True)
+    latest, order = {}, []
+    for row in rows:
+        item = _answer_view(row)
+        dedupe_key = (item["media"], item["index"])
+        if dedupe_key not in latest:
+            order.append(dedupe_key)
+        latest[dedupe_key] = item
+    return [latest[key] for key in order]
+
+
+def _answers_summary(items: list, stats: dict) -> dict:
+    """逐题汇总；submit_* 取自任务 stats（服务器对提交的确认）"""
+    summary = {
+        "answered": 0, "skipped": 0, "total": 0,
+        "ai": 0, "cache": 0, "random": 0, "failed": 0,
+        "submit_ok": int((stats or {}).get("submit_ok", 0) or 0),
+        "submit_fail": int((stats or {}).get("submit_fail", 0) or 0),
+    }
+    media_totals = {}
+    for item in items:
+        if item["status"] == "answered":
+            summary["answered"] += 1
+        elif item["status"] in ("skipped", "unreadable"):
+            summary["skipped"] += 1
+        if item["source"] in ("ai", "cache", "random", "failed"):
+            summary[item["source"]] += 1
+        if item.get("total"):
+            summary_media = item["media"]
+            media_totals[summary_media] = max(media_totals.get(summary_media, 0),
+                                              int(item["total"] or 0))
+    # 每题只报一次总数：同一份作业以最大的 total 为准；没有 total 时退回已见题数
+    summary["total"] = sum(media_totals.values()) or len(items)
+    return summary
+
+
+# 运行中快照最多回放的业务事件条数：小窗只关心“最近在做什么”
+LIVE_EVENT_LIMIT = 60
+
+# 没有业务事件时用阶段名兜底
+_STAGE_ACTIVITY = {
+    "login": "正在登录学习通",
+    "course": "正在读取课程",
+    "chapter": "正在处理章节",
+    "video": "正在学习视频",
+    "audio": "正在学习音频",
+    "exam": "AI 正在作答考试",
+    "homework": "AI 正在作答作业",
+    "work": "AI 正在作答作业",
+    "download": "正在下载资源",
+    "sync": "正在同步课程",
+    "finish": "正在收尾",
+}
+
+
+def _number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _live_unit(rows: list):
+    """最近一条带数字进度的 work_progress / media_progress 事件"""
+    for item in reversed(rows):
+        if item.get("event") not in ("work_progress", "media_progress"):
+            continue
+        payload = redact_data(_json(item.get("payload_json")))
+        if not isinstance(payload, dict):
+            continue
+        label = str(payload.get("name") or payload.get("media") or "").strip()
+        current, total = payload.get("current"), payload.get("total")
+        if _number(current) and _number(total) and float(total) > 0:
+            return {"label": label, "current": current, "total": total}
+    return None
+
+
+def _task_level_progress(stats: dict):
+    """任务级已完成项 / 总项（用于没有当前项速率时的兜底 ETA）"""
+    from .work_progress import summarize
+    stats = stats or {}
+    work = summarize(stats.get("work") or {})
+    candidates = []
+    if _number(stats.get("success")) or _number(stats.get("completed")):
+        completed = stats.get("success") if _number(stats.get("success")) else stats.get("completed")
+        candidates.append((completed, stats.get("total")))
+    candidates.append((work.get("completed"), work.get("total")))
+    for completed, total in candidates:
+        if _number(completed) and int(completed) > 0 and _number(total) and int(total) > int(completed):
+            return int(completed), int(total)
+    return None
+
+
+def _live_eta(row: dict, unit, activity_at, elapsed: int):
+    """返回 (eta_seconds, eta_source)：优先当前项速率，其次任务级速率"""
+    if is_terminal(row.get("status", "")):
+        return None, None
+    now = time.time()
+    if unit:
+        current = float(unit["current"])
+        total = float(unit["total"])
+        age = now - float(activity_at or now)
+        if current > 0 and total > current and age > 1:
+            rate = current / age
+            return int(round((total - current) / rate)), "unit"
+    pair = _task_level_progress(_json(row.get("stats_json")))
+    if pair and elapsed > 0:
+        completed, total = pair
+        return int(round((total - completed) / completed * elapsed)), "task"
+    return None, None
+
+
+def _live_view(row: dict):
+    """
+    运行中快照：最近动作、已用时、当前项进度与预计剩余
+
+    老任务没有 started_at / 业务事件时返回 None，前端按“无快照”处理。
+    """
+    started = row.get("started_at")
+    if not started:
+        return None
+    now = time.time()
+    finished = row.get("finished_at")
+    if is_terminal(row.get("status", "")) and finished:
+        elapsed = int(max(0, float(finished) - float(started)))
+    else:
+        elapsed = int(max(0, now - float(started)))
+
+    business_rows = db.list_events(row["id"], limit=LIVE_EVENT_LIMIT,
+                                   latest=True, business=True)
+    recent_rows = db.list_events(row["id"], limit=LIVE_EVENT_LIMIT * 2, latest=True)
+    activity, activity_at = "", float(started)
+    for item in reversed(business_rows):
+        presentation = (_event_view(item) or {}).get("presentation") or {}
+        title = str(presentation.get("title") or "").strip()
+        if not title:
+            continue
+        detail = str(presentation.get("detail") or "").strip()
+        activity = f"{title} · {detail}" if detail else title
+        activity_at = float(item.get("ts") or started)
+        break
+    if not activity:
+        # 没有业务动态时用最近的进度事件兜底，小窗能看到“当前项”
+        for item in reversed(recent_rows):
+            if item.get("event") in ("log", "worker_exit"):
+                continue
+            presentation = (_event_view(item) or {}).get("presentation") or {}
+            title = str(presentation.get("title") or "").strip()
+            if not title:
+                continue
+            detail = str(presentation.get("detail") or "").strip()
+            activity = f"{title} · {detail}" if detail else title
+            activity_at = float(item.get("ts") or started)
+            break
+    if not activity:
+        stage = str(row.get("stage") or "").strip()
+        activity = _STAGE_ACTIVITY.get(stage) or ("正在" + stage if stage else "准备中")
+
+    unit = _live_unit(recent_rows)
+    eta_seconds, eta_source = _live_eta(row, unit, activity_at, elapsed)
+    return {
+        "activity": activity,
+        "activity_at": activity_at,
+        "elapsed_seconds": elapsed,
+        "unit": unit,
+        "eta_seconds": eta_seconds,
+        "eta_source": eta_source,
     }
 
 

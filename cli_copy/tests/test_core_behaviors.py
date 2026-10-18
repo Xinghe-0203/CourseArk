@@ -10,7 +10,6 @@ from functions.deal_media import MediaDownload
 from functions.deal_video import DealVideo
 from media.video import Video
 from utils.llm_client import LLMClient
-from utils.tiku_provider import TikuProvider
 
 
 class _FakeXPathElement:
@@ -78,9 +77,87 @@ class CoreBehaviorTests(unittest.TestCase):
         result = client._parse_response("**第1题：E**\n2. AC", 2)
         self.assertEqual(result, ["E", "AC"])
 
-    def test_tiku_letter_matching_supports_more_than_abcd(self):
-        self.assertEqual(TikuProvider.match_answer_to_options("E", ["A", "B", "C", "D", "E"]), "E")
-        self.assertEqual(TikuProvider.match_answer_to_options("A, C, E", ["A", "B", "C", "D", "E"]), "ACE")
+    def test_llm_prompt_carries_course_context(self):
+        client = LLMClient("https://example.invalid", "unused")
+        prompt = client._build_prompt(
+            [{"question_type": "单选题", "question_text": "题干", "options": ["A. 甲", "B. 乙"]}],
+            context={"course": "HTML5 APP应用开发", "media": "第4章组件", "kind": "作业"},
+        )
+        self.assertIn("课程：HTML5 APP应用开发", prompt)
+        self.assertIn("作答内容：作业「第4章组件」", prompt)
+        self.assertIn("共 1 题", prompt)
+
+    def test_llm_prompt_without_context_has_no_course_line(self):
+        client = LLMClient("https://example.invalid", "unused")
+        prompt = client._build_prompt([{"question_type": "判断题", "question_text": "题干"}])
+        self.assertNotIn("课程：", prompt)
+        self.assertTrue(prompt.startswith("共 1 题"))
+
+    def test_llm_strict_mode_appends_instructions(self):
+        client = LLMClient("https://example.invalid", "key")
+        captured = {}
+
+        def fake_call(prompt, strict=False):
+            captured["prompt"] = prompt
+            captured["strict"] = strict
+            return '{"answers":[{"index":1,"answer":"B"}]}'
+
+        client._call_api = fake_call
+        client.answer([{"question_type": "单选题", "question_text": "题干"}], strict=True)
+        self.assertTrue(captured["strict"])
+
+    def test_llm_cleans_common_answer_decorations(self):
+        client = LLMClient("https://example.invalid", "unused")
+        self.assertEqual(client._clean_value("答案：B."), "B")
+        self.assertEqual(client._clean_value("(C)"), "C")
+        self.assertEqual(client._clean_value("**D**"), "D")
+        self.assertEqual(client._clean_value("ABD"), "ABD")     # 多选原样保留
+        self.assertEqual(client._clean_value("正确"), "正确")
+        self.assertIsNone(client._clean_value("   "))
+
+    def test_llm_parse_ignores_reason_and_fences(self):
+        client = LLMClient("https://example.invalid", "unused")
+        text = '```json\n{"answers":[{"index":1,"answer":"C","reason":"因为 C 正确"}]}\n```'
+        self.assertEqual(client._parse_response(text, 1), ["C"])
+        self.assertEqual(client._parse_response('{"answers":[{"index":1,"answer":""}]}', 1), [None])
+
+    def test_deal_exam_answers_with_context_and_retries_strict(self):
+        class FakeLLM:
+            def __init__(self):
+                self.calls = []
+
+            def answer_single(self, question, context=None, strict=False):
+                self.calls.append({"context": context, "strict": strict})
+                return "" if len(self.calls) == 1 else "B"
+
+        class FakeLog:
+            def info(self, *_a): pass
+            def warning(self, *_a): pass
+
+        exam = DealExam.__new__(DealExam)
+        exam.answer_mode = "ai"
+        exam.question_bank = None
+        exam.no_answer_action = "skip"
+        exam.auto_save = False
+        exam.log = FakeLog()
+        exam.course_name = "HTML5 APP应用开发"
+        exam.active_media_name = "第4章组件"
+        exam.active_kind = "作业"
+        exam.llm = FakeLLM()
+        result = exam._answer_question({
+            "question_id": "404552708", "question_type": "单选题",
+            "question_text": "挂载完成后调用的是？", "options": ["A. created", "B. mounted"],
+            "kind": "choice",
+        })
+        self.assertEqual(result["answer"], "B")
+        self.assertEqual(result["source"], "llm")
+        self.assertEqual(len(exam.llm.calls), 2)
+        self.assertFalse(exam.llm.calls[0]["strict"])
+        self.assertTrue(exam.llm.calls[1]["strict"])
+        context = exam.llm.calls[0]["context"]
+        self.assertEqual(context["course"], "HTML5 APP应用开发")
+        self.assertEqual(context["media"], "第4章组件")
+        self.assertEqual(context["kind"], "作业")
 
     def test_answer_normalization_rejects_ambiguous_judgment(self):
         exam = DealExam.__new__(DealExam)
@@ -311,22 +388,8 @@ class CoreBehaviorTests(unittest.TestCase):
         self.assertIsNone(_clean_name(None))
         self.assertIsNone(_clean_name("   "))
 
-    def test_submit_uses_form_body_and_correct_endpoint(self):
-        """
-        回归：提交曾 POST 到 addStudentWorkNewWeb 并把参数拼在查询串，
-        服务端返回“无效的参数：code-2”。
-        正确做法：POST addStudentWorkNew，参数全部放在表单体。
-        """
-        import json as _json
-        from unittest.mock import patch
-
-        from core.config import Config
-        from functions import deal_exam as mod
-        from functions.deal_exam import DealExam, SUBMIT_URL
-
-        self.assertEqual(
-            SUBMIT_URL, "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNew")
-        self.assertNotIn("addStudentWorkNewWeb", SUBMIT_URL)
+    def _make_exam(self):
+        from functions.deal_exam import DealExam
 
         exam = DealExam.__new__(DealExam)
         exam.course_id = "266056498"
@@ -338,7 +401,95 @@ class CoreBehaviorTests(unittest.TestCase):
         exam.auto_save = False
         exam.question_bank = None
         exam.user = type("U", (), {"uid": "413263029"})()
+        return exam
 
+    def test_submit_replays_page_form(self):
+        """
+        回归：学习通作业页的真实表单是
+        action="/mooc-ans/work/addStudentWorkNewWeb?_classId=..&courseid=..&token=..&totalQuestionNum=.."
+        且浏览器提交前会用 version() 追加 ua/formType/saveStatus/version 参数。
+        忽略页面表单（改打别处或丢掉查询串里的令牌）会得到“无效的参数：code-2”。
+        """
+        import json as _json
+        from unittest.mock import patch
+
+        from core.config import Config
+        from functions.deal_exam import DealExam
+
+        exam = self._make_exam()
+        captured = {}
+
+        def fake_post(url, headers=None, data=None, if_full_back=False):
+            captured["url"] = url
+            captured["data"] = data
+            captured["headers"] = headers
+            return _json.dumps({"status": True})
+
+        page_form = {
+            "found": True,
+            "action": ("https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNewWeb"
+                       "?_classId=151893764&courseid=266056498&token=2c292aeb00e3f15e"
+                       "&totalQuestionNum=6eaca1bf84b6b650bc4b09d8f8805f1e&wMicroNodeId="),
+            "method": "post",
+            "controls": {
+                "courseId": "266056498", "classId": "151893764",
+                "cpi": "496369168", "workRelationId": "55459339",
+                "totalQuestionNum": "6eaca1bf84b6b650bc4b09d8f8805f1e",
+                "answerwqbid": "",
+            },
+        }
+
+        old_data = Config._data
+        Config._data = Config._default_config()
+        try:
+            with patch("functions.deal_exam.doPost", side_effect=fake_post), \
+                 patch("functions.deal_exam.doGet", return_value=""), \
+                 patch("functions.deal_exam.runtime.sleep", lambda *_: None):
+                ok, fail = exam._submit_answers(
+                    work_id="55459339",
+                    answered=[{
+                        "question_id": "111", "question_type": "单选题",
+                        "answer": "B", "question_text": "题", "options": [],
+                        "kind": "choice", "answer_type": "0",
+                    }],
+                    defaults={"clazzId": "151893764", "knowledgeid": "1219259997"},
+                    jobid="work-55459339",
+                    enc="2c292aeb00e3f15e16910622fc0070cd",
+                    ktoken=None,
+                    hidden_fields={"totalQuestionNum":
+                                   "6eaca1bf84b6b650bc4b09d8f8805f1e"},
+                    page_form=page_form,
+                    page_url=("https://mooc1.chaoxing.com/mooc-ans/mooc2/work/task"
+                              "?courseId=266056498&workId=55459339"),
+                )
+        finally:
+            Config._data = old_data
+
+        self.assertEqual((ok, fail), (1, 0))
+        # 端点与令牌来自页面表单
+        self.assertTrue(captured["url"].startswith(
+            "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNewWeb?"))
+        self.assertIn("token=2c292aeb00e3f15e", captured["url"])
+        self.assertIn("version=1", captured["url"])
+        self.assertIn("ua=pc", captured["url"])
+        body = captured["data"]
+        self.assertEqual(body["answer111"], "B")
+        self.assertEqual(body["answertype111"], "0")
+        self.assertEqual(body["courseId"], "266056498")
+        self.assertEqual(body["answerwqbid"], "111,")
+        self.assertEqual(body["totalQuestionNum"],
+                         "6eaca1bf84b6b650bc4b09d8f8805f1e")
+        self.assertIn("mooc-ans/mooc2/work/task", captured["headers"]["Referer"])
+
+    def test_submit_falls_back_to_legacy_endpoint(self):
+        """页面拿不到表单时，回退到兼容端点，参数全部放表单体。"""
+        import json as _json
+        from unittest.mock import patch
+
+        from core.config import Config
+        from functions.deal_exam import SUBMIT_URL
+
+        exam = self._make_exam()
         captured = {}
 
         def fake_post(url, headers=None, data=None, if_full_back=False):
@@ -350,6 +501,7 @@ class CoreBehaviorTests(unittest.TestCase):
         Config._data = Config._default_config()
         try:
             with patch("functions.deal_exam.doPost", side_effect=fake_post), \
+                 patch("functions.deal_exam.doGet", return_value=""), \
                  patch("functions.deal_exam.runtime.sleep", lambda *_: None):
                 ok, fail = exam._submit_answers(
                     work_id="55459339",
@@ -358,7 +510,7 @@ class CoreBehaviorTests(unittest.TestCase):
                         "answer": "B", "question_text": "题", "options": [],
                     }],
                     defaults={"clazzId": "151893764", "knowledgeid": "1219259997"},
-                    jobid="work-ccda3756a98e4e78956fb88f4ae515ef",
+                    jobid="work-55459339",
                     enc="2c292aeb00e3f15e16910622fc0070cd",
                     ktoken=None,
                     hidden_fields={"totalQuestionNum":
@@ -367,20 +519,90 @@ class CoreBehaviorTests(unittest.TestCase):
         finally:
             Config._data = old_data
 
-        self.assertEqual(fail, 0)
-        self.assertEqual(ok, 1)
-        # 端点上不带查询参数
+        self.assertEqual((ok, fail), (1, 0))
+        self.assertEqual(captured["url"], SUBMIT_URL)
         self.assertNotIn("?", captured["url"])
-        # 关键参数在表单体里
         body = captured["data"]
         self.assertEqual(body["answer111"], "B")
         self.assertEqual(body["answertype111"], "0")
         self.assertEqual(body["courseId"], "266056498")
-        self.assertEqual(body["classId"], "151893764")
         self.assertEqual(body["workid"], "55459339")
-        # totalQuestionNum 必须原样透传服务端下发的值，而不是被改写
         self.assertEqual(body["totalQuestionNum"],
                          "6eaca1bf84b6b650bc4b09d8f8805f1e")
+
+    def test_submit_blocked_when_captcha_required(self):
+        """提交前校验返回 2（需要验证码）时不发提交请求，给出可读原因。"""
+        import json as _json
+        from unittest.mock import patch
+
+        from core.config import Config
+
+        exam = self._make_exam()
+        posted = []
+
+        def fake_post(url, headers=None, data=None, if_full_back=False):
+            posted.append(url)
+            return _json.dumps({"status": True})
+
+        old_data = Config._data
+        Config._data = Config._default_config()
+        try:
+            with patch("functions.deal_exam.doPost", side_effect=fake_post), \
+                 patch("functions.deal_exam.doGet",
+                       return_value=_json.dumps({"status": 2})), \
+                 patch("functions.deal_exam.runtime.sleep", lambda *_: None):
+                ok, fail = exam._submit_answers(
+                    work_id="55459339",
+                    answered=[{"question_id": "111", "question_type": "单选题",
+                               "answer": "B", "question_text": "题", "options": []}],
+                    defaults={"clazzId": "151893764", "knowledgeid": ""},
+                    jobid="work-55459339",
+                    enc="x",
+                    ktoken=None,
+                    hidden_fields={"totalQuestionNum": "6eaca1bf84b6b650bc4b09d8f8805f1e"},
+                )
+        finally:
+            Config._data = old_data
+
+        self.assertEqual((ok, fail), (0, 1))
+        self.assertEqual(posted, [])
+
+    def test_submit_prefers_page_form_token_over_question_count(self):
+        """totalQuestionNum 是服务端令牌：缺表单时不能拿题数顶替。"""
+        import json as _json
+        from unittest.mock import patch
+
+        from core.config import Config
+
+        exam = self._make_exam()
+        captured = {}
+
+        def fake_post(url, headers=None, data=None, if_full_back=False):
+            captured["data"] = data
+            return _json.dumps({"status": True})
+
+        old_data = Config._data
+        Config._data = Config._default_config()
+        try:
+            with patch("functions.deal_exam.doPost", side_effect=fake_post), \
+                 patch("functions.deal_exam.doGet", return_value=""), \
+                 patch("functions.deal_exam.runtime.sleep", lambda *_: None):
+                exam._submit_answers(
+                    work_id="55459339",
+                    answered=[{"question_id": "111", "question_type": "单选题",
+                               "answer": "B", "question_text": "题", "options": []},
+                              {"question_id": "222", "question_type": "单选题",
+                               "answer": "A", "question_text": "题2", "options": []}],
+                    defaults={"clazzId": "151893764", "knowledgeid": ""},
+                    jobid="work-55459339",
+                    enc="x",
+                    ktoken=None,
+                    hidden_fields={},
+                )
+        finally:
+            Config._data = old_data
+
+        self.assertNotEqual(captured["data"].get("totalQuestionNum"), "2")
 
 
 class _StubLog:

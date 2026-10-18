@@ -460,7 +460,8 @@ advanced:
     result = settings.import_from_source_config(only_empty=True)
     assert result["imported"] is True
     assert settings.resolve("llm.api_key") == "sk-from-source-config"
-    assert settings.resolve("tiku.timeout") == 15
+    # v2.1 起在线题库配置不再导入，残留的 tiku 组被丢弃
+    assert settings.resolve("tiku") is None
     assert settings.resolve("advanced.request_delay") == 2.5
     assert settings.resolve("advanced.max_retries") == 4
 
@@ -539,7 +540,8 @@ tiku:
     info = settings.source_config_info()
     assert info["exists"] is True
     assert info["has_llm_key"] is True
-    assert info["has_tiku_token"] is True
+    # v2.1 删除在线题库后不再探测题库 token
+    assert "has_tiku_token" not in info
     assert info["llm_model"] == "deepseek-chat"
 
 

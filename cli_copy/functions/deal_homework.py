@@ -31,12 +31,14 @@ class DealHomework:
         self.ui = ui
         self.course_name = course.course_name
 
-    def do_finish(self, only_pending: bool = True):
+    def do_finish(self, only_pending: bool = True, selection: dict | None = None):
         """
         执行独立作业的获取与自动答题
 
         Args:
             only_pending: 仅处理未完成/未过期的作业
+            selection: {"mode": "all"|"selected", "ids": [...]}；
+                       默认全选；selected 时只处理 ids 中的作业
         """
         if not self.course.if_open:
             self.log.warning("本课程已结课或锁定，将自动跳过")
@@ -72,6 +74,8 @@ class DealHomework:
         self.log.info(f"独立作业筛选：共 {len(works)} 个，已完成 {skipped_done} 个，"
                       f"已过期 {skipped_expired} 个，待处理 {len(picked)} 个")
 
+        picked = self._apply_selection(picked, selection)
+
         self._show_works(works, picked)
         from core import runtime
         unit = lambda work: 'homework:' + str(work.get('work_id') or work.get('workId') or work.get('title'))
@@ -84,6 +88,8 @@ class DealHomework:
                 reasons.append(f"{skipped_done} 个已完成")
             if skipped_expired:
                 reasons.append(f"{skipped_expired} 个已过期")
+            if not reasons and str((selection or {}).get("mode") or "").lower() == "selected":
+                reasons.append("所勾选的作业不在待处理范围内")
             detail = f"（{'、'.join(reasons)}）" if reasons else ""
             self.log.info(f"没有需要处理的独立作业{detail}")
             return
@@ -137,9 +143,7 @@ class DealHomework:
         # 汇总
         if total_q > 0:
             parts = [f"缓存={total_cache}"]
-            if total_tiku > 0:
-                parts.append(f"题库={total_tiku}")
-            parts.append(f"LLM={total_llm}")
+            parts.append(f"AI={total_llm}")
             if total_random > 0:
                 parts.append(f"随机={total_random}")
             self.log.success(
@@ -163,6 +167,23 @@ class DealHomework:
                 submit_ok_total, submit_fail_total,
             )
             self.ui.record_course_result(success, failed, 0)
+
+    def _apply_selection(self, picked: list, selection: dict | None) -> list:
+        """按任务参数里的选择结果过滤待处理作业（默认全选）。"""
+        selection = selection or {}
+        mode = str(selection.get("mode") or "all").lower()
+        ids = {str(item) for item in (selection.get("ids") or []) if str(item)}
+        if mode != "selected":
+            return picked
+        if not ids:
+            self.log.warning("已选择“指定作业”但未勾选任何作业，本次不处理")
+            return []
+        selected = [w for w in picked if str(w.get("work_id") or "") in ids]
+        missing = ids - {str(w.get("work_id") or "") for w in picked}
+        if missing:
+            self.log.warning(f"  有 {len(missing)} 个所选作业不在本次待处理范围内（可能已完成或已过期）")
+        self.log.info(f"按选择处理 {len(selected)} 个作业（共勾选 {len(ids)} 个）")
+        return selected
 
     def _show_works(self, all_works: list, picked: list):
         """展示独立作业列表"""

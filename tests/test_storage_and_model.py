@@ -114,9 +114,18 @@ def test_settings_secrets_are_masked_and_kept(sandbox):
     assert settings.resolve("llm.api_key") == "sk-secret"
 
 
-def test_question_bank_secrets_flag_absent_when_unset(sandbox):
+def test_tiku_settings_are_removed_on_read_and_write(sandbox):
+    """v2.1 删除在线题库：旧配置里的 tiku 组与 fallback_to_tiku 不得回写"""
+    data = settings.save({
+        "tiku": {"enabled": True, "timeout": 15, "enncy-token": "token-x"},
+        "defaults": {"answer": {"fallback_to_tiku": True, "mode": "tiku"}},
+    })
+    assert "tiku" not in data
+    assert "fallback_to_tiku" not in data["defaults"]["answer"]
+    assert data["defaults"]["answer"]["mode"] == "ai"
+
     masked = settings.masked()
-    assert masked["secrets"]["tiku_enncy_token_configured"] is False
+    assert not any("tiku" in flag for flag in masked["secrets"])
 
 
 # ============================================================
@@ -150,9 +159,10 @@ def test_params_reject_out_of_range():
 
 def test_feature_names_and_labels_match_design():
     assert set(task_model.FEATURES) == {
-        "course_all", "chapter_exam", "independent_homework", "video",
+        "course_all", "chapter_exam", "independent_homework", "exam", "video",
         "learn_count", "download",
     }
+    assert task_model.FEATURE_LABELS["exam"] == "独立考试"
     for key in task_model.FEATURES:
         assert task_model.FEATURE_LABELS[key]
 

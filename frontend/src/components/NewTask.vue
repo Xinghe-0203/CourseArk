@@ -3,7 +3,21 @@ import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { state, act, navigate } from "../store";
 import { request } from "../api";
 import { features } from "../format";
-import type { Course, Settings } from "../types";
+import {
+  catalogKindLabel,
+  catalogMeta,
+  catalogStatusTone,
+  collectSelection,
+  isSelectable,
+  selectionError,
+} from "../catalog";
+import type {
+  CatalogItem,
+  CatalogResponse,
+  Course,
+  SelectionParams,
+  Settings,
+} from "../types";
 import ModalShell from "./ModalShell.vue";
 import ParameterForm from "./ParameterForm.vue";
 const emit = defineEmits<{ close: [] }>();
@@ -35,7 +49,6 @@ const params = reactive(
         answer: {
           mode: "ai",
           auto_submit: true,
-          fallback_to_tiku: true,
           no_answer_action: "skip",
           submit_delay: 2,
         },
@@ -43,6 +56,9 @@ const params = reactive(
     ),
   ),
 );
+// 兼容旧版本保存的作答配置：只保留 AI / 手动两种方式。
+if (!["ai", "manual"].includes(params.answer?.mode)) params.answer.mode = "ai";
+delete params.answer?.fallback_to_tiku;
 const key = (c: PickCourse) =>
   [c.account_id, c.course_id, c.class_id, c.cpi].join(":");
 const grouped = computed(() =>
@@ -72,6 +88,141 @@ const targets = computed(() =>
       course_name: c.name,
     })),
 );
+type CatalogState = {
+  loading: boolean;
+  error: string;
+  items: CatalogItem[];
+  selected: Set<string>;
+  fromCache: boolean;
+  loaded: boolean;
+};
+const kind = computed<"work" | "exam">(() =>
+  feature.value === "exam" ? "exam" : "work",
+);
+const catalogKindName = computed(() => catalogKindLabel(kind.value));
+const independent = computed(
+  () => feature.value === "independent_homework" || feature.value === "exam",
+);
+const catalogs = reactive<Record<string, CatalogState>>({});
+const loadedKeys = ref<Record<string, boolean>>({});
+const catalogKey = (t: { account_id: string; course_id: string }) =>
+  `${t.account_id}::${t.course_id}::${kind.value}`;
+const currentKeys = computed(() => targets.value.map(catalogKey));
+const catalogsReady = computed(
+  () =>
+    currentKeys.value.length > 0 &&
+    currentKeys.value.every((k) => loadedKeys.value[k]),
+);
+const catalogBusy = computed(() => Object.values(catalogs).some((c) => c.loading));
+const catalogOf = (t: { account_id: string; course_id: string }) =>
+  catalogs[catalogKey(t)];
+const loadingOf = (t: { account_id: string; course_id: string }) =>
+  !!catalogOf(t)?.loading;
+const loadedOf = (t: { account_id: string; course_id: string }) =>
+  !!catalogOf(t)?.loaded;
+const errorOf = (t: { account_id: string; course_id: string }) =>
+  catalogOf(t)?.error || "";
+const fromCacheOf = (t: { account_id: string; course_id: string }) =>
+  !!catalogOf(t)?.fromCache;
+const itemsOf = (t: { account_id: string; course_id: string }) =>
+  catalogOf(t)?.items || [];
+const selectedOf = (t: { account_id: string; course_id: string }) =>
+  catalogOf(t)?.selected || new Set<string>();
+const selectionStates = computed(() =>
+  targets.value.map((t) => {
+    const slot = catalogOf(t);
+    return {
+      items: slot?.items || [],
+      selected: slot?.selected || new Set<string>(),
+    };
+  }),
+);
+const selection = computed<SelectionParams>(() =>
+  collectSelection(selectionStates.value, catalogsReady.value),
+);
+const selectedCount = computed(() =>
+  selectionStates.value.reduce(
+    (sum, slot) =>
+      sum + slot.items.filter((i) => isSelectable(i) && slot.selected.has(i.id)).length,
+    0,
+  ),
+);
+const totalCount = computed(() =>
+  selectionStates.value.reduce(
+    (sum, slot) => sum + slot.items.filter(isSelectable).length,
+    0,
+  ),
+);
+async function loadCatalogs() {
+  if (!targets.value.length) {
+    error.value = "请先勾选要处理的课程";
+    return;
+  }
+  error.value = "";
+  const targetKind = kind.value;
+  await Promise.all(
+    targets.value.map(async (t) => {
+      const slotKey = catalogKey(t);
+      // 必须通过 reactive 代理读写，直接改原始对象不会触发 UI 更新（按钮会一直显示“正在加载”）。
+      if (!catalogs[slotKey])
+        catalogs[slotKey] = {
+          loading: false,
+          error: "",
+          items: [],
+          selected: new Set<string>(),
+          fromCache: false,
+          loaded: false,
+        };
+      const slot = catalogs[slotKey]!;
+      slot.loading = true;
+      slot.error = "";
+      slot.loaded = false;
+      loadedKeys.value[slotKey] = false;
+      try {
+        const data = await request<CatalogResponse>(
+          `/accounts/${t.account_id}/courses/${t.course_id}/catalog?kind=${targetKind}&refresh=false`,
+        );
+        slot.items = data.items || [];
+        slot.fromCache = !!data.from_cache;
+        slot.error = data.error || "";
+        slot.selected = new Set(slot.items.filter(isSelectable).map((i) => i.id));
+        slot.loaded = true;
+        loadedKeys.value[slotKey] = true;
+      } catch (e) {
+        slot.items = [];
+        slot.selected = new Set<string>();
+        slot.error = e instanceof Error ? e.message : String(e);
+      } finally {
+        slot.loading = false;
+      }
+    }),
+  );
+}
+function toggleCatalog(
+  t: { account_id: string; course_id: string },
+  id: string,
+) {
+  const slot = catalogOf(t);
+  if (!slot) return;
+  if (slot.selected.has(id)) slot.selected.delete(id);
+  else slot.selected.add(id);
+}
+function toggleAllCatalogs() {
+  const every = targets.value.every((t) => {
+    const slot = catalogOf(t);
+    if (!slot?.loaded) return false;
+    return slot.items
+      .filter(isSelectable)
+      .every((item) => slot.selected.has(item.id));
+  });
+  targets.value.forEach((t) => {
+    const slot = catalogOf(t);
+    if (!slot) return;
+    const ids = slot.items.filter(isSelectable).map((item) => item.id);
+    if (every) slot.selected.clear();
+    else ids.forEach((id) => slot.selected.add(id));
+  });
+}
 let generation = 0,
   alive = true;
 watch(selectedAccounts, (ids) => {
@@ -147,13 +298,23 @@ function submit() {
     error.value = "请至少选择一门可学习课程";
     return;
   }
+  if (independent.value) {
+    const invalid = selectionError(kind.value, selection.value, catalogsReady.value);
+    if (invalid) {
+      error.value = invalid;
+      return;
+    }
+  }
+  const finalParams = JSON.parse(JSON.stringify(params));
+  if (independent.value) finalParams.selection = selection.value;
+  else delete finalParams.selection;
   void act(
     "create-run",
     async () => {
       await request("/runs", "POST", {
         feature: feature.value,
         targets: targets.value,
-        params,
+        params: finalParams,
         note: note.value,
       });
       emit("close");
@@ -305,6 +466,108 @@ function back() {
             {{ label }}
           </button>
         </div>
+        <template v-if="independent">
+          <div class="picker-heading">
+            <h3>选择{{ catalogKindName }}范围</h3>
+            <small v-if="catalogsReady"
+              >已选 {{ selectedCount }} / {{ totalCount }} 项</small
+            >
+          </div>
+          <p class="muted">
+            先加载所选课程下的待做{{ catalogKindName }}再勾选，默认全选；不加载时按「全部待做」执行。
+          </p>
+          <div class="picker-actions">
+            <button
+              type="button"
+              :disabled="loading || catalogBusy || !targets.length"
+              :aria-label="'加载' + catalogKindName + '列表'"
+              @click="loadCatalogs"
+            >
+              {{
+                catalogBusy
+                  ? "正在加载…"
+                  : catalogsReady
+                    ? "重新加载列表"
+                    : "加载列表"
+              }}
+            </button>
+            <button
+              type="button"
+              :disabled="!catalogsReady || catalogBusy"
+              :aria-label="'全选' + catalogKindName"
+              @click="toggleAllCatalogs"
+            >
+              全选 / 取消全选
+            </button>
+          </div>
+          <p v-if="!targets.length" class="muted">
+            请先勾选课程，再加载{{ catalogKindName }}列表。
+          </p>
+          <div v-else class="catalog-list">
+            <section
+              v-for="t in targets"
+              :key="catalogKey(t)"
+              class="catalog-group"
+            >
+              <h4>
+                {{ t.course_name
+                }}<small v-if="fromCacheOf(t)">来自平台缓存</small>
+              </h4>
+              <p v-if="loadingOf(t)" class="muted" role="status">
+                正在加载{{ catalogKindName }}列表…
+              </p>
+              <template v-else-if="loadedOf(t)">
+                <p v-if="errorOf(t)" class="alert warning" role="alert">
+                  {{ errorOf(t)
+                  }}<button
+                    type="button"
+                    class="text-link"
+                    :aria-label="'重试加载' + catalogKindName + '列表'"
+                    @click="loadCatalogs"
+                  >
+                    重试
+                  </button>
+                </p>
+                <p v-if="!itemsOf(t).length" class="muted">
+                  该课程没有待做的{{ catalogKindName }}。
+                </p>
+                <template v-else>
+                  <label
+                    v-for="item in itemsOf(t)"
+                    :key="item.id"
+                    :class="['catalog-item', { done: !isSelectable(item) }]"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="selectedOf(t).has(item.id)"
+                      :disabled="!isSelectable(item)"
+                      :aria-label="'选择' + catalogKindName + ' ' + item.title"
+                      @change="toggleCatalog(t, item.id)"
+                    />
+                    <span class="catalog-item-body">
+                      <b>{{ item.title }}</b>
+                      <small>
+                        <span
+                          :class="[
+                            'catalog-status',
+                            catalogStatusTone(item.status),
+                          ]"
+                          >{{ item.status || "状态未知" }}</span
+                        >
+                        <span v-for="part in catalogMeta(kind, item)" :key="part">{{
+                          part
+                        }}</span>
+                      </small>
+                    </span>
+                  </label>
+                </template>
+              </template>
+              <p v-else class="muted">
+                点击「加载列表」查看待做{{ catalogKindName }}。
+              </p>
+            </section>
+          </div>
+        </template>
         <div class="picker-heading"><h3>学习方式</h3></div>
         <div v-if="presets.length" class="preset-list">
           <button

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { groupTasks, percent, chapters } from "./format";
+import { features, groupTasks, percent, chapters } from "./format";
 import type { Task } from "./types";
 describe("账号分组与真实进度", () => {
   it("不同账号的同名课程分开，同账号的课程聚在一起", () => {
@@ -27,4 +27,8 @@ describe("账号分组与真实进度", () => {
   });
   it("章节编号支持中文分隔并去重", () =>
     expect(chapters("123，456;123 789、789")).toEqual(["123", "456", "789"]));
+  it("独立考试有独立的功能文案", () => {
+    expect(features.exam).toBe("独立考试");
+    expect(features.independent_homework).toBe("独立作业");
+  });
 });

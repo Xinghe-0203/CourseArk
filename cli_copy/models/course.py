@@ -328,6 +328,197 @@ class Course:
             })
         return items
 
+    def get_exam_list(self) -> list[dict]:
+        """
+        获取课程的独立考试列表
+
+        入口是课程中间页「考试」标签（pageHeader=9），列表请求端点为
+        /exam/test?courseId&classId&ut=s&cpi&openc&enc，enc/openc 与作业共用
+        同一份隐藏参数（_get_work_enc_params）。
+
+        列表条目里的 goTest() 携带 7 个参数：
+        (courseId, examId, examRelationId, endTime, paperId, isRetest, examEnc)
+        其中 examEnc 是「这场考试」自己的 enc，与课程 enc 不可互换。
+
+        Returns:
+            list[dict]: 每项包含 id/exam_id/relation_id/paper_id/enc/title/status/
+                        start_time/end_time/limit_time/is_retest/valid/url
+        """
+        enc_params = self._get_work_enc_params()
+        enc = enc_params.get("examEnc") or enc_params.get("enc", "")
+        openc = enc_params.get("openc", "")
+        url = (f"https://mooc1.chaoxing.com/exam/test?"
+               f"courseId={self.course_id}&classId={self.class_id}&ut=s"
+               f"&cpi={self.cpi}&openc={openc}&enc={enc}")
+        headers = {"Referer": "https://mooc1-1.chaoxing.com/visit/courselistdata"}
+        headers.update(self.headers)
+        try:
+            html = doGet(url=url, headers=headers)
+        except Exception as e:
+            raise RequestException(f"无法读取考试列表: {e}")
+        if not html:
+            raise RequestException("无法读取考试列表，请检查网络、登录状态或平台验证")
+        items = self._parse_exam_list(html)
+        if items:
+            return items
+        lower = html.lower()
+        if any(marker in lower for marker in ('antispider', 'captcha', 'login required')) or '参数传递不正确' in html:
+            raise RequestException('无法读取考试列表，请检查网络、登录状态或平台验证')
+        if any(text in html for text in ('暂无考试', '没有考试', '无考试', '暂无数据', '暂无考试安排')):
+            return []
+        # 页面正常但列表为空（ulDiv 存在且无 goTest）
+        root = etree.HTML(html)
+        if root is not None and root.xpath("//div[contains(@class,'ulDiv')]"):
+            return []
+        raise RequestException('无法读取考试列表，请检查网络、登录状态或平台验证')
+
+    @staticmethod
+    def _extract_tr_info(html: str) -> dict:
+        """从考试列表页的 JS 里提取 TestRelationInfo（limitTime / 考试说明）。"""
+        if not html:
+            return {}
+        match = re.search(r'TestRelationInfo\s*=\s*', html)
+        if not match:
+            return {}
+        start = html.find('{', match.end() - 1)
+        if start < 0:
+            return {}
+        depth = 0
+        for idx in range(start, len(html)):
+            char = html[idx]
+            if char == '{':
+                depth += 1
+            elif char == '}':
+                depth -= 1
+                if depth == 0:
+                    try:
+                        data = json.loads(html[start:idx + 1])
+                    except ValueError:
+                        return {}
+                    return data if isinstance(data, dict) else {}
+        return {}
+
+    @classmethod
+    def _parse_exam_list(cls, html: str) -> list[dict]:
+        """解析考试列表 HTML，提取考试条目"""
+        if not html:
+            return []
+        ele = etree.HTML(html)
+        if ele is None:
+            return []
+        tr_info = cls._extract_tr_info(html)
+
+        candidates = ele.xpath("//div[contains(@class,'ulDiv')]//li")
+        if not candidates:
+            candidates = ele.xpath("//li[.//a[contains(@onclick,'goTest')]]")
+
+        items = []
+        seen = set()
+        for li in candidates:
+            anchors = li.xpath(".//a[contains(@onclick,'goTest')]")
+            if not anchors:
+                continue
+            args_full = None
+            for anchor in anchors:
+                parsed = cls._parse_gotest_args(anchor.get("onclick") or "")
+                if parsed and len(parsed) >= 6:
+                    args_full = parsed
+                    if len(parsed) >= 7:
+                        break
+            if not args_full:
+                continue
+            exam_id = args_full[1]
+            if not exam_id or exam_id in seen:
+                continue
+            seen.add(exam_id)
+
+            title = ""
+            for anchor in anchors:
+                title = (anchor.get("title") or "").strip() or "".join(anchor.itertext()).strip()
+                if title:
+                    break
+            if not title:
+                title = "未命名考试"
+
+            combined = " ".join("".join(li.itertext()).split())
+            status = ""
+            status_nodes = li.xpath(".//strong//text()")
+            if status_nodes:
+                status = "".join(status_nodes).strip()
+            if not status:
+                match = re.search(r'考试状态[：:]\s*([^\s]+)', combined)
+                status = match.group(1) if match else ""
+
+            start_time = args_full[3] if len(args_full) > 3 else ""
+            end_time = ""
+            match = re.search(r'考试时间[：:]\s*(\S+\s+\S+)\s*至\s*(\S+\s+\S+)', combined)
+            if match:
+                start_time, end_time = match.group(1), match.group(2)
+            if not end_time:
+                end_time = (args_full[3] if len(args_full) > 3 else "")[:16]
+
+            info = tr_info.get(exam_id) or {}
+            limit_time = info.get("limitTime") if isinstance(info, dict) else None
+            try:
+                limit_time = int(limit_time) if limit_time is not None else None
+            except (TypeError, ValueError):
+                limit_time = None
+
+            relation_id = args_full[2] if len(args_full) > 2 else ""
+            paper_id = args_full[4] if len(args_full) > 4 else ""
+            is_retest = str(args_full[5]).lower() == "true" if len(args_full) > 5 else False
+            exam_enc = args_full[6] if len(args_full) > 6 else ""
+
+            done_states = ("已完成", "待批阅", "已批阅", "已过期", "已结束")
+            expired = any(state in status for state in done_states)
+            if not expired and end_time:
+                try:
+                    deadline = time.mktime(time.strptime(end_time[:16], "%Y-%m-%d %H:%M"))
+                    expired = time.time() > deadline
+                except (ValueError, OverflowError):
+                    expired = False
+            valid = not expired and not any(state in status for state in ("待批阅", "已批阅"))
+
+            items.append({
+                "id": str(exam_id),
+                "exam_id": str(exam_id),
+                "relation_id": str(relation_id),
+                "paper_id": str(paper_id),
+                "enc": exam_enc,
+                "title": title,
+                "status": status,
+                "start_time": start_time,
+                "end_time": end_time,
+                "limit_time": limit_time,
+                "is_retest": is_retest,
+                "valid": valid,
+            })
+        return items
+
+    @staticmethod
+    def _parse_gotest_args(onclick: str) -> list[str]:
+        """解析 goTest(...) 的参数列表（去掉引号与空白）。"""
+        match = re.search(r'goTest\(([^)]*)\)', onclick or "")
+        if not match:
+            return []
+        raw = match.group(1)
+        args = []
+        for part in re.findall(r"'[^']*'|\"[^\"]*\"|[^,]+", raw):
+            value = part.strip().strip("'\"")
+            args.append(value)
+        return args
+
+    @staticmethod
+    def exam_start_url(course_id: str, class_id: str, cpi: str, openc: str,
+                       course_enc: str, paper_id: str, relation_id: str,
+                       exam_enc: str = "", is_retest: bool = False) -> str:
+        """构造「进入考试」URL（学生端 reVersionTestStartNew）。"""
+        return (f"https://mooc1.chaoxing.com/exam/test/reVersionTestStartNew?"
+                f"courseId={course_id}&classId={class_id}"
+                f"&tId={paper_id}&id={relation_id}&p=1&tag=1"
+                f"&enc={exam_enc or course_enc}&examsystem=0&cpi={cpi}"
+                f"&openc={openc}&isRetest={'1' if is_retest else '0'}")
+
     def get_count_log(self) -> int:
         """获取课程学习次数"""
         _headers = {

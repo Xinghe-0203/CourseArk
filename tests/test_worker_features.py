@@ -202,8 +202,9 @@ def test_independent_homework_dispatches(runner_module, sink):
         def __init__(self, user, course, log, ui=None):
             seen["ui"] = ui
 
-        def do_finish(self):
+        def do_finish(self, selection=None):
             seen["called"] = True
+            seen["selection"] = selection
             seen["ui"].record_course_result(2, 1, 0)
 
     with patch("functions.deal_homework.DealHomework", FakeHomework):
@@ -212,6 +213,50 @@ def test_independent_homework_dispatches(runner_module, sink):
 
     assert seen["called"] is True
     assert ui.stats["success"] == 2 and ui.stats["failed"] == 1
+
+
+def test_independent_homework_passes_selection(runner_module, sink):
+    seen = {}
+
+    class FakeHomework:
+        def __init__(self, *a, **k):
+            pass
+
+        def do_finish(self, selection=None):
+            seen["selection"] = selection
+
+    task = _task("independent_homework", {
+        "selection": {"mode": "selected", "ids": ["57096674"]},
+    })
+    with patch("functions.deal_homework.DealHomework", FakeHomework):
+        runner_module.run_feature(FakeUser(), FakeCourse(), task,
+                                  runner_module.TaskStatsUI(sink), sink)
+
+    assert seen["selection"] == {"mode": "selected", "ids": ["57096674"]}
+
+
+def test_exam_feature_dispatches(runner_module, sink):
+    seen = {}
+
+    class FakeExamRoom:
+        def __init__(self, user, course, log, ui=None):
+            seen["ui"] = ui
+
+        def do_finish(self, selection=None):
+            seen["called"] = True
+            seen["selection"] = selection
+            seen["ui"].record_exam_result(10, 0, 0, 9, 1, 9, 1)
+
+    task = _task("exam", {"selection": {"mode": "all", "ids": []}})
+    with patch("functions.deal_exam_room.DealExamRoom", FakeExamRoom):
+        ui = runner_module.TaskStatsUI(sink)
+        runner_module.run_feature(FakeUser(), FakeCourse(), task, ui, sink)
+
+    assert seen["called"] is True
+    assert seen["selection"] == {"mode": "all", "ids": []}
+    assert ui.stats["questions"] == 10
+    assert ui.stats["llm_calls"] == 9
+    assert ui.stats["submit_ok"] == 9
 
 
 def test_video_feature_collects_and_runs_batch(runner_module, sink):

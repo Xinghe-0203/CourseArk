@@ -151,10 +151,23 @@ class Config:
                 result[key] = value
         return result
 
+    # 已移除的配置项：旧配置文件里若仍存在，加载时丢弃，避免界面/日志出现
+    REMOVED_KEYS = (("tiku",), ("answer", "fallback_to_tiku"))
+
     @staticmethod
     def _normalize_config(data: dict) -> dict:
         """校验并规范化关键配置，避免类型错误在运行中深处才爆发。"""
         defaults = Config._default_config()
+        # 在线题库已下线：清掉历史配置残留
+        for path in Config.REMOVED_KEYS:
+            node = data
+            for key in path[:-1]:
+                if not isinstance(node.get(key), dict):
+                    node = None
+                    break
+                node = node[key]
+            if isinstance(node, dict):
+                node.pop(path[-1], None)
         for section, default_value in defaults.items():
             if isinstance(default_value, dict) and not isinstance(data.get(section), dict):
                 logger.warning(f"配置项 {section} 应为对象，已恢复默认值")
@@ -176,7 +189,6 @@ class Config:
         number("llm", "temperature", float, 0, 2)
         number("llm", "max_tokens", int, 0)
         number("llm", "timeout", int, 1)
-        number("tiku", "timeout", int, 1)
         number("advanced", "request_delay", float, 0)
         number("advanced", "request_delay_jitter", float, 0)
         number("advanced", "max_retries", int, 0, 10)
@@ -185,7 +197,7 @@ class Config:
 
         if data["video"].get("mode") not in {"instant", "real_time", "hybrid"}:
             data["video"]["mode"] = defaults["video"]["mode"]
-        if data["answer"].get("mode") not in {"ai", "tiku", "manual"}:
+        if data["answer"].get("mode") not in {"ai", "manual"}:
             data["answer"]["mode"] = defaults["answer"]["mode"]
         if data["answer"].get("no_answer_action") not in {"skip", "random"}:
             data["answer"]["no_answer_action"] = defaults["answer"]["no_answer_action"]
@@ -206,7 +218,6 @@ class Config:
             },
             "answer": {
                 "mode": "ai",
-                "fallback_to_tiku": True,
                 "no_answer_action": "skip",
                 "submit_delay": 2,
                 "auto_submit": True,
@@ -218,10 +229,6 @@ class Config:
                 "temperature": 0.1,
                 "max_tokens": 4096,
                 "timeout": 180,
-            },
-            "tiku": {
-                "enabled": True,
-                "timeout": 10,
             },
             "question_bank": {
                 "enabled": True,

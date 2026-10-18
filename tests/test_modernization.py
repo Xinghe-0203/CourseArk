@@ -533,11 +533,14 @@ def test_question_fetch_uses_ajax_headers_and_plain_font_template(monkeypatch):
     exam.font_decoder = FontDecoder()
     html = '<form><div class="TiMu font-cxsecret"><div class="Zy_TItle">【判断】Flash可以制作动画</div><input name="answertype12345"/></div></form>'
     fetch = Mock(return_value=html); monkeypatch.setattr('functions.deal_exam.doGet', fetch)
-    questions, _ = exam._try_fetch_questions_via_api({'workId': 'work-test', 'courseid': 'course-test', 'clazzId': 'class-test'})
+    questions, hidden, form = exam._try_fetch_questions_via_api({'workId': 'work-test', 'courseid': 'course-test', 'clazzId': 'class-test'})
     headers = fetch.call_args.kwargs['headers']
     assert headers['X-Requested-With'] == 'XMLHttpRequest'
     assert 'workId=work-test' in headers['Referer'] and 'clazzid=class-test' in headers['Referer']
     assert len(questions) == 1 and not questions[0]['unreadable']
+    # v2.1：同时返回表单隐藏字段与表单结构，供 AI 作答后自动提交复用
+    assert hidden == {}
+    assert form is not None
 
 
 @pytest.mark.parametrize('worker_name', ['sync_runner', 'session_runner'])

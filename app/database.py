@@ -3,6 +3,7 @@ WebUI SQLite 持久化
 
 表结构：
 - courses     账号课程缓存（按账号隔离）
+- course_catalog 课程作业 / 考试目录缓存（TTL 由调用方控制）
 - runs        批次
 - tasks       子任务（含参数快照、状态、进度、统计）
 - task_events 结构化事件（消息与 payload 分开存储）
@@ -118,6 +119,16 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(read_at, last_seen DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_dedupe ON notifications(dedupe_key);
+
+-- 课程目录缓存：独立作业 / 独立考试的待做列表（由 worker/catalog_runner.py 拉取）
+CREATE TABLE IF NOT EXISTS course_catalog (
+    account_id TEXT NOT NULL,
+    course_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    items_json TEXT DEFAULT '[]',
+    fetched_at REAL NOT NULL,
+    PRIMARY KEY (account_id, course_id, kind)
+);
 """
 
 # 非终态：WebUI 重启后需要标记为 interrupted
@@ -216,6 +227,50 @@ class Database:
                 (account_id, course_id),
             )
         return row
+
+    # --------------------------------------------------------
+    # 课程目录缓存（作业 / 考试列表）
+    # --------------------------------------------------------
+
+    def get_catalog(self, account_id: str, course_id: str, kind: str) -> dict:
+        row = self._query_one(
+            "SELECT * FROM course_catalog WHERE account_id = ? AND course_id = ? AND kind = ?",
+            (account_id, course_id, kind),
+        )
+        if not row:
+            return None
+        try:
+            items = json.loads(row.get("items_json") or "[]")
+        except ValueError:
+            items = []
+        if not isinstance(items, list):
+            items = []
+        return {"account_id": row["account_id"], "course_id": row["course_id"],
+                "kind": row["kind"], "items": items, "fetched_at": row["fetched_at"]}
+
+    def save_catalog(self, account_id: str, course_id: str, kind: str, items: list,
+                     fetched_at: float = None) -> dict:
+        self._execute(
+            """INSERT OR REPLACE INTO course_catalog(account_id, course_id, kind, items_json, fetched_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (account_id, course_id, kind,
+             json.dumps(items or [], ensure_ascii=False),
+             float(fetched_at if fetched_at is not None else time.time())),
+        )
+        return self.get_catalog(account_id, course_id, kind)
+
+    def delete_catalog(self, account_id: str, course_id: str = "", kind: str = "") -> int:
+        clauses = ["account_id = ?"]
+        params = [account_id]
+        if course_id:
+            clauses.append("course_id = ?")
+            params.append(course_id)
+        if kind:
+            clauses.append("kind = ?")
+            params.append(kind)
+        cursor = self._execute(
+            f"DELETE FROM course_catalog WHERE {' AND '.join(clauses)}", tuple(params))
+        return int(cursor.rowcount or 0)
 
     # --------------------------------------------------------
     # 批次
