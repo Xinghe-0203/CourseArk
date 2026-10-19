@@ -128,6 +128,7 @@ GET /api/completed?feature=&account_id=&q=&since=&until=&limit=30&offset=0
 | `python tools/vue_check.py` | 51 项通过 / 0 错误（含「已完成」页在 wide/desktop/mobile 三档无横向溢出；截图见 `docs/vue-validation/`） |
 | `python tools/ui_check.py` | 51 项通过 / 0 错误 |
 | `npm --prefix desktop run dist:win` | 产出 `CourseArk-2.2.3-Setup.exe` / `CourseArk-2.2.3-Portable.exe` |
+| `npm --prefix desktop run smoke:packaged` | 解包版与便携版都能加载新界面并正常停掉 Python 后端（需先清掉环境变量 `ELECTRON_RUN_AS_NODE`） |
 | 真实数据复核（只读） | 历史 3 条 succeeded 考试任务的 `outcome.reason` 均非空且说明「考后无逐题回顾」 |
 
 > 独立验证任务（task-12）已完成：真实数据只读复核、`/api/completed` 契约与边界（limit 0/101/-1 → 422）、

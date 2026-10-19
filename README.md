@@ -189,12 +189,18 @@ npm --prefix frontend test
 npm --prefix frontend run build
 npm --prefix desktop ci
 npm --prefix desktop test
+npm --prefix desktop run smoke:packaged
 python -m pytest tests -q
 python -m pytest cli_copy/tests -q
 python tools/smoke_test.py --mock
 python tools/vue_check.py
 python tools/ui_check.py --serve --port 8899
 ```
+
+`smoke:packaged` 会启动 `desktop/dist` 里的打包应用，需要先构建安装包（`npm --prefix desktop run dist:win`）。
+若你在 Electron 相关的终端里运行它，先清掉 `ELECTRON_RUN_AS_NODE` 环境变量
+（`Remove-Item Env:ELECTRON_RUN_AS_NODE`），否则打包应用会被当成纯 Node 进程启动并立刻退出，
+烟测会失败但并不是产品问题。
 
 浏览器检查使用临时数据并停用调度器，不连接学习通，也不执行真实学习任务。需要连接真实账号核对
 作业解析时，使用上面的 `tools/check_work_page.py`（只读）。
