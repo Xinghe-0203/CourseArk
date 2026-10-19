@@ -36,6 +36,13 @@ _SUBMIT_HEADERS = {
 }
 _MAX_QUESTIONS = 200  # 防御异常页面导致死循环
 
+# 打开答题页就看到「已交卷」时给用户看的解释：平台考后不提供逐题回顾，
+# 所以这里没有逐题明细，必须说清楚，不能只报一句「已完成」
+ALREADY_DONE_DETAIL = (
+    "平台显示该场考试已交卷（可能由上一次运行或你在浏览器里手动交卷完成）；"
+    "考试结束后平台不再提供逐题回顾，因此这场考试没有可展示的逐题明细。"
+)
+
 
 class ExamRoomByUrl:
     """按用户粘贴的答题页地址完成一场 PC 端考试。"""
@@ -69,17 +76,29 @@ class ExamRoomByUrl:
 
         html = self._fetch(entry["url"])
         page = parse_answer_page(html)
-        title = page["media"] or "考试"
+        title = page["media"] or page.get("title") or "考试"
         self.exam.active_media_name = title
         self.log.info(f"[考试] {title}（题量 {page['total'] or '未知'}，剩余约 "
                       f"{self._minutes(page['remain'])} 分钟）")
 
         if page["finished"]:
-            self.log.info("该场考试已交卷完成，无需重复作答")
-            runtime.emit("work_result", "该场考试已交卷完成", stage="exam", payload={
-                "id": unit, "name": title, "kind": "exam", "status": "succeeded"})
+            # 平台已交卷：没有逐题明细可展示，但必须明确解释「为什么看不到明细」，
+            # 而不是笼统地报一句「已完成」让用户以为程序真做了题。
+            #
+            # 单元状态仍必须是 succeeded：work_progress.summarize 只统计
+            # succeeded/failed/skipped/blocked，用别的状态会让进度显示 0/1；
+            # _unfinished_units 也只把 succeeded 记为已完成，否则这场考试会被
+            # 误判成「未完成任务点」再次出现在黄色续跑提示里。
+            self.log.info(f"平台显示该场考试已交卷，无需重复作答。{ALREADY_DONE_DETAIL}")
+            runtime.emit("work_result", "该场考试此前已交卷", stage="exam", payload={
+                "id": unit, "name": title, "kind": "exam", "status": "succeeded",
+                "already_done": True, "detail": ALREADY_DONE_DETAIL})
+            runtime.emit("exam_stats", "考试统计", stage="exam", payload={
+                "media": title, "already_done": 1, "questions": 0,
+                "submit_ok": 0, "submit_fail": 0, "note": ALREADY_DONE_DETAIL})
             runtime.emit("task_progress", "考试统计", stage="exam", payload={
-                "course_name": self.course_name, "success": 1, "failed": 0, "total": 1})
+                "course_name": self.course_name, "success": 1, "failed": 0, "total": 1,
+                "already_done": 1, "questions": 0})
             if self.ui:
                 self.ui.record_course_result(1, 0, 0)
             return

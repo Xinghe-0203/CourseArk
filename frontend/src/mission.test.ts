@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
   canResume,
+  dismissedResumeTasks,
+  isResumeDismissed,
   latestUnfinished,
   missionState,
   missionTotals,
+  nextDismissedResumeTasks,
   resumableTasks,
   unfinishedTotal,
   unfinishedUnits,
+  visibleLatestUnfinished,
+  visibleResumableTasks,
+  visibleUnfinishedTotal,
 } from "./mission";
-import type { Course, Task } from "./types";
+import type { Course, Settings, Task } from "./types";
 
 function course(partial: Partial<Course>): Course {
   return {
@@ -127,5 +133,58 @@ describe("续跑判定", () => {
     expect(resumableTasks(tasks).map((t) => t.id)).toEqual(["a", "c"]);
     expect(unfinishedTotal(tasks)).toBe(5);
     expect(latestUnfinished(tasks)?.id).toBe("c");
+  });
+});
+
+describe("不再提醒（settings.ui.dismissed_resume_tasks）", () => {
+  const tasks = [
+    task({ id: "a", status: "interrupted", unfinished_units: 3, created_at: 10 }),
+    task({ id: "b", status: "stopped", unfinished_units: 2, created_at: 20 }),
+  ];
+  const settings = (ids: string[]) =>
+    ({ ui: { dismissed_resume_tasks: ids } }) as unknown as Settings;
+
+  it("只隐藏列表内的 id，其余中断任务照常提醒", () => {
+    expect(visibleResumableTasks(tasks, settings([])).map((t) => t.id)).toEqual([
+      "a",
+      "b",
+    ]);
+    expect(visibleResumableTasks(tasks, settings(["a"])).map((t) => t.id)).toEqual([
+      "b",
+    ]);
+    expect(visibleUnfinishedTotal(tasks, settings(["a"]))).toBe(2);
+    expect(visibleLatestUnfinished(tasks, settings(["a"]))?.id).toBe("b");
+  });
+
+  it("新任务不在列表内时仍然提醒（不发全局开关）", () => {
+    const fresh = task({
+      id: "new",
+      status: "failed",
+      unfinished_units: 4,
+      created_at: 99,
+    });
+    const visible = visibleResumableTasks([...tasks, fresh], settings(["a", "b"]));
+    expect(visible.map((t) => t.id)).toEqual(["new"]);
+    expect(visibleLatestUnfinished([...tasks, fresh], settings(["a", "b"]))?.id).toBe(
+      "new",
+    );
+  });
+
+  it("损坏的设置值按空列表处理，不会误隐藏", () => {
+    expect(dismissedResumeTasks(null)).toEqual([]);
+    expect(dismissedResumeTasks({ ui: { dismissed_resume_tasks: "a" } } as never)).toEqual(
+      [],
+    );
+    expect(isResumeDismissed(tasks[0]!, settings([]))).toBe(false);
+    expect(isResumeDismissed(tasks[0]!, settings(["a"]))).toBe(true);
+  });
+
+  it("重复点击去重且只保留最近 100 条", () => {
+    expect(nextDismissedResumeTasks(settings(["a", "b"]), "a")).toEqual(["b", "a"]);
+    const many = Array.from({ length: 100 }, (_, i) => `t${i}`);
+    const next = nextDismissedResumeTasks(settings(many), "latest");
+    expect(next.length).toBe(100);
+    expect(next.at(-1)).toBe("latest");
+    expect(next).not.toContain("t0");
   });
 });

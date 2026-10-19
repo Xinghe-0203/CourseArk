@@ -199,24 +199,24 @@ function clearBank() {
           cy="36"
           rx="26"
           ry="10"
-          fill="#eef4ff"
-          stroke="#cfdcf4"
+          fill="var(--surface)"
+          stroke="var(--fg-subtle)"
           stroke-width="2"
         />
         <path
           d="M22 36v22c0 5.5 11.6 10 26 10s26-4.5 26-10V36"
-          stroke="#cfdcf4"
+          stroke="var(--fg-subtle)"
           stroke-width="2"
-          fill="#f7faff"
+          fill="var(--surface)"
         />
         <path
           d="M22 47c0 5.5 11.6 10 26 10s26-4.5 26-10"
-          stroke="#dbe5f6"
+          stroke="var(--fg-subtle)"
           stroke-width="2"
         />
         <path
           d="M62 68l6 6 12-13"
-          stroke="#8bbfa2"
+          stroke="var(--ok)"
           stroke-width="3.5"
           stroke-linecap="round"
           stroke-linejoin="round"

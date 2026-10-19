@@ -109,6 +109,11 @@ def seed():
         # 独立考试：暂停态、带选择范围参数、无业务事件，用于详情 stage=exam 文案验收
         ("task-ui-7", "run-ui-2", 2, 0, "exam", "paused", "exam",
          {"questions": 0, "llm_calls": 0, "submit_ok": 0, "submit_fail": 0}),
+        # v2.2.3：考试「已交卷」分支不产生逐题明细，需要一条真实形态的已完成考试任务，
+        # 供「已完成」页的 exam 信息与 outcome.reason 文案验收。
+        ("task-ui-8", "run-ui-2", 2, 0, "exam", "succeeded", "finish",
+         {"questions": 0, "cache_hits": 0, "tiku_hits": 0, "llm_calls": 0,
+          "random_answers": 0, "submit_ok": 0, "submit_fail": 0}),
     ]
 
     for task_id, run_id, account_index, course_index, feature, status, stage, stats in task_specs:
@@ -134,6 +139,19 @@ def seed():
             for unit in units[confirmed+2:confirmed+4]:
                 work=reduce_progress(work,'work_progress',{'id':unit['id'],'current':240,'total':480})
         stats['work'] = work
+        # v2.2.3：已完成的独立考试任务用真实形态落库——工作单元只有 exam:<id>、
+        # 参数里带答题页地址、逐题明细为空（平台考后不提供回顾），
+        # 供「已完成」页的 exam 信息与 outcome.reason 文案验收。
+        if feature == "exam" and status == "succeeded":
+            exam_unit = {'id': 'exam:11021171', 'kind': 'exam', 'name': '期中考试',
+                         'status': 'succeeded', 'already_done': True,
+                         'detail': '平台显示该场考试已交卷；考试结束后平台不再提供逐题回顾。'}
+            work = reduce_progress({}, 'work_plan', {'units': [exam_unit], 'sealed': True})
+            work = reduce_progress(work, 'work_result', exam_unit)
+            stats['work'] = work
+            exam_params = {"exam": {"url": "https://mooc1.chaoxing.com/exam-ans/mooc2/exam/preview?examId=11021171&enc=seed"}}
+        else:
+            exam_params = {}
         db.create_task({
             "id": task_id,
             "run_id": run_id,
@@ -152,6 +170,7 @@ def seed():
                 **({"selection": {"mode": "selected",
                                   "ids": ["exam-1001", "exam-1002"]}}
                    if feature == "exam" else {}),
+                **exam_params,
             },
             "created_at": now - 1800 + account_index * 120,
         })

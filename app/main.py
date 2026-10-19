@@ -588,6 +588,8 @@ def _register_routes(app: FastAPI):
         answers = _task_answers(task_id)
         detail["answers"] = answers
         detail["answers_summary"] = _answers_summary(answers, detail.get("stats") or {})
+        # 明细为空时说明原因，避免「显示已完成但看不到任何作答」
+        detail["answers_note"] = _answers_note(row, answers, detail.get("stats") or {})
         detail["live"] = _live_view(row)
         return detail
 
@@ -677,7 +679,24 @@ def _register_routes(app: FastAPI):
         rows = db.list_tasks(filters, limit, offset)
         return {"total": db.count_tasks(filters), "items": [_task_view(row) for row in rows]}
 
-    # ---------------- SSE ----------------
+    @app.get("/api/completed")
+    def completed_tasks(feature: str = "", account_id: str = "", q: str = "",
+                        since: float = 0, until: float = 0,
+                        limit: int = Query(default=30, ge=1, le=100),
+                        offset: int = Query(default=0, ge=0)):
+        """
+        已结束任务的完整视图（「已完成」专页数据源）
+
+        与 /api/history 的区别：这里逐条补充逐题汇总、耗时、结果说明与考试信息，
+        用于集中展示「各种已完成的具体信息」。明细事件按任务各查一次，
+        不在循环里拉全量事件。
+        """
+        filters = {"status": "succeeded,failed,stopped,interrupted",
+                   "account_id": account_id, "feature": feature, "q": q,
+                   "since": since or None, "until": until or None}
+        rows = db.list_tasks(filters, limit, offset)
+        return {"total": db.count_tasks(filters),
+                "items": [_completed_view(row) for row in rows]}
 
     @app.get("/api/events/stream")
     async def stream(request: Request, last_event_id: int = Query(default=0, ge=0)):
@@ -1069,6 +1088,80 @@ def _task_view(row: dict) -> dict:
 
 # 逐题作答明细最多回放的 answer_result 事件条数：长作业也只需最近 500 条
 ANSWER_EVENT_LIMIT = 500
+
+
+def _task_exam_view(row: dict, stats: dict) -> dict:
+    """已完成考试任务里的考试信息（「已完成」页展示用），没有考试返回 None"""
+    params = _json(row.get("params_json"))
+    exam_params = params.get("exam") if isinstance(params, dict) else None
+    url = ""
+    if isinstance(exam_params, dict):
+        url = str(exam_params.get("url") or "")
+    unit = None
+    work = stats.get("work") if isinstance(stats, dict) else None
+    units = work.get("units") if isinstance(work, dict) else None
+    if isinstance(units, dict):
+        for item in units.values():
+            if isinstance(item, dict) and item.get("kind") == "exam":
+                unit = item
+                break
+    if not url and not unit:
+        return None
+    unit = unit or {}
+    exam_id = str(unit.get("id") or "").split(":")[-1]
+    return {
+        "title": str(unit.get("name") or "") or "考试",
+        "exam_id": exam_id,
+        "url": url,
+        # already_done / detail 由 exam_room_url 的「平台已交卷」分支写入
+        "already_done": bool(unit.get("already_done")),
+        "detail": str(unit.get("detail") or ""),
+    }
+
+
+def _completed_view(row: dict) -> dict:
+    """已完成任务视图：在任务视图上补充耗时、逐题汇总、结果说明与考试信息"""
+    view = _task_view(row)
+    stats = view.get("stats") or {}
+    answers = _task_answers(row["id"])
+    view["answers_summary"] = _answers_summary(answers, stats)
+    view["answers_count"] = len(answers)
+
+    started, finished = row.get("started_at"), row.get("finished_at")
+    try:
+        view["duration_seconds"] = (round(float(finished) - float(started), 1)
+                                    if started and finished else None)
+    except (TypeError, ValueError):
+        view["duration_seconds"] = None
+
+    exam = _task_exam_view(row, stats)
+    view["exam"] = exam
+    reason = redact(row.get("error", "") or "")
+    if not reason and exam and exam.get("already_done"):
+        reason = exam.get("detail") or ""
+    if not reason:
+        # 历史任务（在「平台已交卷」分支写入 already_done 之前完成的）没有 error，
+        # 但同样存在「显示已完成却看不到明细」的问题，这里复用逐题明细的解释。
+        reason = _answers_note(row, answers, stats)
+    view["outcome"] = {"status": row.get("status", ""), "reason": reason}
+    return view
+
+
+def _answers_note(row: dict, answers: list, stats: dict) -> str:
+    """逐题明细为空时给出可读解释；有明细时返回空串。
+
+    用户反馈「告诉我已完成但是我实际上看不到」：明细为空必须说明原因，
+    不能只显示一个空的作答列表。
+    """
+    if answers:
+        return ""
+    if int((stats or {}).get("questions", 0) or 0) > 0:
+        return "本次运行的逐题明细未记录（任务在支持逐题明细的版本之前完成）。"
+    if row.get("feature") == "exam":
+        return "考试已交卷，但平台在考后不提供逐题回顾，本场考试没有可展示的逐题明细。"
+    if row.get("status") == "succeeded":
+        return "该任务完成时没有产生逐题作答（例如只处理了视频任务点）。"
+    return ""
 
 
 def _answer_view(row: dict) -> dict:

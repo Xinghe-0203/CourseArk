@@ -1,6 +1,7 @@
 import { reactive } from "vue";
 import { request } from "./api";
 import { active } from "./format";
+import { nextDismissedResumeTasks } from "./mission";
 import type {
   Account,
   Task,
@@ -85,6 +86,26 @@ export async function resumeTask(task: Task) {
     "resume-" + task.id,
     () => request(`/tasks/${task.id}/resume`, "POST"),
     "已创建续跑任务",
+  );
+}
+/**
+ * 对单条续跑提示点「不再提醒」：把任务 id 追加进 settings.ui.dismissed_resume_tasks
+ * （去重、上限 100）并 PATCH 持久化；只隐藏该 id，新的中断任务照常提醒。
+ */
+export async function dismissResumeTask(task: Task) {
+  const next = nextDismissedResumeTasks(state.settings, task.id);
+  await act(
+    "dismiss-resume-" + task.id,
+    async () => {
+      await request("/settings", "PATCH", {
+        ui: { dismissed_resume_tasks: next },
+      });
+      state.settings.ui = {
+        ...(state.settings.ui || {}),
+        dismissed_resume_tasks: next,
+      };
+    },
+    "已不再提醒这条未完成任务",
   );
 }
 let generation = 0;

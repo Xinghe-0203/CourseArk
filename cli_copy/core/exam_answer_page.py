@@ -124,6 +124,29 @@ def _extract_media_title(html: str) -> str:
     return _text_of(match.group(1)) if match else ""
 
 
+def _extract_page_title(html: str) -> str:
+    """尽力从「已交卷页」等非答题页里提取考试标题（失败返回空串）。
+
+    答题页有 ``h2.h2_subject``，交卷页没有；这里只做尽力而为的兜底，
+    供「已完成」说明里带上标题，绝不影响解析结果。
+    """
+    for pattern in (
+        r'<h2[^>]*class="[^"]*h2_subject[^"]*"[^>]*>([\s\S]*?)</h2>',
+        r'<[^>]+class="[^"]*exam-?title[^"]*"[^>]*>([\s\S]*?)</[^>]+>',
+        r'<[^>]+class="[^"]*examName[^"]*"[^>]*>([\s\S]*?)</[^>]+>',
+        r"<h1[^>]*>([\s\S]*?)</h1>",
+        r"<title[^>]*>([\s\S]*?)</title>",
+    ):
+        match = re.search(pattern, html or "", re.IGNORECASE)
+        if not match:
+            continue
+        text = _text_of(match.group(1))
+        text = re.sub(r"[-_|]\s*(超星|学习通|考试).*$", "", text).strip()
+        if text:
+            return text
+    return ""
+
+
 def _extract_total(html: str) -> int:
     match = re.search(r"题量[：:]\s*(\d+)", html)
     return int(match.group(1)) if match else 0
@@ -157,7 +180,7 @@ def parse_answer_page(html: str) -> dict:
 
     Returns:
         dict: form_action/fields/qid/type_code/type_name/stem/options/total/
-              index/remain/media/finished/blocked
+              index/remain/media/finished/blocked/title
     """
     html = html or ""
     finished = any(marker in html for marker in FINISHED_MARKERS)
@@ -175,6 +198,7 @@ def parse_answer_page(html: str) -> dict:
             if marker in html:
                 blocked = marker
                 break
+    media = _extract_media_title(html)
     return {
         "form_action": action,
         "fields": fields,
@@ -186,7 +210,9 @@ def parse_answer_page(html: str) -> dict:
         "total": _extract_total(html),
         "index": index,
         "remain": fields.get("remainTime", ""),
-        "media": _extract_media_title(html),
+        "media": media,
+        # 交卷页没有 h2_subject，用兜底标题让「已完成」说明带上考试名
+        "title": media or _extract_page_title(html),
         "finished": finished,
         "blocked": blocked,
     }

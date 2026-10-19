@@ -10,14 +10,14 @@ import {
   ChevronRight,
   History,
 } from "lucide-vue-next";
-import { state, act, navigate, resumeTask } from "../store";
+import { state, act, navigate, resumeTask, dismissResumeTask } from "../store";
 import { request } from "../api";
 import { features, statuses, date } from "../format";
 import { executionProfiles } from "../overview";
 import {
-  latestUnfinished,
-  resumableTasks,
-  unfinishedTotal,
+  visibleLatestUnfinished,
+  visibleResumableTasks,
+  visibleUnfinishedTotal,
 } from "../mission";
 import type { Task } from "../types";
 const emit = defineEmits<{ select: [task: Task] }>();
@@ -67,13 +67,18 @@ const phase = computed(() => [
   },
 ]);
 const unfinished = computed(() => ({
-  total: unfinishedTotal(state.tasks),
-  items: resumableTasks(state.tasks),
-  latest: latestUnfinished(state.tasks),
+  total: visibleUnfinishedTotal(state.tasks, state.settings),
+  items: visibleResumableTasks(state.tasks, state.settings),
+  latest: visibleLatestUnfinished(state.tasks, state.settings),
 }));
 function resumeLatest() {
   const task = unfinished.value.latest;
   if (task) resumeTask(task);
+}
+/** 「不再提醒」：只对提示条当前指向的这条任务生效，新的中断任务照常提醒。 */
+function dismissLatest() {
+  const task = unfinished.value.latest;
+  if (task) dismissResumeTask(task);
 }
 async function control(id: string, op: string) {
   await act(
@@ -106,6 +111,13 @@ async function control(id: string, op: string) {
       @click="resumeLatest"
     >
       继续执行
+    </button>
+    <button
+      class="text-link resume-dismiss"
+      :disabled="state.busy.has('dismiss-resume-' + unfinished.latest?.id)"
+      @click="dismissLatest"
+    >
+      不再提醒
     </button>
     <button class="text-link" @click="navigate('tasks')">查看任务</button>
   </div>

@@ -212,10 +212,25 @@ class TestDoFinish:
     def test_finished_exam_is_reported_without_answering(self, monkeypatch):
         monkeypatch.setattr(flow, "doGet",
                             lambda url, headers=None, **k: "<html><h2>交卷成功</h2></html>")
+        emitted = []
+        monkeypatch.setattr(flow.runtime, "emit",
+                            lambda event, message, **k: emitted.append((event, message, k)))
         room = _room()
         room.do_finish(URL)
-        assert any("已交卷完成" in line for line in room.log.lines)
+        assert any("已交卷" in line for line in room.log.lines)
+        # 明细为空时必须解释原因，不能只报一句「已完成」
+        assert any("逐题回顾" in line for line in room.log.lines)
         assert room.exam.emitted == []
+        results = [item for item in emitted if item[0] == "work_result"]
+        assert results, "必须上报 work_result"
+        payload = results[0][2].get("payload") or {}
+        assert payload.get("already_done") is True
+        assert payload.get("detail")
+        # 单元状态仍须是 succeeded，否则进度会显示 0/1 且被误判为未完成
+        assert payload.get("status") == "succeeded"
+        notes = [item[2].get("payload", {}).get("note")
+                 for item in emitted if item[0] == "exam_stats"]
+        assert any(notes), "exam_stats 必须带上解释文案"
 
     def test_blocked_page_raises(self, monkeypatch):
         monkeypatch.setattr(flow, "doGet",

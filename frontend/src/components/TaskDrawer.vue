@@ -325,27 +325,30 @@ watch(
             width="56"
             height="68"
             rx="8"
-            fill="#eef4ff"
-            stroke="#cfdcf4"
+            fill="var(--bg-subtle)"
+            stroke="var(--line)"
             stroke-width="2"
           />
           <path
             d="M33 34h30M33 46h30M33 58h18"
-            stroke="#a9bde0"
+            stroke="var(--fg-subtle)"
             stroke-width="3"
             stroke-linecap="round"
           />
-          <circle cx="68" cy="66" r="14" fill="#e5f4ec" stroke="#a9d3be" stroke-width="2" />
+          <circle cx="68" cy="66" r="14" fill="var(--surface)" stroke="var(--ok)" stroke-width="2" />
           <path
             d="M61 66.5l4.6 4.4L75 62"
-            stroke="#62a887"
+            stroke="var(--ok)"
             stroke-width="3"
             stroke-linecap="round"
             stroke-linejoin="round"
           />
         </svg>
         <h3>还没有逐题作答记录</h3>
-        <p v-if="live">
+        <p v-if="detail.answers_note" class="answer-note-reason">
+          {{ detail.answers_note }}
+        </p>
+        <p v-else-if="live">
           AI 正在识别题目，答完一题会立刻显示在这里；也可以稍后手动刷新。
         </p>
         <p v-else>

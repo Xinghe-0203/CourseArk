@@ -43,6 +43,11 @@ def describe(event, message, level='info', stage='', payload=None):
             detail += f" · {payload['current']} / {payload['total']}"
         if event == 'work_result' and payload.get('status') in ('failed', 'blocked'):
             detail += ' · ' + narrative._clean(message)
+        # 平台显示「此前已交卷」时把原因写进详情，避免只看到一句「已确认完成」
+        if event == 'work_result' and payload.get('already_done'):
+            title = '此前已完成'
+            reason = narrative._clean(payload.get('detail') or message)
+            detail = ' · '.join(part for part in (detail, reason) if part)
         return {'category': category, 'title': title, 'detail': detail,
                 'action': ACTIONS.get(category, '') if level in ('error', 'warning') else '',
                 'visible': event != 'work_progress'}

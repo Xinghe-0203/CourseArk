@@ -9,10 +9,10 @@ import {
   Layers,
 } from "lucide-vue-next";
 import type { Task } from "../types";
-import { state, act, resumeTask } from "../store";
+import { state, act, resumeTask, dismissResumeTask } from "../store";
 import { request } from "../api";
 import { runningSummary } from "../live";
-import { canResume, unfinishedUnits } from "../mission";
+import { canResume, isResumeDismissed, unfinishedUnits } from "../mission";
 import {
   groupTasks,
   statuses,
@@ -92,6 +92,13 @@ function command(task: Task, op: string) {
 }
 function resume(task: Task) {
   resumeTask(task);
+}
+function dismiss(task: Task) {
+  dismissResumeTask(task);
+}
+/** 点过「不再提醒」的续跑任务不再显示续跑入口，新中断任务照常提示。 */
+function showResume(task: Task) {
+  return canResume(task) && !isResumeDismissed(task, state.settings);
 }
 </script>
 <template>
@@ -177,7 +184,7 @@ function resume(task: Task) {
               liveLine(task)
             }}</small>
             <small
-              v-else-if="canResume(task) && unfinishedUnits(task)"
+              v-else-if="showResume(task) && unfinishedUnits(task)"
               class="task-resume-note"
               >还有 {{ unfinishedUnits(task) }} 项未完成，可继续执行</small
             ><small v-else-if="task.progress?.active?.length">{{
@@ -223,13 +230,21 @@ function resume(task: Task) {
             >
               <Square :size="15" /></button
             ><button
-              v-if="canResume(task)"
+              v-if="showResume(task)"
               class="text-link resume-action"
               :disabled="state.busy.has('resume-' + task.id)"
               aria-label="继续执行任务"
               @click="resume(task)"
             >
               继续执行</button
+            ><button
+              v-if="showResume(task)"
+              class="text-link resume-dismiss"
+              :disabled="state.busy.has('dismiss-resume-' + task.id)"
+              aria-label="不再提醒此未完成任务"
+              @click="dismiss(task)"
+            >
+              不再提醒</button
             ><button
               class="icon-button"
               aria-label="任务详情"

@@ -95,7 +95,18 @@ DEFAULT_SETTINGS = {
         "download_dir": "data/downloads",
         "log_retention_days": 7,
     },
+    # 界面偏好（v2.2.3）
+    "ui": {
+        # 用户点过「不再提醒」的续跑任务 id：只对这些任务隐藏黄色续跑提示，
+        # 出现新的中断任务仍会照常提醒
+        "dismissed_resume_tasks": [],
+        # 「已完成」专页每页条数
+        "completed_page_size": 30,
+    },
 }
+
+# 「不再提醒」列表最多保存多少条，避免设置文件无限增长
+DISMISSED_TASKS_LIMIT = 100
 
 # 可重入锁：load()/save() 会互相调用，普通 Lock 会自锁
 _lock = threading.RLock()
@@ -189,6 +200,24 @@ def normalize(data) -> dict:
 
     data["advanced"]["request_delay"] = _clamp(data["advanced"].get("request_delay"), 0, 60, 1.0)
     data["advanced"]["max_retries"] = _clamp(data["advanced"].get("max_retries"), 0, 10, 3)
+
+    # v2.2.3：界面偏好。「不再提醒」的任务 id 去重、限长、只保留字符串；
+    # 每页条数按 10..100 收敛，避免前端提交任意值把分页打散。
+    ui = data["ui"]
+    dismissed = ui.get("dismissed_resume_tasks")
+    if not isinstance(dismissed, list):
+        dismissed = []
+    seen, cleaned = set(), []
+    for item in dismissed:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        cleaned.append(text)
+        if len(cleaned) >= DISMISSED_TASKS_LIMIT:
+            break
+    ui["dismissed_resume_tasks"] = cleaned
+    ui["completed_page_size"] = _clamp(ui.get("completed_page_size"), 10, 100, 30)
     return data
 
 

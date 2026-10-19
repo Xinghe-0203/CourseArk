@@ -39,7 +39,7 @@ def check(url, output):
         passed('运行进度小窗显示当前动作/已用时/预计剩余，可最小化与展开')
         for width,height,name in [(1920,1080,'wide'),(1440,1000,'desktop'),(390,844,'mobile')]:
             page.set_viewport_size({'width':width,'height':height})
-            for title in ['工作总览','账号与课程','学习任务','答题缓存','问题中心','偏好设置']:
+            for title in ['工作总览','账号与课程','学习任务','已完成','答题缓存','问题中心','偏好设置']:
                 page.get_by_role('navigation',name='主要导航').get_by_role('button',name=title).click()
                 page.get_by_role('heading',name=title,exact=True).wait_for()
                 page.wait_for_timeout(180)

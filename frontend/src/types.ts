@@ -1,5 +1,11 @@
 export type View =
-  "overview" | "accounts" | "tasks" | "bank" | "problems" | "settings";
+  | "overview"
+  | "accounts"
+  | "tasks"
+  | "completed"
+  | "bank"
+  | "problems"
+  | "settings";
 export interface Account {
   id: string;
   label: string;
@@ -148,6 +154,33 @@ export interface Task {
   live?: TaskLive | null;
   /** 中断/停止/失败任务仍有待处理的单元数，由后端按 stats.work.units 统计。 */
   unfinished_units?: number;
+  /** 逐题明细为空时的可读解释（有明细时为 ""）。仅 /tasks/{id} 详情返回。 */
+  answers_note?: string;
+}
+/** 已完成任务的结果说明：status 与后端给出的可读原因（保证非空）。 */
+export interface CompletedOutcome {
+  status: string;
+  reason: string;
+}
+/** 独立考试任务在「已完成」页展示的考试信息。 */
+export interface CompletedExam {
+  title: string;
+  exam_id: string;
+  url: string;
+  already_done?: boolean;
+  detail?: string;
+}
+/** 「已完成」专页列表项：任务视图 + 逐题汇总 + 耗时 + 结果说明 + 考试信息。 */
+export interface CompletedTask extends Task {
+  answers_summary?: Partial<AnswersSummary>;
+  answers_count?: number;
+  duration_seconds?: number | null;
+  outcome?: CompletedOutcome;
+  exam?: CompletedExam | null;
+}
+export interface CompletedResponse {
+  total: number;
+  items: CompletedTask[];
 }
 export interface TaskEvent {
   id: number;

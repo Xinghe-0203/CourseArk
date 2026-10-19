@@ -1,4 +1,4 @@
-import type { Course, Task } from "./types";
+import type { Course, Settings, Task } from "./types";
 
 /** 课程任务点进度展示：已完成 x / y，待完成高亮，未同步/同步中提示。 */
 export type MissionTone = "ok" | "pending" | "muted";
@@ -78,4 +78,51 @@ export function unfinishedTotal(tasks: Task[]): number {
 /** 最近一条未完成任务，供总览提示条上的「继续执行」使用。 */
 export function latestUnfinished(tasks: Task[]): Task | undefined {
   return resumableTasks(tasks).sort((a, b) => b.created_at - a.created_at)[0];
+}
+
+/** 用户点过「不再提醒」的任务 id（settings.ui.dismissed_resume_tasks）。 */
+export function dismissedResumeTasks(settings?: Settings | null): string[] {
+  const list = (settings as any)?.ui?.dismissed_resume_tasks;
+  return Array.isArray(list) ? list.map((item) => String(item)) : [];
+}
+export function isResumeDismissed(
+  task: Task,
+  settings?: Settings | null,
+): boolean {
+  return dismissedResumeTasks(settings).includes(task.id);
+}
+/** 待提醒的续跑任务：排除已点过「不再提醒」的 id，新中断任务照常提醒。 */
+export function visibleResumableTasks(
+  tasks: Task[],
+  settings?: Settings | null,
+): Task[] {
+  const dismissed = new Set(dismissedResumeTasks(settings));
+  return resumableTasks(tasks).filter((task) => !dismissed.has(task.id));
+}
+export function visibleUnfinishedTotal(
+  tasks: Task[],
+  settings?: Settings | null,
+): number {
+  return visibleResumableTasks(tasks, settings).reduce(
+    (sum, task) => sum + unfinishedUnits(task),
+    0,
+  );
+}
+export function visibleLatestUnfinished(
+  tasks: Task[],
+  settings?: Settings | null,
+): Task | undefined {
+  return visibleResumableTasks(tasks, settings).sort(
+    (a, b) => b.created_at - a.created_at,
+  )[0];
+}
+/** 追加一个「不再提醒」的任务 id：去重并保留最近 100 条（与后端上限一致）。 */
+export function nextDismissedResumeTasks(
+  settings: Settings | null | undefined,
+  id: string,
+): string[] {
+  const current = dismissedResumeTasks(settings).filter(
+    (item) => item !== id,
+  );
+  return [...current, id].slice(-100);
 }

@@ -22,3 +22,10 @@ desktop/node_modules/
 desktop/build/
 desktop/dist/
 desktop/.cache/
+scratch/
+
+# 本地安装的 UI 设计技能包（v2.2.3 界面重做时临时装到工作区的工具，不属于产品）
+.agents/
+agent/
+.claude/
+skills-lock.json

@@ -192,6 +192,32 @@ class TestBuildSubmission:
         assert "tId=11021171" in url
 
 
+class TestFinishedPageTitle:
+    """交卷页没有 h2_subject，也要尽力取出考试名给「已完成」说明用"""
+
+    def test_answer_page_exposes_title(self):
+        result = page.parse_answer_page(_question_html())
+        assert result["title"] == "vue3第一章测试题"
+        assert result["media"] == "vue3第一章测试题"
+
+    def test_finished_page_extracts_title_from_h1(self):
+        html = ('<html><body><div>交卷成功</div>'
+                '<h1>vue3第一章测试题</h1></body></html>')
+        result = page.parse_answer_page(html)
+        assert result["finished"] is True
+        assert result["title"] == "vue3第一章测试题"
+        assert result["media"] == ""
+
+    def test_finished_page_strips_site_suffix_from_document_title(self):
+        html = '<html><head><title>vue3第一章测试题-超星考试</title></head><body>试卷已提交</body></html>'
+        assert page.parse_answer_page(html)["title"] == "vue3第一章测试题"
+
+    def test_finished_page_without_title_returns_empty(self):
+        result = page.parse_answer_page("<html><body>交卷成功</body></html>")
+        assert result["finished"] is True
+        assert result["title"] == ""
+
+
 class TestNormalizeAnswer:
     @pytest.mark.parametrize("code,raw,expected", [
         ("0", "c", "C"),

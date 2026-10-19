@@ -64,8 +64,8 @@ python run.py
 
 在 [GitHub Releases](https://github.com/Xinghe-0203/CourseArk/releases) 下载：
 
-- `CourseArk-2.2.2-Setup.exe`：Windows x64 安装版。
-- `CourseArk-2.2.2-Portable.exe`：Windows x64 便携版。
+- `CourseArk-2.2.3-Setup.exe`：Windows x64 安装版。
+- `CourseArk-2.2.3-Portable.exe`：Windows x64 便携版。
 
 桌面版内置 Python 运行时，不要求最终用户安装 Python 或 Node.js。关闭应用时会停止本机服务和 Worker。为兼容现有安装，桌面数据目录继续使用 `%APPDATA%\AutoCxWebUI`；安装包不包含账号、配置、答题缓存或任务数据库。
 
@@ -126,6 +126,25 @@ python tools/check_work_page.py --exam-url "<答题页地址>"            # 只�
 
 任务执行过程中的逐题记录在任务详情「AI 做题」页签，逐题显示题干、选项、答案来源与失败原因。
 
+### 考试显示「已完成」但看不到逐题明细
+
+平台在**交卷后不再提供逐题回顾**，所以已交卷的考试本来就没有逐题记录可展示。
+v2.2.3 起不再只显示一个空洞的「已完成」：
+
+- 任务详情的「AI 做题」页签会显示一条说明（`answers_note`），例如
+  「考试已交卷，但平台在考后不提供逐题回顾，本场考试没有可展示的逐题明细。」
+- 「已完成」页面每一行都有「结果说明」（`outcome.reason`）写明原因；
+  若任务真的失败，这里显示的是失败原因原文（例如平台安全验证不通过）。
+- 若该场考试是程序逐题作答完成的（v2.2.2 的粘贴地址流程），逐题明细会正常出现。
+
+历史任务同样适用：旧版本完成、没有留下明细的任务也会显示这条说明，不需要迁移数据。
+
+### 「上次任务未完成」的黄色提示怎么不再提醒
+
+黄色续跑提示上新增「不再提醒」：点击后该任务被记入设置里的 `ui.dismissed_resume_tasks`，
+之后不再出现。这个开关**只针对被点过的那几条任务**——出现新的中断任务仍会照常提醒，
+避免把真正的新问题一起静音。想恢复提醒可在「偏好设置」里查看并调整该列表。
+
 ### 从源码构建桌面版
 
 构建环境需要 Windows x64、Node.js 22.12 或更新版本、CPython 3.13 x64 和网络连接。首次构建会下载 Electron、Python 运行时及依赖。
@@ -185,7 +204,8 @@ python tools/ui_check.py --serve --port 8899
 | 文档 | 内容 |
 | --- | --- |
 | [`docs/architecture.md`](docs/architecture.md) | 组件划分、作业/考试/同步链路、事件与前端结构 |
-| [`docs/release-2.2.2.md`](docs/release-2.2.2.md) | 当前版本：独立考试「粘贴答题页地址」直连作答 |
+| [`docs/release-2.2.3.md`](docs/release-2.2.3.md) | 当前版本：「已完成」可解释 + 已完成专页 + 不再提醒 + 界面重做 |
+| [`docs/release-2.2.2.md`](docs/release-2.2.2.md) | 独立考试「粘贴答题页地址」直连作答 |
 | [`docs/release-2.2.1.md`](docs/release-2.2.1.md) | 任务点同步、中断续跑、考试风控识别 |
 | [`docs/release-2.2.md`](docs/release-2.2.md) | 独立考试、作业/考试勾选、进度小窗、AI 提示词 v2 |
 | [`docs/release-2.1.md`](docs/release-2.1.md) | 独立作业提交链路修复、删除在线题库、答题缓存 |

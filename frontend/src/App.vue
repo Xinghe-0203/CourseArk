@@ -10,6 +10,7 @@ import {
   Plus,
   RefreshCw,
   GraduationCap,
+  CheckCircle2,
 } from "lucide-vue-next";
 import { state, initialize, refresh, navigate } from "./store";
 import { request } from "./api";
@@ -24,11 +25,13 @@ import SettingsView from "./components/SettingsView.vue";
 import AccountWorkspace from "./components/AccountWorkspace.vue";
 import NoticeBar from "./components/NoticeBar.vue";
 import OverviewDashboard from "./components/OverviewDashboard.vue";
+import CompletedView from "./components/CompletedView.vue";
 import ProgressWindow from "./components/ProgressWindow.vue";
 const nav = [
   { key: "overview", title: "工作总览", icon: LayoutDashboard },
   { key: "accounts", title: "账号与课程", icon: Users },
   { key: "tasks", title: "学习任务", icon: Layers },
+  { key: "completed", title: "已完成", icon: CheckCircle2 },
   { key: "bank", title: "答题缓存", icon: Database },
   { key: "problems", title: "问题中心", icon: Bell },
   { key: "settings", title: "偏好设置", icon: SlidersHorizontal },
@@ -171,6 +174,8 @@ onUnmounted(() => {
                     "跟进正在执行的账号与课程，查看真实任务进度和处理结果。",
                   accounts: "统一管理账号、登录状态与可学习的课程。",
                   tasks: "按账号查看任务，随时暂停、继续或检查结果。",
+                  completed:
+                    "汇总每一次跑完的任务：课程、时间、耗时、逐题明细与结果说明。",
                   bank: "查看、导入与清理本机记住的答案，减少重复调用 AI。",
                   problems: "需要你处理的问题集中在这里，不会被运行日志淹没。",
                   settings: "设置默认学习方式、账号并发数量与 AI 服务。",
@@ -219,6 +224,10 @@ onUnmounted(() => {
             @select="selected = $event"
           />
         </div>
+        <CompletedView
+          v-else-if="state.view === 'completed'"
+          @select="selected = $event"
+        />
         <BankView v-else-if="state.view === 'bank'" />
         <ProblemsView
           v-else-if="state.view === 'problems'"

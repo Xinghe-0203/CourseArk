@@ -82,7 +82,8 @@ Electron ── Python runtime ── FastAPI ── Vue 页面
         └─ worker/runner.py：exam 且 url 非空 → functions/exam_room_url.py::ExamRoomByUrl
              ├─ core/exam_answer_page.parse_exam_url：courseId/classId/tId/id/enc/cpi/openc
              ├─ GET 该答题页（Referer=考试列表）
-             │    ├─ finished（交卷成功页）→ 记录已完成，不再作答
+             │    ├─ finished（交卷成功页）→ emit work_result{already_done,detail}
+             │    │     + exam_stats{already_done,note}，不再作答（v2.2.3 起带原因）
              │    └─ blocked（无权限/已结束/需验证）→ 中止，不绕过
              ├─ 循环：parse_answer_page（当前题/题型/选项/题量/剩余时间/隐藏字段）
              │    ├─ DealExam._answer_question（AI/缓存，复用作业链路）→ normalize_answer
@@ -120,6 +121,25 @@ Electron ── Python runtime ── FastAPI ── Vue 页面
   重新排队（`retry_task` 语义），已完成部分由平台状态跳过；`paused/pausing` 仍是暂停恢复。
 
 
+## 已完成记录与界面偏好（v2.2.3）
+
+```text
+GET /api/completed?feature&account_id&q&since&until&limit&offset
+   └─ db.list_tasks(status=succeeded,failed,stopped,interrupted)
+        └─ _completed_view = _task_view + answers_summary + answers_count
+             + duration_seconds + outcome{status,reason} + exam{...}|null
+             └─ reason 回退链：task.error → 考试已交卷说明 → _answers_note
+```
+
+- `_task_answers` 每任务查一次 `answer_result`（`latest=True`、按 `(media,index)` 去重），
+  `_completed_view` 在循环里复用同一结果，**不再逐任务拉全量事件**。
+- `GET /api/tasks/{id}` 的 `answers_note`：明细为空时给出可读解释（旧版本任务 / 考试考后无回顾 /
+  纯视频任务），有明细时为 `""`；「AI 做题」页签据此显示提示条。
+- 设置 `ui = {dismissed_resume_tasks: [...], completed_page_size: 30}`：
+  前者是「不再提醒」的任务 id（去重、最多 100 条），**只隐藏列表内的任务**，
+  新的中断任务仍会提醒；后者是「已完成」专页每页条数（10..100）。
+  两者都通过既有 `PATCH /api/settings` 持久化，没有新增端点。
+
 ## 事件与前端
 
 Worker 通过 `runtime.emit` 写事件，`app/database.py` 落库，`app/narrative.py` /
@@ -133,6 +153,8 @@ Worker 通过 `runtime.emit` 写事件，`app/database.py` 落库，`app/narrati
 - `GET /api/tasks/{id}` 另有 `live`：`activity/activity_at/elapsed_seconds/unit/eta_seconds/eta_source`。
   `eta` 优先用当前项速率推算（`(total-current)/(current/age)`），退化为任务级速率，老任务返回 null；
   前端浮动进度小窗与任务列表摘要消费该结构。
+- 带 `already_done` 的 `work_result` 由 `presentation` 输出为「此前已完成」+ 原因详情，
+  避免「已完成」看起来像是程序真的作答过。
 
 ## 本机数据
 
