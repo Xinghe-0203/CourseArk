@@ -1,8 +1,12 @@
 # 学习通「独立考试」协议 + AI 答题提示词调研（v2.2 前置）
 
-> 调研时间：2026-10-18　唯一仓库改动：本文件（`docs/research-exam.md`）。本文件是 task-3 的唯一写作用域；与 task-4 的写作用域重叠仅指本文件，未修改他人任何文件。
+> 调研时间：2026-10-18。本文件为调研报告，不改动任何代码。
 > 证据分级：**【已验证】** = 本机抓包或上游源码可直接复核；**【社区代码】** = 仅见于公开项目源码，未在本机复现；**【未验证】** = 推测/待真机确认。
 > 网络限制：本机 GitHub / raw.githubusercontent 全链路不可用（198.18.x 劫持、TLS 失败），本轮上游源码经 **gitcode 镜像 `git clone`** 获取（`https://gitcode.com/gh_mirrors/cx/CxKitty.git` = `SocialSisterYi/CxKitty`），文件行号与原文均来自克隆副本。
+>
+> 说明（v2.2.2 清理）：文中引用的 `scratch/exam/…`、`tools/_recon_exam*.py` 是调研期间的**本机抓包/探针文件**，
+> 从未纳入版本库，现已随本地缓存清理删除；v2.2.2 已按本文 §6 的协议结论完成落地，正式实现见
+> [`docs/architecture.md`](architecture.md) 的「考试答题页直连」小节与 [`docs/release-2.2.2.md`](release-2.2.2.md)。
 
 ---
 
@@ -375,12 +379,14 @@ A. ……  B. ……  C. ……  D. ……
 - chaoxing-fanya：<https://github.com/sweetcornna/chaoxing-fanya> → `api/answer.py:847-1160`（JSON 契约）、`:389-402`（判断题随机反例）
 
 本仓库证据（只读）：
-- `scratch/exam/exam_test.html:66`（TestRelationInfo / expiredAutoSubmit / 自动交卷说明）、`:344`（goTest 7 参）、`:359`（6 参）
-- `scratch/exam/start/cs2_expired.html`（「无权访问！」→ 本机无考试答题页 DOM）
-- `tools/_recon_exam6.py` / `tools/_recon_exam7.py`（GET 探针）
-- [cli_copy/core/exam_form.py](cli_copy/core/exam_form.py#L36)（猜测的 SUBMIT_TOKENS，需按 §6 修正）
-- [cli_copy/functions/deal_exam_room.py](cli_copy/functions/deal_exam_room.py)（现有流程：page-form 优先 + 猜测端点兜底）
-- [docs/next-version-2.2-plan.md](docs/next-version-2.2-plan.md#L106)（v2.2 契约）
-- [docs/research-github.md](docs/research-github.md)（v2.1 作业协议结论，作业/考试不可互相套用）
+- 考试列表页 `goTest(...)` 的 7 参 / 6 参两种调用形态（列表页内联 JS，实测已确认第 2 参为考试 ID）
+- 考试入口页 `examCheck` / `captchaCheck` / `needCode` 三个风控开关，以及未带验证参数时
+  `/exam/test/examcheck` 返回 `{"msg":"安全验证不通过，请重新验证","type":"captchaVerify","status":false}`
+- [cli_copy/core/exam_form.py](../cli_copy/core/exam_form.py#L36)（早期猜测的 SUBMIT_TOKENS；v2.2.2 起正式协议见
+  [`cli_copy/core/exam_answer_page.py`](../cli_copy/core/exam_answer_page.py)）
+- [cli_copy/functions/deal_exam_room.py](../cli_copy/functions/deal_exam_room.py)（列表入口流程：page-form 优先 + 猜测端点兜底）
+- [docs/architecture.md](architecture.md)（v2.2.2 落地实现：`core/exam_answer_page.py` + `functions/exam_room_url.py`，见「考试答题页直连」小节）
+- [docs/release-2.2.2.md](release-2.2.2.md)（v2.2.2 发布说明与真机验证数据）
+- [docs/research-github.md](research-github.md)（v2.1 作业协议结论，作业/考试不可互相套用）
 
 > 说明：GitHub 直链在本机不可访问，以上 GitHub URL 仅作引用标识；本文引用的行号/原文均来自 gitcode 镜像克隆副本（`CxKitty` HEAD：`SocialSisterYi/CxKitty` 镜像当前版本）。

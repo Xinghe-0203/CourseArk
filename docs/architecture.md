@@ -72,6 +72,7 @@ Electron ── Python runtime ── FastAPI ── Vue 页面
   `mooc1.chaoxing.com/exam-ans/...`，且带 `newMooc=true`。
 - 学习通对进入考试有人机校验（`captchaCheck` / `examCheck`，手机端同样如此）。这是账号级的平台策略，
   程序不尝试绕过：命中即记录原因并中止，**不会开始考试计时**，也不会替用户交白卷。
+  浏览器验证完成后可用下面的「答题页直连」继续（v2.2.2）。
 
 ## 考试答题页直连（v2.2.2）
 

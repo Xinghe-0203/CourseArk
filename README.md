@@ -180,6 +180,20 @@ python tools/ui_check.py --serve --port 8899
 浏览器检查使用临时数据并停用调度器，不连接学习通，也不执行真实学习任务。需要连接真实账号核对
 作业解析时，使用上面的 `tools/check_work_page.py`（只读）。
 
+## 文档索引
+
+| 文档 | 内容 |
+| --- | --- |
+| [`docs/architecture.md`](docs/architecture.md) | 组件划分、作业/考试/同步链路、事件与前端结构 |
+| [`docs/release-2.2.2.md`](docs/release-2.2.2.md) | 当前版本：独立考试「粘贴答题页地址」直连作答 |
+| [`docs/release-2.2.1.md`](docs/release-2.2.1.md) | 任务点同步、中断续跑、考试风控识别 |
+| [`docs/release-2.2.md`](docs/release-2.2.md) | 独立考试、作业/考试勾选、进度小窗、AI 提示词 v2 |
+| [`docs/release-2.1.md`](docs/release-2.1.md) | 独立作业提交链路修复、删除在线题库、答题缓存 |
+| [`docs/research-exam.md`](docs/research-exam.md) | 考试协议调研（手机端 / PC 端端点、逐题提交、风控） |
+| [`docs/research-github.md`](docs/research-github.md) | 同类开源项目调研与作业协议结论 |
+
+历史版本的实施方案（`next-version-*.md`）已在 v2.2.2 清理时删除，结论全部并入上面的发布说明。
+
 ## 来源与致谢
 
 - `cli_copy/` 包含同一维护者的 **AutoChaoxingCLI** 源码副本及本项目的 WebUI 适配。该源码目录目前没有公开远端地址；源项目 README 声明采用 MIT 许可，CourseArk 在仓库根目录保留 MIT `LICENSE`。

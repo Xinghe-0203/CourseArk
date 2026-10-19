@@ -46,6 +46,12 @@
 [`docs/research-exam.md`](research-exam.md)，尚未实现。因此在浏览器里只能一页一题作答的考试，
 本版本会提示你在网页端手动完成。
 
+> **后续版本已解决（v2.2.2）**：上面这条限制不再成立。v2.2.2 新增「粘贴考试答题页地址」直连：
+> 用户在浏览器里进入答题页后把带 `enc=` 的地址交给程序，程序按 `reVersionSubmitTestNew`
+> 逐题 `tempSave=true` 保存、末题 `tempSave=false` 交卷，并已用真实考试验证（10 题全部作答并成功交卷）。
+> 实现与验证数据见 [`docs/release-2.2.2.md`](release-2.2.2.md)。
+> 另：本节第 2 条「开始考试」写的 `tId=paperId` 是当时的错误猜测，v2.2.1 起已修正为 `tId=考试ID`。
+
 ## 三、挑选作业/考试
 
 - 新增课程目录接口 `GET /api/accounts/{id}/courses/{course_id}/catalog?kind=work|exam&refresh=false`：
