@@ -302,6 +302,7 @@ def check(url, output):
         interrupted_row = page.locator('.task-row', has_text='已中断').first
         assert interrupted_row.locator('.resume-action').count() == 1
         assert '项未完成' in interrupted_row.inner_text()
+        assert interrupted_row.locator('.resume-dismiss').count() == 1
         interrupted_row.locator('.resume-action').click()
         page.get_by_text('已创建续跑任务', exact=True).wait_for()
         assert resume_calls and resume_calls[-1].endswith('/resume'), resume_calls
@@ -334,6 +335,136 @@ def check(url, output):
         assert len(resume_calls) >= 2
         page.unroute(resume_pattern)
         passed('总览顶部提示上次任务未完成项数，可直接继续执行')
+
+        # 2.2.3：「不再提醒」按任务 id 持久化，只隐藏该任务，其它未完成任务照常提醒
+        nav.get_by_role('button', name='工作总览').click()
+        banner = page.locator('.resume-banner')
+        banner.wait_for()
+        assert '上次任务未完成，共 8 项' in banner.inner_text(), banner.inner_text()
+        dismiss_button = banner.get_by_role('button', name='不再提醒', exact=True)
+        assert dismiss_button.count() == 1
+        page.route(resume_pattern, resume_route)
+        dismiss_button.click()
+        page.get_by_text('已不再提醒这条未完成任务', exact=True).wait_for()
+        page.wait_for_function("document.querySelector('.resume-banner')?.innerText.includes('共 4 项')")
+        assert len(resume_calls) == 2, resume_calls
+        page.unroute(resume_pattern)
+        page.screenshot(path=str(output / 'desktop-resume-dismissed.png'))
+        page.reload()
+        banner = page.locator('.resume-banner')
+        banner.wait_for()
+        assert '上次任务未完成，共 4 项' in banner.inner_text(), banner.inner_text()
+        passed('续跑提示可「不再提醒」单条任务并持久化，其它未完成任务仍提醒')
+
+        # 2.2.3：「已完成」专页——终态列表、耗时、逐题概要、结果说明与工具栏
+        nav.get_by_role('button', name='已完成').click()
+        page.get_by_role('heading', name='已完成', exact=True).wait_for()
+        rows = page.locator('.completed-row')
+        rows.first.wait_for()
+        page.wait_for_function('document.querySelectorAll(".completed-row").length===4')
+        assert page.locator('.completed-row .status.interrupted').count() == 1
+        assert page.locator('.completed-row .status.failed').count() == 1
+        assert page.locator('.completed-row .status.succeeded').count() == 2
+        assert page.locator('.completed-filterbar select').count() == 4
+        page.screenshot(path=str(output / 'desktop-completed.png'), full_page=True)
+        passed('已完成专页列出全部终态任务，状态徽标与工具栏筛选齐全')
+
+        done_row = page.locator('.completed-row', has_text='15 分 0 秒')
+        assert done_row.count() == 1
+        done_text = done_row.inner_text()
+        assert '高等数学（上）' in done_text, done_text
+        assert '账号 04' in done_text, done_text
+        assert '提交成功 22' in done_text, done_text
+        assert '逐题明细未记录' in done_text, done_text
+        passed('已完成行展示课程、账号、耗时与逐题概要，并给出结果说明')
+
+        exam_row = page.locator('.completed-row', has_text='期中考试')
+        assert exam_row.count() == 1
+        exam_text = exam_row.inner_text()
+        assert '中国近现代史纲要' in exam_text, exam_text
+        assert '编号 11021171' in exam_text, exam_text
+        assert '已交卷，平台不提供考后逐题回顾' in exam_text, exam_text
+        assert exam_row.locator('.completed-exam a').count() == 1
+        passed('已完成专页展示考试场次、编号、已交卷说明与考试地址')
+
+        page.get_by_label('已完成功能筛选').select_option('exam')
+        page.wait_for_function('document.querySelectorAll(".completed-row").length===1')
+        assert '中国近现代史纲要' in page.locator('.completed-row').first.inner_text()
+        page.get_by_label('已完成状态筛选').select_option('failed')
+        empty_state = page.locator('.completed-empty')
+        empty_state.wait_for()
+        assert '当前筛选条件下没有已完成的任务' in empty_state.inner_text(), empty_state.inner_text()
+        assert empty_state.get_by_role('button', name='去新建学习任务').count() == 0
+        empty_state.get_by_role('button', name='清空筛选条件').click()
+        page.wait_for_function('document.querySelectorAll(".completed-row").length===4')
+        passed('已完成专页按功能与状态筛选，无结果时给出行动邀请式空状态')
+
+        page.get_by_label('搜索已完成任务').fill('数据结构')
+        page.wait_for_function('document.querySelectorAll(".completed-row").length===1')
+        assert '数据结构与算法' in page.locator('.completed-row').first.inner_text()
+        page.get_by_label('已完成每页条数').select_option('50')
+        page.wait_for_function('() => document.querySelector(\'[aria-label="已完成每页条数"]\')?.value === "50"')
+        page.reload()
+        nav.get_by_role('button', name='已完成').click()
+        page.locator('.completed-row').first.wait_for()
+        page.wait_for_function('() => document.querySelector(\'[aria-label="已完成每页条数"]\')?.value === "50"')
+        page.get_by_label('搜索已完成任务').fill('')
+        page.wait_for_function('document.querySelectorAll(".completed-row").length===4')
+        page.screenshot(path=str(output / 'desktop-completed-search.png'), full_page=True)
+        passed('已完成专页支持关键词搜索，每页条数写入设置并在刷新后保留')
+
+        detail_row = page.locator('.completed-row', has_text='15 分 0 秒')
+        detail_row.get_by_role('button', name='查看任务详情').click()
+        detail_dialog = page.get_by_role('dialog')
+        detail_dialog.wait_for()
+        assert '高等数学（上）' in detail_dialog.inner_text()
+        detail_dialog.get_by_role('button', name='AI 做题', exact=False).click()
+        note = detail_dialog.locator('.answer-note-reason')
+        note.wait_for()
+        assert '逐题明细未记录' in note.inner_text(), note.inner_text()
+        page.screenshot(path=str(output / 'desktop-completed-detail.png'))
+        page.keyboard.press('Escape')
+        page.wait_for_function('document.querySelectorAll("[role=dialog]").length===0')
+        passed('已完成页「查看详情」复用任务详情抽屉，并显示逐题明细缺失的中性说明')
+
+        # 真实种子只有 4 条终态任务且每页最少 10 条，分页用 route mock 造 12 条验证翻页
+        completed_pattern = re.compile(r'/api/completed\?')
+        def completed_page_route(route):
+            found = re.search(r'offset=(\d+)', route.request.url)
+            offset = int(found.group(1)) if found else 0
+            items = [{
+                'id': f'task-page-{offset}-{i}',
+                'status': 'succeeded',
+                'course_name': f'分页样例 {offset}-{i}',
+                'feature': 'course_all',
+                'feature_label': '课程任务点',
+                'account_label': '账号 01',
+                'created_at': 1, 'started_at': 1, 'finished_at': 2,
+                'stats': {}, 'params': {}, 'progress': {},
+                'answers_summary': {}, 'answers_count': 0,
+                'duration_seconds': 61.0,
+                'outcome': {'status': 'succeeded', 'reason': ''},
+                'exam': None,
+            } for i in range(min(10, max(0, 12 - offset)))]
+            route.fulfill(status=200, content_type='application/json',
+                          body=json.dumps({'total': 12, 'items': items}, ensure_ascii=False))
+        page.route(completed_pattern, completed_page_route)
+        page.get_by_label('已完成每页条数').select_option('10')
+        page.wait_for_function('document.querySelectorAll(".completed-row").length===10')
+        pager = page.locator('.pagination')
+        pager.wait_for()
+        assert '1—10 / 12' in pager.inner_text(), pager.inner_text()
+        pager.get_by_role('button', name='下一页').click()
+        page.wait_for_function('document.querySelectorAll(".completed-row").length===2')
+        assert '11—12 / 12' in pager.inner_text(), pager.inner_text()
+        pager.get_by_role('button', name='上一页').click()
+        page.wait_for_function('document.querySelectorAll(".completed-row").length===10')
+        assert '1—10 / 12' in pager.inner_text(), pager.inner_text()
+        page.screenshot(path=str(output / 'desktop-completed-pagination.png'), full_page=True)
+        page.unroute(completed_pattern)
+        page.get_by_label('已完成每页条数').select_option('30')
+        page.wait_for_function('document.querySelectorAll(".completed-row").length===4')
+        passed('已完成专页分页按 limit/offset 正确翻页并显示页码区间')
 
         nav.get_by_role('button',name='偏好设置').click()
         assert page.get_by_role('button',name='外部通知',exact=True).count()==0

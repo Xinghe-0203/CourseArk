@@ -56,6 +56,7 @@ async function selectTask(id: string) {
 }
 let stream: EventSource | undefined,
   timer: ReturnType<typeof setInterval>,
+  toastTimer: ReturnType<typeof setTimeout> | undefined,
   debounce: ReturnType<typeof setTimeout> | undefined;
 function connect() {
   stream = new EventSource("/api/events/stream");
@@ -97,7 +98,9 @@ function hash() {
 watch(
   () => state.toast,
   () => {
-    if (state.toast) setTimeout(() => (state.toast = ""), 4500);
+    // 每次提示更新都重置计时器：否则上一条提示遗留的定时器会提前清掉新提示。
+    clearTimeout(toastTimer);
+    if (state.toast) toastTimer = setTimeout(() => (state.toast = ""), 4500);
   },
 );
 onMounted(() => {
@@ -113,6 +116,7 @@ onMounted(() => {
 onUnmounted(() => {
   stream?.close();
   clearInterval(timer);
+  clearTimeout(toastTimer);
   clearTimeout(debounce);
   document.removeEventListener("visibilitychange", visibility);
   window.removeEventListener("hashchange", hash);

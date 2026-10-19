@@ -101,13 +101,13 @@ GET /api/completed?feature=&account_id=&q=&since=&until=&limit=30&offset=0
 | `app/presentation.py` | 「此前已完成」叙述与原因详情 |
 | `frontend/src/style.css` | 全量重写为「简约白黑大圆角」设计语言 |
 | `frontend/src/components/CompletedView.vue` | 新增「已完成」专页 |
-| `frontend/src/App.vue`、`types.ts`、`store.ts`、`mission.ts`、`OverviewDashboard.vue`、`TaskList.vue`、`SettingsView.vue` | 新页面接线、不再提醒、设置项完善 |
+| `frontend/src/App.vue`、`types.ts`、`store.ts`、`mission.ts`、`OverviewDashboard.vue`、`TaskList.vue`、`SettingsView.vue` | 新页面接线、不再提醒、设置项完善；收尾轮修正提示条（toast）计时器泄漏 |
 | `frontend/src/components/*.vue` | 跟随 token 的视觉重做与装饰标记清除 |
 | `tests/test_completed_and_ui_settings.py` | 新增 21 例（completed 契约、ui 设置、answers_note、叙述） |
 | `tests/test_exam_answer_page.py` | 新增 4 例（交卷页标题提取） |
 | `frontend/src/mission.test.ts` | 新增 4 例（不再提醒过滤、新任务仍提醒、损坏设置、去重与 100 条上限） |
 | `tools/ui_seed.py` | 新增已完成考试任务种子，供「已完成」页文案验收 |
-| `tools/vue_check.py` | 「已完成」页纳入三档视口无溢出断言 |
+| `tools/vue_check.py` | 「已完成」页纳入三档视口无溢出断言，并新增「不再提醒」持久化与已完成页筛选/分页/搜索断言（51 → 59 项） |
 | `tests/test_v223_audit.py` | 独立审计 22 例（不修改产品代码） |
 
 ## 六、兼容性与迁移
@@ -125,7 +125,7 @@ GET /api/completed?feature=&account_id=&q=&since=&until=&limit=30&offset=0
 | `python tools/smoke_test.py --mock` | 56 通过 / 0 失败 |
 | `npm --prefix frontend test`（vitest） | 6 个文件 / 29 例通过（含「不再提醒」过滤 4 例） |
 | `npm --prefix frontend run build` | `vue-tsc --noEmit` + vite 构建通过 |
-| `python tools/vue_check.py` | 51 项通过 / 0 错误（含「已完成」页在 wide/desktop/mobile 三档无横向溢出；截图见 `docs/vue-validation/`） |
+| `python tools/vue_check.py` | 59 项通过 / 0 错误（含「已完成」页在 wide/desktop/mobile 三档无横向溢出；截图见 `docs/vue-validation/`） |
 | `python tools/ui_check.py` | 51 项通过 / 0 错误 |
 | `npm --prefix desktop run dist:win` | 产出 `CourseArk-2.2.3-Setup.exe` / `CourseArk-2.2.3-Portable.exe` |
 | `npm --prefix desktop run smoke:packaged` | 解包版与便携版都能加载新界面并正常停掉 Python 后端（需先清掉环境变量 `ELECTRON_RUN_AS_NODE`） |
@@ -133,7 +133,10 @@ GET /api/completed?feature=&account_id=&q=&since=&until=&limit=30&offset=0
 
 > 独立验证任务（task-12）已完成：真实数据只读复核、`/api/completed` 契约与边界（limit 0/101/-1 → 422）、
 > `settings.ui` 归一与持久化、「不再提醒」只隐藏列表内 id（新中断任务仍提醒）、4 个反例场景，
-> 结论为**未发现需要修复的产品缺陷**。唯一异常是 `vue_check.py` 在前端构建期间的首次运行出现过 locator 超时，
-> 之后同命令稳定通过，属并发构建引起的时序抖动；构建期间不要并行跑 `vue_check.py`。
-> 独立审计新增 `tests/test_v223_audit.py`（22 例）。
+> 结论为**未发现需要修复的产品缺陷**。独立审计新增 `tests/test_v223_audit.py`（22 例）。
+>
+> 收尾轮修正：`vue_check.py` 曾出现的 locator 超时并非并发构建抖动，而是 `frontend/src/App.vue`
+> 提示条（toast）计时器的真实缺陷——每次提示变更都新建一个未登记的 `setTimeout`，旧计时器会提前
+> 清掉**新**提示。现改为在 `watch` 中 `clearTimeout` 后重建，并在 `onUnmounted` 清理，连续 3 次
+> `vue_check.py` 均 59/59、0 错误。
 

@@ -47,6 +47,36 @@ const statusOptions: [string, string][] = [
   ["interrupted", "已中断"],
 ];
 
+/**
+ * 状态筛选在本地进行：后端 /api/completed 固定只返回四种终态，没有 status 参数。
+ * 选中状态时按接口上限（100）取最新一批再本地过滤，避免只过滤当前一页造成误导。
+ */
+const requestLimit = computed(() => (status.value ? 100 : pageSize.value));
+const requestOffset = computed(() => (status.value ? 0 : offset.value));
+const filtered = computed(() =>
+  status.value
+    ? items.value.filter((task) => task.status === status.value)
+    : items.value,
+);
+/** 状态筛选时按接口上限取最新一批，分页语义不再成立，因此隐藏分页。 */
+const paginable = computed(() => !status.value && total.value > pageSize.value);
+/** 状态筛选但结果被 100 条上限截断时给出说明，避免误以为「只有这些」。 */
+const statusCapped = computed(
+  () => Boolean(status.value) && total.value > 100,
+);
+
+/** 是否有筛选条件：决定空状态是「筛选无结果」还是「确实还没有数据」。 */
+const hasFilters = computed(() =>
+  Boolean(query.value || account.value || feature.value || status.value),
+);
+
+function clearFilters() {
+  query.value = "";
+  account.value = "";
+  feature.value = "";
+  status.value = "";
+}
+
 async function load() {
   const current = ++generation;
   loading.value = true;
@@ -56,7 +86,7 @@ async function load() {
       `/completed?feature=${encodeURIComponent(feature.value)}` +
         `&account_id=${encodeURIComponent(account.value)}` +
         `&q=${encodeURIComponent(query.value)}` +
-        `&limit=${pageSize.value}&offset=${offset.value}`,
+        `&limit=${requestLimit.value}&offset=${requestOffset.value}`,
     );
     if (current !== generation) return;
     items.value = data.items || [];
@@ -81,13 +111,6 @@ onUnmounted(() => {
   generation++;
   clearTimeout(debounce);
 });
-
-/** 状态筛选在本地进行：后端 /api/completed 固定只返回四种终态，没有 status 参数。 */
-const filtered = computed(() =>
-  status.value
-    ? items.value.filter((task) => task.status === status.value)
-    : items.value,
-);
 
 function durationText(task: CompletedTask) {
   const raw = task.duration_seconds;
@@ -262,23 +285,35 @@ function changeSize(event: Event) {
       <Inbox :size="30" />
       <h3>
         {{
-          items.length
-            ? "当前筛选条件下没有已完成的任务"
-            : "还没有已完成的任务"
+          hasFilters ? "当前筛选条件下没有已完成的任务" : "还没有已完成的任务"
         }}
       </h3>
-      <p v-if="items.length">
+      <p v-if="hasFilters">
         换一个关键词或清空筛选，可以看到全部已结束的任务。
       </p>
       <p v-else>
         跑完第一个学习任务后，这里会汇总课程、耗时、逐题明细与失败原因。
       </p>
-      <button class="primary" @click="navigate('tasks')">
-        <Plus :size="16" />去新建学习任务
-      </button>
+      <div class="button-row">
+        <button v-if="hasFilters" class="button" @click="clearFilters">
+          清空筛选条件
+        </button>
+        <button v-else class="primary" @click="navigate('tasks')">
+          <Plus :size="16" />去新建学习任务
+        </button>
+      </div>
     </div>
   </div>
-  <div v-if="total > pageSize" class="pagination">
+  <div v-if="status" class="completed-scope">
+    <span
+      >正在最近 {{ requestLimit }} 条已结束任务中筛选，命中
+      {{ filtered.length }} 条。</span
+    >
+    <span v-if="statusCapped"
+      >更早的任务未参与筛选，可缩小账号或功能范围后再试。</span
+    >
+  </div>
+  <div v-if="paginable" class="pagination">
     <button
       type="button"
       :disabled="offset === 0"
@@ -315,6 +350,14 @@ function changeSize(event: Event) {
 }
 .completed-loading {
   margin-bottom: 20px;
+}
+.completed-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0 0 14px;
+  color: var(--fg-subtle);
+  font-size: 11.5px;
 }
 .completed-list {
   display: flex;
