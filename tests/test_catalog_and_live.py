@@ -1,7 +1,7 @@
 """
 v2.2 后端：独立作业选择、独立考试目录 API、任务运行中快照 live
 
-约定（实现与发布说明见 docs/release-2.2.md 第三节「挑选作业/考试」、第四节「运行中的进度小窗」）：
+约定（实现与发布说明见 docs/CHANGELOG.md 的 v2.2 段落第三节「挑选作业/考试」、第四节「运行中的进度小窗」）：
 - SelectionParams 默认 all，selected 时必须勾选条目
 - GET /api/accounts/{account_id}/courses/{course_id}/catalog?kind=work|exam
   子进程 + SQLite 缓存（TTL 600s），测试注入假 runner，不真登录

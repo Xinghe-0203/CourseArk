@@ -6,7 +6,7 @@
 >
 > 说明（v2.2.2 清理）：本文引用的 `scratch/real-page/…`、`tools/_dump_events.txt` 等是调研期间的**本机抓包文件**，
 > 从未纳入版本库，现已随本地缓存清理删除。引用行号保留原样以便对照当时证据；结论已并入
-> [`docs/release-2.1.md`](release-2.1.md) 与 [`docs/architecture.md`](architecture.md)。
+> [`docs/CHANGELOG.md`](CHANGELOG.md) 与 [`docs/architecture.md`](architecture.md)。
 
 ---
 

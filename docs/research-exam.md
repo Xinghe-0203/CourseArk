@@ -6,7 +6,7 @@
 >
 > 说明（v2.2.2 清理）：文中引用的 `scratch/exam/…`、`tools/_recon_exam*.py` 是调研期间的**本机抓包/探针文件**，
 > 从未纳入版本库，现已随本地缓存清理删除；v2.2.2 已按本文 §6 的协议结论完成落地，正式实现见
-> [`docs/architecture.md`](architecture.md) 的「考试答题页直连」小节与 [`docs/release-2.2.2.md`](release-2.2.2.md)。
+> [`docs/architecture.md`](architecture.md) 的「考试答题页直连」小节与 [`docs/CHANGELOG.md`](CHANGELOG.md) 的 v2.2.2 段落。
 
 ---
 
@@ -386,7 +386,7 @@ A. ……  B. ……  C. ……  D. ……
   [`cli_copy/core/exam_answer_page.py`](../cli_copy/core/exam_answer_page.py)）
 - [cli_copy/functions/deal_exam_room.py](../cli_copy/functions/deal_exam_room.py)（列表入口流程：page-form 优先 + 猜测端点兜底）
 - [docs/architecture.md](architecture.md)（v2.2.2 落地实现：`core/exam_answer_page.py` + `functions/exam_room_url.py`，见「考试答题页直连」小节）
-- [docs/release-2.2.2.md](release-2.2.2.md)（v2.2.2 发布说明与真机验证数据）
+- [docs/CHANGELOG.md](CHANGELOG.md)（v2.2.2 发布说明与真机验证数据）
 - [docs/research-github.md](research-github.md)（v2.1 作业协议结论，作业/考试不可互相套用）
 
 > 说明：GitHub 直链在本机不可访问，以上 GitHub URL 仅作引用标识；本文引用的行号/原文均来自 gitcode 镜像克隆副本（`CxKitty` HEAD：`SocialSisterYi/CxKitty` 镜像当前版本）。

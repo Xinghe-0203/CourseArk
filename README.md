@@ -23,9 +23,7 @@
   可在考试列表点「在浏览器中打开」手动完成验证。
   **v2.2.2 起推荐「粘贴答题页地址」**：在浏览器里进入考试后，把地址栏里带 `enc=` 的答题页
   地址粘贴到新建考试任务里，程序即可逐题 AI 作答、自动下一题并交卷（真实考试验证可用）。
-  说明见 [`docs/release-2.2.md`](docs/release-2.2.md)、
-  [`docs/release-2.2.1.md`](docs/release-2.2.1.md)、
-  [`docs/release-2.2.2.md`](docs/release-2.2.2.md)。
+  说明见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)。
 - AI 做题：只保留 AI 作答链路，逐题实时展示题干、选项、答案与来源（AI / 答题缓存 / 随机 / 未识别），
   答案先过题型校验（判断题归一为 true/false，选择题必须落在选项字母内）；无法可靠作答时按策略跳过。
   提示词会带上课程与作答内容（作业/考试名称）的上下文，并要求模型给出最可能答案而不是留空。
@@ -34,10 +32,12 @@
   缓存可在「答题缓存」页搜索、导入、导出、单条删除或一键清空。
 - 任务控制：按账号或跨账号暂停、继续、停止；查看任务进度、历史和问题通知。
 - 诊断日志和站内通知便于定位问题；默认不启用外部推送。
+- v2.2.4 前端修复：提示条（toast）不再被上一条的计时器提前清除；「已完成」页的状态筛选按接口
+  上限 100 取最新一批后再本地过滤，截断时有提示条，空状态区分「筛选无结果」与「确实还没有数据」。
 
 > v2.1 起**移除了在线题库**（enncy / icodef / datam 及其 token 配置），旧配置里的 `tiku` 组
 > 与 `answer.fallback_to_tiku` 会在读取时自动丢弃，旧 `answer.mode: tiku` 归一化为 `ai`。
-> 变更与根因说明见 [`docs/release-2.1.md`](docs/release-2.1.md)。
+> 变更与根因说明见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)。
 
 ## 使用
 
@@ -64,8 +64,8 @@ python run.py
 
 在 [GitHub Releases](https://github.com/Xinghe-0203/CourseArk/releases) 下载：
 
-- `CourseArk-2.2.3-Setup.exe`：Windows x64 安装版。
-- `CourseArk-2.2.3-Portable.exe`：Windows x64 便携版。
+- `CourseArk-2.2.4-Setup.exe`：Windows x64 安装版。
+- `CourseArk-2.2.4-Portable.exe`：Windows x64 便携版。
 
 桌面版内置 Python 运行时，不要求最终用户安装 Python 或 Node.js。关闭应用时会停止本机服务和 Worker。为兼容现有安装，桌面数据目录继续使用 `%APPDATA%\AutoCxWebUI`；安装包不包含账号、配置、答题缓存或任务数据库。
 
@@ -210,15 +210,12 @@ python tools/ui_check.py --serve --port 8899
 | 文档 | 内容 |
 | --- | --- |
 | [`docs/architecture.md`](docs/architecture.md) | 组件划分、作业/考试/同步链路、事件与前端结构 |
-| [`docs/release-2.2.3.md`](docs/release-2.2.3.md) | 当前版本：「已完成」可解释 + 已完成专页 + 不再提醒 + 界面重做 |
-| [`docs/release-2.2.2.md`](docs/release-2.2.2.md) | 独立考试「粘贴答题页地址」直连作答 |
-| [`docs/release-2.2.1.md`](docs/release-2.2.1.md) | 任务点同步、中断续跑、考试风控识别 |
-| [`docs/release-2.2.md`](docs/release-2.2.md) | 独立考试、作业/考试勾选、进度小窗、AI 提示词 v2 |
-| [`docs/release-2.1.md`](docs/release-2.1.md) | 独立作业提交链路修复、删除在线题库、答题缓存 |
+| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | v2.1 起完整变更历史（最新 v2.2.4） |
 | [`docs/research-exam.md`](docs/research-exam.md) | 考试协议调研（手机端 / PC 端端点、逐题提交、风控） |
 | [`docs/research-github.md`](docs/research-github.md) | 同类开源项目调研与作业协议结论 |
 
-历史版本的实施方案（`next-version-*.md`）已在 v2.2.2 清理时删除，结论全部并入上面的发布说明。
+历史版本各自独立的 `release-*.md` 与实施方案 `next-version-*.md` 均已删除，
+结论全部合并进 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)。
 
 ## 来源与致谢
 
