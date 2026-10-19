@@ -86,8 +86,8 @@ GET /api/completed?feature=&account_id=&q=&since=&until=&limit=30&offset=0
 - 圆角统一走 token（`--r-sm 10px / --r-md 14px / --r-lg 20px / --r-xl 28px / --r-pill 999px`），
   卡片、弹窗、输入框、进度条一律大圆角；
 - 强调色只用于状态语义（成功/警告/危险/信息），且只做小面积；主按钮改为近黑底白字；
-- **删除所有纯装饰圆点/状态小点**（`.dot`、`.live-dot`、`.status i`、`.notification-dot` 等图形），
-  状态一律用文字表达；
+- **移除所有纯装饰圆点/状态小点的可见图形**（`.dot` 置为透明，`.live-dot`、`.status i`、
+  `.notification-dot` 置为 `display:none`）；选择器锚点保留以兼容既有 DOM，状态一律用文字表达；
 - 阴影克制，hover/focus 只做轻微反馈，不加夸张动效。
 
 ## 五、改动文件
