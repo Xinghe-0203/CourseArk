@@ -699,7 +699,8 @@ URL 版本参数、填空拆分、报文构造、旧版兜底）、`cli_copy/tes
   `smoke:packaged` 需在真实桌面会话运行；各版本验证表中的「未验证项」按当时口径记录。
 - 在 Electron 相关终端运行打包烟测前，先清掉 `ELECTRON_RUN_AS_NODE` 环境变量
   （`Remove-Item Env:ELECTRON_RUN_AS_NODE`），否则打包应用会被当成纯 Node 进程启动并立刻退出。
-- 打包烟测还要求没有其它 CourseArk 实例在运行：应用申请 Electron 单实例锁，已安装版或便携版
-  开着时，烟测启动的新实例会立刻退出，表现为 `READY http://127.0.0.1:<port>` 断言失败
-  （`The input did not match the regular expression /^READY http:\/\/127\.0\.0\.1:\d+\s*$/`）。
-  先用 `Get-Process CourseArk -ErrorAction SilentlyContinue` 确认无残留进程，再重跑烟测。
+- 打包烟测用独立的 `--user-data-dir` 启动打包应用，因此**已打开的 CourseArk（安装版/便携版）不会
+  干扰烟测**，无需先退出。若仍出现 `READY http://127.0.0.1:<port>` 断言失败
+  （`The input did not match the regular expression /^READY http:\/\/127\.0\.0\.1:\d+\s*$/`），
+  先确认 `ELECTRON_RUN_AS_NODE` 已清掉，再用 `Get-Process CourseArk -ErrorAction SilentlyContinue`
+  检查残留进程后重跑。

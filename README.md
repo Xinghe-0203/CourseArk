@@ -202,10 +202,10 @@ python tools/ui_check.py --serve --port 8899
 （`Remove-Item Env:ELECTRON_RUN_AS_NODE`），否则打包应用会被当成纯 Node 进程启动并立刻退出，
 烟测会失败但并不是产品问题。
 
-还要先退出已经打开的 CourseArk（含安装版和便携版）：打包应用会申请 Electron 单实例锁，
-已有实例在运行时烟测启动的新实例会立刻退出，报错是
+烟测会用一个独立的 Electron 用户数据目录启动打包应用，所以**已打开的 CourseArk 不会干扰它**，
+也不用先退出安装版或便携版。如果仍看到
 `The input did not match the regular expression /^READY http:\/\/127\.0\.0\.1:\d+\s*$/`，
-这同样不是产品问题。用 `Get-Process CourseArk -ErrorAction SilentlyContinue` 确认没有残留进程后重跑即可。
+先确认 `ELECTRON_RUN_AS_NODE` 已清掉，再检查是否有残留进程（`Get-Process CourseArk -ErrorAction SilentlyContinue`）。
 
 浏览器检查使用临时数据并停用调度器，不连接学习通，也不执行真实学习任务。需要连接真实账号核对
 作业解析时，使用上面的 `tools/check_work_page.py`（只读）。

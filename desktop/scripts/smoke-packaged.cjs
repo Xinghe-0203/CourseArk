@@ -17,10 +17,13 @@ function terminateTree(pid) {
 async function runSmoke(executable, cwd, tempRoot, label) {
   const dataDir = path.join(tempRoot, `${label}-user-data`);
   const readyFile = path.join(tempRoot, `${label}-ready.txt`);
+  // Give the smoke instance its own Electron profile so it does not collide with the
+  // single-instance lock of an already running CourseArk (installed or portable).
+  const electronDataDir = path.join(tempRoot, `${label}-electron-data`);
   const output = [];
   let child;
   try {
-    child = spawn(executable, [], {
+    child = spawn(executable, [`--user-data-dir=${electronDataDir}`], {
       cwd,
       env: {
         ...process.env,
