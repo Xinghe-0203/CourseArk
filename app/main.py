@@ -202,14 +202,8 @@ def _auto_sync_accounts():
             sync_service.sync_account(db, hub, account_id, blocking=True)
         except Exception as exc:
             _logger.warning("启动自动同步账号 %s 失败：%s", account_id, exc)
-            try:
-                manager.notifications.record(
-                    event="sync_failed", level="error",
-                    message=f"启动自动同步失败：{exc}",
-                    account_id=account_id, account_label=str(account.get("label") or ""),
-                    stage="sync")
-            except Exception:
-                _logger.warning("启动自动同步：写入通知失败", exc_info=True)
+            db.add_event("", account_id, "sync_failed",
+                         f"启动自动同步失败：{exc}", level="error", stage="sync")
 
 
 def _start_auto_sync():
@@ -283,8 +277,6 @@ def _register_routes(app: FastAPI):
         paused = db.list_tasks({"status": "paused"}, limit=50)
         pending = db.list_tasks({"status": "pending"}, limit=50)
         recent = db.recent_events(limit=60)
-        problems = [item for item in db.recent_events(limit=200)
-                    if item["level"] in ("warning", "error")][:30]
         bank = question_bank_manager.stats()
         account_summary = accounts.summary()
         queue_rows = []
@@ -319,7 +311,6 @@ def _register_routes(app: FastAPI):
             },
             "queue": queue_rows,
             "recent_events": [_event_view(item) for item in recent],
-            "problems": [_event_view(item) for item in problems],
         }
 
     # ---------------- 账号 ----------------
@@ -807,32 +798,6 @@ def _register_routes(app: FastAPI):
             return settings.import_json(content)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-
-    # ---------------- 通知中心（问题不会自动消失） ----------------
-
-    @app.get("/api/notifications")
-    def list_notifications(include_read: bool = False,
-                           limit: int = Query(default=200, ge=1, le=1000),
-                           offset: int = Query(default=0, ge=0), category: str = ''):
-        """
-        问题列表
-
-        context_json 是数据库列名，前端需要的是解析后的对象，
-        这里统一展开为 context / count / first_seen / last_seen，避免前端各自解析。
-        """
-        data = manager.notifications.list(include_read=include_read, limit=limit, offset=offset, category=category)
-        data["items"] = [_notification_view(row) for row in data["items"]]
-        return data
-
-    @app.post("/api/notifications/read")
-    def read_notifications(payload: dict = Body(default={})):
-        """标记已读：传 id 标记单条，传 category 标记某类，都不传则全部标记"""
-        return {"updated": manager.notifications.mark_read(
-            notification_id=payload.get("id"), category=payload.get("category", ""))}
-
-    @app.delete("/api/notifications")
-    def clear_notifications(only_read: bool = True):
-        return {"removed": manager.notifications.clear(only_read=only_read)}
 
     @app.get("/api/presets")
     def list_presets():
@@ -1383,21 +1348,6 @@ def _event_view(row: dict) -> dict:
         # 前端默认只渲染这份“人话”描述，原始 message 仅用于排查
         "narrative": narrative.describe(event, message, level=level, stage=stage,
                                         payload=payload),
-    }
-
-
-def _notification_view(row: dict) -> dict:
-    return {
-        "id": row["id"],
-        "category": row.get("category", "general"),
-        "level": row.get("level", "warning"),
-        "title": row.get("title", ""),
-        "detail": redact(row.get("detail", "")),
-        "context": _json(row.get("context_json")),
-        "count": row.get("count", 1),
-        "first_seen": row.get("first_seen"),
-        "last_seen": row.get("last_seen"),
-        "read_at": row.get("read_at"),
     }
 
 

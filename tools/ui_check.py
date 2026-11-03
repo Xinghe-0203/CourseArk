@@ -27,8 +27,6 @@ def prepare():
     TaskManager.start = lambda self: None
     ui_seed.seed()
     from app import main
-    main.db.upsert_notification(category='llm', title='AI 接口认证失败，请检查设置',
-        detail='接口返回 HTTP 401，请检查 API Key 与接口地址。', level='error', dedupe_key='demo-auth')
     return main.create_app(), sandbox
 
 

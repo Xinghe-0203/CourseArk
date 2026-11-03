@@ -100,7 +100,7 @@ def test_auto_sync_accounts_only_logged_in_and_idle(sandbox, monkeypatch):
     assert calls == [(ok["id"], True)]
 
 
-def test_auto_sync_failure_only_records_notification(sandbox, monkeypatch):
+def test_auto_sync_failure_only_records_event(sandbox, monkeypatch):
     account = accounts.create_account("13800000104", "pwd123", label="失败账号")
     accounts.mark_login(account["id"], True)
 
@@ -112,8 +112,11 @@ def test_auto_sync_failure_only_records_notification(sandbox, monkeypatch):
 
     main._auto_sync_accounts()  # 不抛异常
 
-    items = main.manager.notifications.list(include_read=False)["items"]
-    assert any("启动自动同步失败" in item["detail"] for item in items)
+    events = main.db.recent_events(limit=10)
+    assert any(
+        item["event"] == "sync_failed" and "启动自动同步失败" in item["message"]
+        for item in events
+    ), events
 
 
 def test_lifespan_starts_auto_sync(sandbox, monkeypatch):

@@ -5,7 +5,6 @@ import { nextDismissedResumeTasks } from "./mission";
 import type {
   Account,
   Task,
-  Problem,
   Settings,
   TaskLive,
   View,
@@ -15,8 +14,6 @@ export const state = reactive({
   accounts: [] as Account[],
   tasks: [] as Task[],
   totalTasks: 0,
-  problems: [] as Problem[],
-  unreadProblems: 0,
   workspaces: [] as AccountWorkspace[],
   selectedCourses: [] as string[],
   selectedAccounts: [] as string[],
@@ -115,9 +112,6 @@ export async function refresh() {
     const values = await Promise.all([
       request<{ items: Account[] }>("/accounts"),
       request<{ items: Task[]; total: number }>("/tasks?limit=100"),
-      request<{ items: Problem[]; unread: number }>(
-        "/notifications?include_read=false",
-      ),
       request<{ items: AccountWorkspace[] }>("/workspace/accounts"),
     ]);
     if (current !== generation) return;
@@ -127,9 +121,7 @@ export async function refresh() {
       state.liveById[task.id] ? { ...task, live: state.liveById[task.id] } : task,
     );
     state.totalTasks = values[1].total;
-    state.problems = values[2].items;
-    state.unreadProblems = values[2].unread;
-    state.workspaces = values[3].items;
+    state.workspaces = values[2].items;
     const validAccounts = new Set(state.workspaces.map((p) => p.account.id));
     const validCourses = new Set(
       state.workspaces

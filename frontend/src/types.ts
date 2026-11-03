@@ -4,7 +4,6 @@ export type View =
   | "tasks"
   | "completed"
   | "bank"
-  | "problems"
   | "settings";
 export interface Account {
   id: string;
@@ -198,17 +197,6 @@ export interface TaskEvent {
     visible: boolean;
   };
   narrative: { title: string; detail: string; kind: string };
-}
-export interface Problem {
-  id: number;
-  category: string;
-  level: string;
-  title: string;
-  detail: string;
-  count: number;
-  read_at?: number;
-  last_seen: number;
-  context: { task_id?: string; account_label?: string; course_name?: string };
 }
 export interface BankItem {
   hash: string;

@@ -24,9 +24,12 @@ def check(url, output):
         assert heights==[520,520]
         assert page.locator('.execution-dashboard').count()==1
         passed('总览只显示执行中的两个账号与课程，固定520px卡片与真实进度仪表盘')
-        # 运行中进度小窗：当前动作、已用时、预计剩余，可最小化/展开
+        # 运行中进度小窗：默认最小化贴边，展开后显示当前动作、已用时、预计剩余
         win=page.locator('.progress-window')
         win.wait_for()
+        assert page.locator('.progress-window-body').count()==0
+        win.get_by_role('button',name='展开进度小窗').click()
+        page.locator('.progress-window-body').wait_for()
         text=win.inner_text()
         assert '已用时' in text and '预计剩余' in text
         page.wait_for_function('document.querySelector(".progress-window-activity")?.textContent.includes("正在学习")',timeout=10000)
@@ -36,10 +39,13 @@ def check(url, output):
         win.get_by_role('button',name='展开进度小窗').click()
         page.locator('.progress-window-body').wait_for()
         page.screenshot(path=str(output/'desktop-progress-window.png'))
-        passed('运行进度小窗显示当前动作/已用时/预计剩余，可最小化与展开')
+        # 收回到默认的最小化贴边状态，后续整页截图才反映真实默认形态。
+        win.get_by_role('button',name='最小化进度小窗').click()
+        page.wait_for_function('document.querySelectorAll(".progress-window-body").length===0')
+        passed('运行进度小窗默认最小化，展开后显示当前动作/已用时/预计剩余')
         for width,height,name in [(1920,1080,'wide'),(1440,1000,'desktop'),(390,844,'mobile')]:
             page.set_viewport_size({'width':width,'height':height})
-            for title in ['工作总览','账号与课程','学习任务','已完成','答题缓存','问题中心','偏好设置']:
+            for title in ['工作总览','学习任务','账号与课程','已完成','答题缓存','偏好设置']:
                 page.get_by_role('navigation',name='主要导航').get_by_role('button',name=title).click()
                 page.get_by_role('heading',name=title,exact=True).wait_for()
                 page.wait_for_timeout(180)
@@ -166,16 +172,6 @@ def check(url, output):
         assert download.value.suggested_filename.endswith('.log')
         page.keyboard.press('Escape');assert dialog.count()==0
         passed('历史任务详情、诊断分类、完整日志下载与键盘关闭')
-        page.get_by_label('打开站内通知栏').click()
-        notice=page.get_by_role('region',name='站内通知栏');notice.wait_for()
-        page.screenshot(path=str(output/'desktop-notices.png'))
-        before=page.request.get(url+'/api/notifications?include_read=false').json()['unread']
-        notice.get_by_label('处理这条通知').first.click()
-        page.get_by_text('通知已标记处理',exact=True).wait_for()
-        after=page.request.get(url+'/api/notifications?include_read=false').json()['unread']
-        assert after==before-1
-        page.keyboard.press('Escape');assert notice.count()==0
-        passed('站内通知栏读取、标记处理与 Escape 关闭')
         nav.get_by_role('button',name='答题缓存').click()
         page.get_by_role('button',name='导入缓存',exact=True).click()
         page.get_by_label('缓存内容').fill(json.dumps([{'question_text':'Vue界面验收','answer':'A','options':['A.甲','B.乙'],'question_type':'单选题'}],ensure_ascii=False))
@@ -467,7 +463,7 @@ def check(url, output):
         passed('已完成专页分页按 limit/offset 正确翻页并显示页码区间')
 
         nav.get_by_role('button',name='偏好设置').click()
-        assert page.get_by_role('button',name='外部通知',exact=True).count()==0
+        assert page.get_by_role('button',name='通知提醒',exact=True).count()==0
         page.get_by_role('button',name='AI 服务',exact=True).click()
         page.get_by_label('模型名称',exact=True).fill('vue-validation-model')
         page.get_by_label('API Key',exact=True).fill('isolated-test-key')
@@ -477,23 +473,13 @@ def check(url, output):
         page.reload()
         page.get_by_role('button',name='AI 服务',exact=True).click()
         assert page.get_by_label('模型名称',exact=True).input_value()=='vue-validation-model'
-        passed('取消外部通知设置、配置持久化、密钥保存后不回显')
+        passed('配置持久化、密钥保存后不回显')
         page.get_by_role('button', name='运行与存储', exact=True).click()
         sync_switch = page.get_by_label('启动时自动同步课程', exact=True)
         sync_switch.wait_for()
         assert sync_switch.is_checked()
         passed('偏好设置提供启动时自动同步课程开关且默认开启')
 
-        from app import main
-        for i in range(101):
-            main.db.upsert_notification(category='font',title=f'分页验收 {i}',detail='测试通知',level='warning',dedupe_key=f'pagination-{i}')
-        nav.get_by_role('button',name='问题中心').click()
-        page.get_by_label('问题分类').select_option('font')
-        page.get_by_role('button',name='下一页',exact=True).click()
-        page.wait_for_function('document.querySelectorAll(".problem-card").length===1')
-        page.get_by_label('标为已处理',exact=True).click()
-        page.wait_for_function('document.querySelectorAll(".problem-card").length===100')
-        passed('最后一页通知处理后回到有效页，其余通知仍可访问')
         win.get_by_role('button',name='关闭进度小窗').click()
         page.wait_for_function('document.querySelectorAll(".progress-window").length===0')
         passed('进度小窗可关闭，关闭后不再遮挡页面')

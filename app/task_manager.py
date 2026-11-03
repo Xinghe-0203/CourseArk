@@ -21,7 +21,6 @@ import time
 
 from . import control, events, narrative, paths, settings
 from .database import Database
-from .notifications import NotificationCenter
 from .log_redaction import redact, redact_data
 
 # 事件到状态/阶段的映射
@@ -49,7 +48,6 @@ class TaskManager:
     def __init__(self, db: Database, hub: events.EventHub):
         self.db = db
         self.hub = hub
-        self.notifications = NotificationCenter(db)
         self._lock = threading.RLock()
         self._running = {}
         self._thread = None
@@ -302,7 +300,6 @@ class TaskManager:
             "course_name": row.get("course_name", ""),
             "params": self._load_params(row),
             "llm": config.get("llm", {}),
-            "notification": config.get("notification", {}),
             "question_bank_path": paths.QUESTION_BANK_FILE,
             "question_bank_auto_save": bool(question_bank.get("auto_save", True)),
             "control_path": paths.control_path(row["id"]),
@@ -499,7 +496,7 @@ class TaskManager:
 
     def _record_event(self, task_id: str, account_id: str, event: str, message: str,
                       level: str = "info", stage: str = "", payload: dict = None):
-        """落库事件 -> 生成叙事 -> 更新通知中心 -> 推送 SSE"""
+        """落库事件 -> 生成叙事 -> 推送 SSE"""
         message = redact(message)
         payload = redact_data(payload)
         event_id = self.db.add_event(task_id, account_id, event, message,
@@ -522,18 +519,6 @@ class TaskManager:
         )
         self.hub.publish(record)
 
-        # 需要人处理的问题进入持久化通知中心（不自动消失）
-        try:
-            self.notifications.record(
-                event=event, level=level, message=message, task_id=task_id,
-                account_id=account_id,
-                account_label=task.get("account_label", ""),
-                course_name=task.get("course_name", ""),
-                feature_label=narrative.feature_label(feature) if feature else "",
-                stage=stage,
-            )
-        except Exception:
-            pass  # 通知写入失败不应影响任务事件流
         return record
 
     # --------------------------------------------------------

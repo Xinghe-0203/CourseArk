@@ -15,7 +15,7 @@ Electron ── Python runtime ── FastAPI ── Vue 页面
 
 - `frontend/`：Vue 组件、类型、请求和状态管理。
 - `webui_static/vue/`：由前端生产构建生成，随服务提供。
-- `app/`：FastAPI 路由、持久化、任务调度、会话、课程同步和通知。
+- `app/`：FastAPI 路由、持久化、任务调度、会话、课程同步。
 - `worker/`：任务、同步与会话子进程入口。
 - `cli_copy/`：复用的 AutoChaoxingCLI 业务代码及 WebUI 适配；资源来源与许可见其 `resource/`。
 - `desktop/`：Electron 桌面壳、Windows 构建和打包冒烟检查。
@@ -155,6 +155,36 @@ Worker 通过 `runtime.emit` 写事件，`app/database.py` 落库，`app/narrati
   前端浮动进度小窗与任务列表摘要消费该结构。
 - 带 `already_done` 的 `work_result` 由 `presentation` 输出为「此前已完成」+ 原因详情，
   避免「已完成」看起来像是程序真的作答过。
+- v2.3.0 起不再有通知子系统：失败与告警只作为任务事件落库（`sync_failed` / `task_failed` /
+  `login_failed` 等），由 `presentation.describe` 归类（`login/llm/antispider/network/media/...`）
+  并给出处置建议，前端在任务详情「诊断日志」与总览指标里消费，不再有独立的站内问题中心。
+
+## 界面分区与布局（v2.3.0）
+
+前端按**单一职责**分区，导航分三组：
+
+| 组 | 页面 | 职责 |
+|---|---|---|
+| 工作台 | 工作总览 | 只讲状态摘要与正在运行的任务；不提供课程/任务的增删改 |
+| 工作台 | 学习任务 | 唯一管理课程与任务的地方：选课、创建任务、暂停/继续/停止、看逐题明细 |
+| 档案 | 账号与课程 | 只管账号身份、登录缓存与课程同步；课程详情走弹窗，不重复列任务 |
+| 档案 | 已完成 | 汇总每次跑完的任务：课程、起止时间、耗时、逐题概要、结果说明 |
+| 档案 | 答题缓存 | 搜索、导入、导出、删除本机记住的答案 |
+| 系统 | 偏好设置 | 默认学习方式、并发、AI 服务、存储与备份 |
+
+- **统一口径**：`frontend/src/stats.ts` 的 `workspaceStats(workspaces, tasks)` 是唯一聚合来源，
+  顶栏 `.top-stats`（账号 / 课程 / 运行中）、总览指标卡、学习任务页共用它。`courses` 按
+  `sum(w.courses.length)` 计算，与学习任务页列出的课程条数一致，避免同一指标两页不同值。
+- **不再有卡内滚动**：学习任务页 `.account-workspaces` 用 `grid-auto-rows:1fr` 让同行等高，
+  `.workspace-account` 不设固定高度、`.workspace-courses` 不设 `max-height`；内容多则卡片自然变高。
+- **浮层让位**：`ProgressWindow` 默认 `minimized=true`，只留贴边标题栏；`.page-content` 底部预留
+  `132px`，展开时才临时占用空间。侧栏底部 `.engine` 常驻心跳（服务状态、运行中/暂停数、端口）。
+- **状态呈现**：`.status` 统一为胶囊（`--r-pill` + hairline），语义色只用于文字与边框，不做色块；
+  `.dot` / `.live-dot` 保留类名但不再渲染装饰圆点。
+- 验收锚点（`tools/vue_check.py` 断言）不可重命名：`.execution-account`（总览卡须等高 520px）、
+  `.execution-course`、`.media-live li`、`.execution-dashboard`、`.progress-window`、
+  `.workspace-account`（同行等高）、`.workspace-course`、`.resume-banner`、`.task-row`、
+  `.completed-row`。
 
 ## 本机数据
 

@@ -17,7 +17,8 @@ import type { Task } from "../types";
 defineEmits<{ select: [task: Task] }>();
 const POLL_MS = 2000;
 const closed = ref(false);
-const minimized = ref(false);
+// 默认最小化：只留一条标题栏贴在右下角，避免长期压住页面卡片。
+const minimized = ref(true);
 const taskId = ref("");
 const detail = ref<Task | null>(null);
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -70,9 +71,9 @@ watch(
       taskId.value = "";
       detail.value = null;
       clearTimeout(timer);
-      // 这一轮任务结束后，下一轮运行重新显示小窗。
+      // 这一轮任务结束后，下一轮运行重新显示小窗（默认仍是最小化的贴边状态）。
       closed.value = false;
-      minimized.value = false;
+      minimized.value = true;
       return;
     }
     if (next.id !== taskId.value) {

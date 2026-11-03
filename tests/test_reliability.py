@@ -153,10 +153,11 @@ def test_llm_auth_failure_is_not_repeated(sandbox, monkeypatch):
 
 
 def test_auth_problem_points_to_settings():
-    from app.notifications import classify
-    category, title, _ = classify('log', 'error', 'LLM HTTP 401: API Key 无效')
-    assert category == 'llm'
-    assert '认证' in title
+    from app.presentation import describe
+    view = describe('log', 'LLM HTTP 401: API Key 无效', level='error')
+    assert view['category'] == 'llm'
+    assert '认证' in view['title']
+    assert view['action']
 
 
 def test_task_logs_can_be_downloaded(app_client):
@@ -232,7 +233,7 @@ def test_history_only_lists_finished_tasks(app_client):
     assert app_client.get('/api/history').json()['total'] == 0
 
 
-def test_sync_failure_is_persisted_in_problem_center(sandbox):
+def test_sync_failure_is_persisted_as_event(sandbox):
     from app import accounts, sync_service
     from app.database import Database
     from app.events import EventHub
@@ -240,8 +241,10 @@ def test_sync_failure_is_persisted_in_problem_center(sandbox):
     db = Database()
     try:
         sync_service._finalize(db, EventHub(), account['id'], None, '课程同步超时', 1)
-        assert db.count_notifications(unread_only=True) == 1
-        assert db.list_notifications()[0]['category'] == 'sync'
+        events = db.recent_events(limit=10)
+        failed = [item for item in events if item['event'] == 'sync_failed']
+        assert failed, events
+        assert failed[0]['message'].startswith('课程同步超时')
     finally:
         db.close()
 

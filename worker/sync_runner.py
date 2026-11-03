@@ -48,7 +48,6 @@ def build_config(job: dict) -> dict:
         "llm": {"base_url": "", "api_key": "", "model": "", "temperature": 0, "max_tokens": 0,
                 "timeout": 30},
         "question_bank": {"enabled": False, "db_path": job["question_bank_path"], "auto_save": False},
-        "notification": {"enabled": False},
         "advanced": {
             "request_delay": float(advanced.get("request_delay", 1.0)),
             "request_delay_jitter": float(advanced.get("request_delay_jitter", 0.5)),

@@ -20,9 +20,6 @@ SETTINGS_KEY = "global"
 # 敏感字段：API 只返回是否存在，不返回值
 SECRET_PATHS = (
     "llm.api_key",
-    "notification.server_chan.sendkey",
-    "notification.bark.key",
-    "notification.telegram.bot_token",
 )
 
 # 仅本机运行：监听地址固定为回环地址，不接受局域网访问
@@ -75,12 +72,6 @@ DEFAULT_SETTINGS = {
     "question_bank": {
         "enabled": True,
         "auto_save": True,
-    },
-    "notification": {
-        "enabled": False,
-        "server_chan": {"enabled": False, "sendkey": ""},
-        "bark": {"enabled": False, "key": "", "server": "https://api.day.app"},
-        "telegram": {"enabled": False, "bot_token": "", "chat_id": ""},
     },
     "advanced": {
         "request_delay": 1.0,
@@ -239,7 +230,6 @@ _SOURCE_MAPPING = {
     "video": "defaults.video",
     "answer": "defaults.answer",
     "llm": "llm",
-    "notification": "notification",
 }
 _SOURCE_ADVANCED_KEYS = ("request_delay", "request_delay_jitter", "max_retries",
                          "retry_delay", "learn_count_dwell", "rotate_ua", "log_level")
@@ -305,7 +295,6 @@ def source_config_info() -> dict:
         "has_llm_key": bool(str(llm.get("api_key", "")).strip()),
         "llm_model": llm.get("model", ""),
         "llm_base_url": llm.get("base_url", ""),
-        "has_notification": bool(legacy.get("notification", {}).get("enabled")),
     }
 
 

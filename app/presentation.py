@@ -1,5 +1,5 @@
 """网页事件呈现：原始诊断保留，默认动态仅显示有用的业务信息。"""
-from . import narrative, notifications
+from . import narrative
 
 CATEGORIES = {'login': '账号登录', 'course': '课程读取', 'chapter': '章节解析', 'video': '视频学习',
               'audio': '音频学习', 'exam': '答题', 'homework': '作业', 'download': '资源下载',
@@ -9,6 +9,37 @@ ACTIONS = {'llm': '检查 AI 服务地址、密钥与模型权限。', 'login': 
            'answer': '核对未作答题目与提交结果后重试。', 'chapter': '查看章节开放状态或在学习通处理此任务点。',
            'network': '检查网络连接，恢复后重试。', 'media': '核对视频任务点是否被平台确认。',
            'video': '在学习通核对视频任务状态，检查平台验证与学习限制后重试。'}
+
+# 日志关键词 -> 分类；只用于把告警归到正确的处理类别，不再落库
+LOG_CATEGORIES = (
+    ('章节数为零', 'chapter'), ('[FAIL]', 'media'), ('视频未完成', 'media'),
+    ('平台尚未确认视频', 'media'), ('视频播放异常', 'media'), ('字体', 'font'),
+    ('图片内容', 'font'), ('尚未支持', 'chapter'), ('尚未确认任务点', 'chapter'),
+    ('未作答题目', 'answer'), ('ReadTimeout', 'network'), ('连接失败', 'network'),
+    ('LLM HTTP 401', 'llm'), ('LLM HTTP 403', 'llm'), ('反爬虫', 'antispider'),
+    ('antispider', 'antispider'), ('验证码', 'antispider'), ('冷却中', 'antispider'),
+    ('提交失败', 'answer'), ('未获取到题目', 'answer'), ('随机', 'answer'),
+    ('登录凭据', 'login'), ('登录失败', 'login'), ('密码', 'login'),
+    ('LLM', 'llm'),
+)
+EVENT_CATEGORIES = {'login_failed': 'login', 'task_failed': 'task', 'interrupted': 'task',
+                    'force_stop': 'task', 'sync_failed': 'sync', 'worker_exit': 'worker'}
+HIDDEN_EVENTS = ('log', 'task_progress', 'media_progress', 'worker_exit')
+
+
+def _categorize(event: str, level: str, message: str, stage: str) -> str:
+    category = EVENT_CATEGORIES.get(event)
+    text = str(message or '')
+    # 失败原因比事件名更能说明该去修什么，所以先按关键词细化一次
+    if level in ('warning', 'error') or event in ('task_failed', 'login_failed', 'sync_failed'):
+        for keyword, matched in LOG_CATEGORIES:
+            if keyword in text:
+                return matched
+    if category:
+        return category
+    if level in ('warning', 'error'):
+        return 'general'
+    return stage if stage in CATEGORIES else 'progress'
 
 
 def describe(event, message, level='info', stage='', payload=None):
@@ -27,8 +58,7 @@ def describe(event, message, level='info', stage='', payload=None):
         return {'category': 'exam', 'title': title,
                 'detail': ' · '.join(parts) or narrative._clean(message),
                 'action': '', 'visible': True}
-    notice = notifications.classify(event, level, message, stage)
-    category = notice[0] if notice else stage if stage in CATEGORIES else 'progress'
+    category = _categorize(event, level, message, stage)
     if event.startswith('work_'):
         category = payload.get('kind') or stage or 'progress'
         if category not in CATEGORIES:
@@ -52,7 +82,7 @@ def describe(event, message, level='info', stage='', payload=None):
                 'action': ACTIONS.get(category, '') if level in ('error', 'warning') else '',
                 'visible': event != 'work_progress'}
     business = narrative.describe(event, message, level, stage, payload) or {}
-    return {'category': category, 'title': notice[1] if notice else business.get('title', ''),
-            'detail': narrative._clean(message) if notice else business.get('detail', ''),
-            'action': ACTIONS.get(category, '') if notice else '',
-            'visible': bool(notice) or event not in ('log', 'task_progress', 'media_progress', 'worker_exit')}
+    return {'category': category, 'title': business.get('title', ''),
+            'detail': business.get('detail', ''),
+            'action': ACTIONS.get(category, '') if level in ('error', 'warning') else '',
+            'visible': level in ('warning', 'error') or event not in HIDDEN_EVENTS}

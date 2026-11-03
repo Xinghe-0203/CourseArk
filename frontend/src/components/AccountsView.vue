@@ -7,6 +7,7 @@ import {
   Pencil,
   Trash2,
   BookOpen,
+  Users,
 } from "lucide-vue-next";
 import { state, act } from "../store";
 import { request } from "../api";
@@ -174,7 +175,19 @@ function save() {
       </details>
     </article>
     <div v-if="!state.accounts.length" class="empty">
-      添加第一个账号，开始管理课程。
+      <Users :size="32" />
+      <h3>还没有账号</h3>
+      <p>
+        添加学习通账号后可以同步课程、创建学习任务；密码只保存在本机后台。
+      </p>
+      <button
+        @click="
+          edit = { label: '', username: '', enabled: true };
+          password = '';
+        "
+      >
+        <Plus :size="16" />添加第一个账号
+      </button>
     </div>
   </div>
   <ModalShell
@@ -234,7 +247,10 @@ function save() {
       </div>
     </div>
     <div v-if="!courses.length" class="empty">
-      暂无课程，请先同步。
+      <BookOpen :size="28" />
+      <h3>这个账号还没有课程</h3>
+      <p>先点账号卡片上的「同步课程」，同步完成后课程会出现在这里。</p>
+      <button @click="showCourses = null">返回账号列表</button>
     </div></ModalShell
   >
   <ModalShell v-if="remove" title="删除账号" @close="remove = null"

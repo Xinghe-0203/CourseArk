@@ -1,4 +1,4 @@
-﻿"""
+"""
 本地 Web smoke test
 
 真实启动 WebUI 服务与 Worker 子进程，验证端到端链路：
@@ -319,22 +319,6 @@ sys.exit(1)
     check("设置主存储为 SQLite", storage.get("backend") == "sqlite", str(storage.get("backend")))
     check("设置表名为 app_settings", storage.get("table") == "app_settings")
     check("服务标记为仅本机模式", storage.get("host_mode") == "local-only")
-
-    print("\n== 8.6 问题中心（不自动消失） ==")
-    from app.main import db as _db
-    _db.upsert_notification(category="antispider", title="触发反爬虫限制",
-                            detail="状态码202", level="warning", dedupe_key="smoke-1",
-                            context={"account_label": "冒烟账号"})
-    notes = httpx.get(f"{base}/api/notifications", timeout=10).json()
-    check("问题写入后立即可查", notes["unread"] >= 1, str(notes["unread"]))
-    check("问题带上下文信息",
-          any(item.get("context", {}).get("account_label") == "冒烟账号"
-              for item in notes["items"]))
-    first_id = notes["items"][0]["id"]
-    httpx.post(f"{base}/api/notifications/read", json={"id": first_id}, timeout=10)
-    after = httpx.get(f"{base}/api/notifications", timeout=10).json()
-    check("标记已读后移出未读", after["unread"] == notes["unread"] - 1,
-          f"{notes['unread']} -> {after['unread']}")
 
     print("\n== 9. 设置与敏感值 ==")
     httpx.patch(f"{base}/api/settings", json={"llm": {"api_key": "smoke-secret"}}, timeout=10)

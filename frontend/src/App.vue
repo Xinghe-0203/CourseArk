@@ -6,38 +6,43 @@ import {
   Layers,
   Database,
   SlidersHorizontal,
-  Bell,
   Plus,
   RefreshCw,
   GraduationCap,
   CheckCircle2,
 } from "lucide-vue-next";
 import { state, initialize, refresh, navigate } from "./store";
-import { request } from "./api";
+import { workspaceStats } from "./stats";
 import type { Task, View } from "./types";
 import TaskList from "./components/TaskList.vue";
 import TaskDrawer from "./components/TaskDrawer.vue";
 import AccountsView from "./components/AccountsView.vue";
 import NewTask from "./components/NewTask.vue";
-import ProblemsView from "./components/ProblemsView.vue";
 import BankView from "./components/BankView.vue";
 import SettingsView from "./components/SettingsView.vue";
 import AccountWorkspace from "./components/AccountWorkspace.vue";
-import NoticeBar from "./components/NoticeBar.vue";
 import OverviewDashboard from "./components/OverviewDashboard.vue";
 import CompletedView from "./components/CompletedView.vue";
 import ProgressWindow from "./components/ProgressWindow.vue";
 const nav = [
   { key: "overview", title: "工作总览", icon: LayoutDashboard },
-  { key: "accounts", title: "账号与课程", icon: Users },
   { key: "tasks", title: "学习任务", icon: Layers },
+  { key: "accounts", title: "账号与课程", icon: Users },
   { key: "completed", title: "已完成", icon: CheckCircle2 },
   { key: "bank", title: "答题缓存", icon: Database },
-  { key: "problems", title: "问题中心", icon: Bell },
   { key: "settings", title: "偏好设置", icon: SlidersHorizontal },
 ] as const;
+// 侧栏按职责分组：工作台只看当前状态，档案放历史与资产，系统放配置。
+const groups = [
+  { caption: "工作台", keys: ["overview", "tasks"] },
+  { caption: "档案", keys: ["accounts", "completed", "bank"] },
+  { caption: "系统", keys: ["settings"] },
+] as const;
+const sections = groups.map((group) => ({
+  caption: group.caption,
+  items: nav.filter((item) => (group.keys as readonly string[]).includes(item.key)),
+}));
 const selected = ref<Task | null>(null);
-const unread = computed(() => state.unreadProblems);
 const taskTab = ref("accounts");
 function openNewTask() {
   state.newTaskAccount = "";
@@ -45,15 +50,9 @@ function openNewTask() {
   state.newTask = true;
 }
 const page = computed(() => nav.find((n) => n.key === state.view) || nav[0]);
-async function selectTask(id: string) {
-  try {
-    selected.value =
-      state.tasks.find((t) => t.id === id) ||
-      (await request<Task>(`/tasks/${id}`));
-  } catch (e) {
-    state.error = (e as Error).message;
-  }
-}
+// 顶栏统计与总览、学习任务共用同一套口径，避免同批账号出现两种课程数。
+const totals = computed(() => workspaceStats(state.workspaces, state.tasks));
+const port = computed(() => Number(state.settings.server?.port) || 8848);
 let stream: EventSource | undefined,
   timer: ReturnType<typeof setInterval>,
   toastTimer: ReturnType<typeof setTimeout> | undefined,
@@ -126,62 +125,68 @@ onUnmounted(() => {
   <div class="shell">
     <aside class="sidebar">
       <a href="#overview" class="brand" @click="navigate('overview')"
-        ><span class="brand-mark"><GraduationCap :size="25" /></span
+        ><span class="brand-mark"><GraduationCap :size="24" /></span
         ><span>课舟<small>超星多账号学习台</small></span></a
       >
-      <div class="nav-caption">工作空间</div>
       <nav aria-label="主要导航">
-        <button
-          v-for="item in nav"
-          :key="item.key"
-          :class="{ chosen: state.view === item.key }"
-          @click="navigate(item.key)"
-        >
-          <component :is="item.icon" :size="19" /><span>{{ item.title }}</span
-          ><b v-if="item.key === 'problems' && unread" class="nav-count">{{
-            unread
-          }}</b>
-        </button>
+        <div v-for="section in sections" :key="section.caption" class="nav-group">
+          <div class="nav-caption">{{ section.caption }}</div>
+          <button
+            v-for="item in section.items"
+            :key="item.key"
+            :class="{ chosen: state.view === item.key }"
+            :aria-current="state.view === item.key ? 'page' : undefined"
+            @click="navigate(item.key)"
+          >
+            <component :is="item.icon" :size="18" /><span>{{ item.title }}</span>
+          </button>
+        </div>
       </nav>
       <div class="sidebar-bottom">
-        <span :class="['dot', state.online ? 'green' : 'amber']"></span
-        ><span
-          >{{ state.online ? "本机服务已连接" : "正在连接服务"
-          }}<small>任务在后台持续运行</small></span
-        >
+        <div class="engine" :class="state.online ? 'is-ok' : 'is-warn'">
+          <span class="engine-dot"></span>
+          <div class="engine-copy">
+            <b>{{ state.online ? "后台服务运行中" : "正在连接后台服务" }}</b>
+            <small
+              >{{ totals.running }} 项运行中 · {{ totals.paused }} 项暂停 · 端口
+              {{ port }}</small
+            >
+          </div>
+        </div>
       </div>
     </aside>
     <main class="workspace">
       <header class="topbar">
         <div class="breadcrumb">工作空间 <span>/</span> {{ page.title }}</div>
         <div class="top-actions">
+          <div class="top-stats">
+            <div class="stat-item" title="已添加的账号数量">
+              <b>{{ totals.accounts }}</b><span>账号</span>
+            </div>
+            <div class="stat-item" title="已同步课程总数（含停用账号）">
+              <b>{{ totals.courses }}</b><span>课程</span>
+            </div>
+            <div class="stat-item" title="正在执行的任务数量">
+              <b>{{ totals.running }}</b><span>运行中</span>
+            </div>
+          </div>
           <button class="icon-button" aria-label="刷新数据" @click="refresh">
-            <RefreshCw :size="17" /></button
-          ><NoticeBar /><span class="local-label">本地工作空间</span>
+            <RefreshCw :size="17" />
+          </button>
         </div>
       </header>
       <div class="page-content">
         <div class="page-heading">
           <div>
-            <div class="eyebrow">
-              {{
-                state.view === "overview"
-                  ? "今天的学习，一目了然"
-                  : "AUTO CX / WORKSPACE"
-              }}
-            </div>
             <h1>{{ page.title }}</h1>
             <p>
               {{
                 {
-                  overview:
-                    "跟进正在执行的账号与课程，查看真实任务进度和处理结果。",
-                  accounts: "统一管理账号、登录状态与可学习的课程。",
-                  tasks: "按账号查看任务，随时暂停、继续或检查结果。",
-                  completed:
-                    "汇总每一次跑完的任务：课程、时间、耗时、逐题明细与结果说明。",
+                  overview: "当前状态摘要与正在运行的任务；账号、课程与任务分别在专页管理。",
+                  tasks: "按账号管理课程与任务，随时暂停、继续或查看执行结果。",
+                  accounts: "管理账号与登录状态、同步课程；课程详情在弹窗中查看。",
+                  completed: "汇总每次跑完的任务：课程、时间、耗时、逐题明细与结果说明。",
                   bank: "查看、导入与清理本机记住的答案，减少重复调用 AI。",
-                  problems: "需要你处理的问题集中在这里，不会被运行日志淹没。",
                   settings: "设置默认学习方式、账号并发数量与 AI 服务。",
                 }[state.view]
               }}
@@ -233,10 +238,6 @@ onUnmounted(() => {
           @select="selected = $event"
         />
         <BankView v-else-if="state.view === 'bank'" />
-        <ProblemsView
-          v-else-if="state.view === 'problems'"
-          @select-task="selectTask"
-        />
         <SettingsView v-else-if="state.view === 'settings'" />
         <footer>课舟 CourseArk <span>·</span> 数据保存在本机</footer>
       </div>

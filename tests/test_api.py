@@ -256,7 +256,7 @@ def test_overview_shape(app_client):
     _create_account(app_client, "13800004040")
     data = app_client.get("/api/overview").json()
     assert set(["accounts", "tasks", "today", "workers", "question_bank",
-                "queue", "recent_events", "problems"]).issubset(data.keys())
+                "queue", "recent_events"]).issubset(data.keys())
     assert data["accounts"]["total"] == 1
     assert data["workers"]["limit"] >= 1
 

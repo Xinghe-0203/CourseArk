@@ -201,7 +201,6 @@ def build_config(task: dict) -> dict:
             "db_path": task["question_bank_path"],
             "auto_save": bool(task.get("question_bank_auto_save", True)),
         },
-        "notification": {"enabled": False},
         "advanced": {
             "request_delay": float(advanced.get("request_delay", 1.0)),
             "request_delay_jitter": float(advanced.get("request_delay_jitter", 0.5)),

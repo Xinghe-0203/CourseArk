@@ -3,16 +3,16 @@ import { computed } from "vue";
 import {
   Users,
   Layers,
-  Bell,
   ArrowUpRight,
   Pause,
   Square,
   ChevronRight,
   History,
+  CheckCircle2,
 } from "lucide-vue-next";
 import { state, act, navigate, resumeTask, dismissResumeTask } from "../store";
 import { request } from "../api";
-import { features, statuses, date } from "../format";
+import { features, statuses, date, terminal } from "../format";
 import { executionProfiles } from "../overview";
 import {
   visibleLatestUnfinished,
@@ -23,6 +23,8 @@ import type { Task } from "../types";
 const emit = defineEmits<{ select: [task: Task] }>();
 const profiles = computed(() => executionProfiles(state.workspaces));
 const tasks = computed(() => profiles.value.flatMap((p) => p.tasks));
+/** 最近结束的任务：与「已完成」页共用同一批数据，这里只做摘要。 */
+const recent = computed(() => state.tasks.filter(terminal).slice(0, 6));
 const totals = computed(() =>
   tasks.value.reduce(
     (s, t) => ({
@@ -153,12 +155,14 @@ async function control(id: string, op: string) {
         }}
       </p>
     </div>
-    <div :class="{ attention: state.unreadProblems }">
-      <span>站内待处理通知</span
-      ><strong>{{ state.unreadProblems }}<small>条</small></strong
-      ><button class="text-link" @click="navigate('problems')">
-        查看问题中心 <ArrowUpRight :size="14" /></button
-      ><Bell :size="21" />
+    <div>
+      <span>待处理内容</span
+      ><strong>{{ totals.issues }}<small>项</small></strong>
+      <p>{{
+        totals.issues
+          ? "有内容需要打开任务详情核对"
+          : "当前没有需要处理的内容"
+      }}</p>
     </div>
   </div>
   <div v-if="tasks.length" class="execution-dashboard">
@@ -202,7 +206,7 @@ async function control(id: string, op: string) {
   <div class="section-heading">
     <div>
       <h2>正在执行的账号</h2>
-      <p>仅显示正在执行的课程 · 卡片内滚动查看完整数据</p>
+      <p>仅显示正在执行的课程 · 点击「详情」查看逐题与日志</p>
     </div>
     <button class="text-link" @click="navigate('tasks')">
       学习任务 <ArrowUpRight :size="16" />
@@ -336,5 +340,38 @@ async function control(id: string, op: string) {
     <h3>当前没有正在执行的任务</h3>
     <p>创建学习任务后，执行中的账号与课程会显示在这里。</p>
     <button @click="navigate('tasks')">查看学习任务</button>
+  </div>
+  <div class="section-heading recent-heading">
+    <div>
+      <h2>最近完成</h2>
+      <p>最近结束的任务摘要 · 逐题明细与结果说明在「已完成」页</p>
+    </div>
+    <button class="text-link" @click="navigate('completed')">
+      全部已完成 <ArrowUpRight :size="16" />
+    </button>
+  </div>
+  <div v-if="recent.length" class="overview-recent">
+    <button
+      v-for="t in recent"
+      :key="t.id"
+      class="recent-row"
+      @click="emit('select', t)"
+    >
+      <span class="recent-main">
+        <b>{{ t.course_name }}</b>
+        <small>{{ t.account_label }} · {{ features[t.feature] || t.feature_label }}</small>
+      </span>
+      <span :class="['status', t.status]">{{ statuses[t.status] }}</span>
+      <span class="recent-meta">
+        <b>{{ t.progress.completed }}/{{ t.progress.total || "—" }}</b>
+        <small>{{ date(t.finished_at || t.created_at) }}</small>
+      </span>
+    </button>
+  </div>
+  <div v-else class="empty overview-recent-empty">
+    <CheckCircle2 :size="28" />
+    <h3>还没有完成的任务</h3>
+    <p>任务跑完后会在这里显示课程、进度与结束时间，完整明细在「已完成」页。</p>
+    <button @click="navigate('tasks')">去创建任务</button>
   </div>
 </template>

@@ -177,20 +177,6 @@ def test_login_html_is_not_empty_chapters(monkeypatch):
         course.get_chapter()
 
 
-def test_notifications_use_full_unread_count_and_paginate(app_client):
-    from app import main
-    unread = main.db.upsert_notification(category='llm', title='old unread', detail='test',
-                                        level='warning', dedupe_key='old')
-    for i in range(205):
-        row = main.db.upsert_notification(category='network', title='read', detail='test',
-                                          level='warning', dedupe_key=f'read-{i}')
-        main.db.mark_notifications_read(row['id'])
-    result = app_client.get('/api/notifications?include_read=false').json()
-    assert result['unread'] == 1 and len(result['items']) == 1
-    result = app_client.get('/api/notifications?include_read=true&offset=200&limit=100').json()
-    assert len(result['items']) == 6 and result['filtered_total'] == 206
-    result = app_client.get('/api/notifications?include_read=true&category=llm').json()
-    assert result['filtered_total'] == 1 and result['items'][0]['id'] == unread['id']
 
 
 def test_multi_account_workspace_preserves_account_boundaries(app_client):
@@ -363,30 +349,10 @@ def test_instant_probe_diagnostics_are_absent_from_both_logs(monkeypatch,tmp_pat
         logger.remove();logger.configure(patcher=None)
 
 
-def test_notifications_identify_video_and_random_answers():
-    from app.notifications import classify
-    assert classify('log','error','[FAIL] 测试.mp4','log')[0]=='media'
-    assert classify('log','warning','判断题 -> true (随机)','log')[0]=='answer'
-
-
-def test_existing_problem_labels_are_repaired_without_losing_history(tmp_path):
-    from app.database import Database
-    from app.notifications import NotificationCenter
-    db = Database(str(tmp_path / 'labels.db'))
-    try:
-        item = db.upsert_notification(category='general', title='运行告警', detail='[FAIL] 货物保险.mp4', level='error', dedupe_key='legacy-video', context={'task_id': 'historical-task'})
-        db.mark_notifications_read(item['id'])
-        before = db.list_notifications(include_read=True)[0]
-        center = NotificationCenter(db)
-        after = center.list(include_read=True)['items'][0]
-        assert after['category'] == 'media'
-        assert '视频' in after['title']
-        for field in ('id', 'detail', 'count', 'read_at', 'first_seen', 'last_seen', 'context_json'):
-            assert after[field] == before[field]
-        NotificationCenter(db)
-        assert db.count_notifications() == 1
-    finally:
-        db.close()
+def test_event_categories_identify_video_and_random_answers():
+    from app.presentation import describe
+    assert describe('log','[FAIL] 测试.mp4','error','log')['category']=='media'
+    assert describe('log','判断题 -> true (随机)','warning','log')['category']=='answer'
 
 
 def test_video_final_confirmation_is_bounded_and_preserves_partial_resume(monkeypatch):

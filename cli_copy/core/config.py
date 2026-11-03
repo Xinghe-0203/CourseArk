@@ -235,23 +235,6 @@ class Config:
                 "db_path": "data/question_bank.db",
                 "auto_save": True,
             },
-            "notification": {
-                "enabled": False,
-                "server_chan": {
-                    "enabled": False,
-                    "sendkey": "",
-                },
-                "bark": {
-                    "enabled": False,
-                    "key": "",
-                    "server": "https://api.day.app",
-                },
-                "telegram": {
-                    "enabled": False,
-                    "bot_token": "",
-                    "chat_id": "",
-                },
-            },
             "advanced": {
                 "request_delay": 1.0,
                 "request_delay_jitter": 0.5,

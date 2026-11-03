@@ -14,7 +14,6 @@ import threading
 import time
 
 from . import accounts, events, paths, settings, narrative
-from .notifications import NotificationCenter
 
 _lock = threading.RLock()
 _running = {}  # account_id -> {"started_at": float, "process": Popen}
@@ -186,9 +185,6 @@ def _finalize(db, hub, account_id: str, result, failure, exit_code: int):
     if failure and "登录" in str(message):
         accounts.mark_login(account_id, False, error=message)
     _publish(hub, account_id, "sync_failed", message, level="error")
-    account = accounts.get_account(account_id) or {}
-    NotificationCenter(db).record(event="sync_failed", level="error", message=message,
-                                  account_id=account_id, account_label=account.get("label", ""), stage="sync")
     db.add_event("", account_id, "sync_failed", message, level="error", stage="sync")
 
 

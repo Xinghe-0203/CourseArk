@@ -10,7 +10,117 @@
 
 ---
 
-## v2.2.4（最新）
+## v2.3.0（最新）
+
+> 本版做两件事：**删掉一整套「通知」子系统**（它一直在重复任务事件里的信息，却要求用户再去一个
+> 独立页面处理一遍），以及**按单一职责重做界面分区与布局**——总览只讲状态，学习任务只管课程与任务，
+> 账号页只管账号与登录。这是一个**破坏性变更**：`/api/notifications*` 三个端点、`notifications`
+> 数据表与 `notification` 设置组被移除，旧配置里该组会被自动丢弃（不影响其余设置）。
+
+### 一、移除：通知子系统（站内问题中心 + 外部推送）
+
+- 现象：同一个失败原因会同时出现在三处——任务详情的事件、总览的「待处理通知」、顶栏铃铛的
+  未读计数。用户点进「问题中心」看到的是一条条已经读过的事件副本，还要手动「标记已处理」。
+- 判断：这是**信息重复而不是功能**。失败与告警已经作为任务事件落库（`sync_failed` /
+  `task_failed` / `login_failed` / `interrupted` …），`presentation.describe` 已能归类并给出
+  处置建议，前端在任务详情「诊断日志」与总览指标里直接消费即可。
+- 删除范围（后端）：`app/notifications.py` 整个文件（`classify()` 关键词表与
+  `NotificationCenter`）；`app/database.py` 的 `notifications` 表、两个索引与 7 个方法
+  （`repair_notification_labels` / `upsert_notification` / `list_notifications` /
+  `count_notifications` / `notification_counts_by_level` / `mark_notifications_read` /
+  `clear_notifications`）；`app/main.py` 的三个 `/api/notifications*` 端点、`_notification_view`
+  与总览返回体的 `problems` 字段；`app/task_manager.py` 与 `app/sync_service.py` 里的
+  `NotificationCenter` 引用；`app/settings.py` 的整个 `notification` 组
+  （`enabled` / `server_chan` / `bark` / `telegram`）——`SECRET_PATHS` 现在只剩 `llm.api_key`。
+- 删除范围（CLI 与 Worker）：`cli_copy/utils/notification.py`（ServerChan / Bark / Telegram
+  推送）、`cli_copy/core/config.py` 的 `notification` 组、`worker/runner.py`、
+  `worker/sync_runner.py`、`worker/session_runner.py`、`worker/catalog_runner.py` 里注入给 CLI
+  的 `"notification": {"enabled": False}`。
+- 删除范围（前端）：`NoticeBar.vue`（顶栏铃铛与站内通知栏）、`ProblemsView.vue`（问题中心页）、
+  `store.ts` 的 `problems` / `unreadProblems` 与第四个 `GET /notifications` 请求（刷新从 4 个请求
+  降到 3 个）、`types.ts` 的 `Problem` 接口与 `View` 的 `"problems"`、`SettingsView.vue` 的
+  「通知提醒」页签与全部 `notification.*` 字段。
+- 替代方案：`app/presentation.py` 重写——保留 `CATEGORIES` / `ACTIONS`，新增
+  `LOG_CATEGORIES`（关键词→分类，先按关键词细化再回退事件映射，避免「登录凭据无效」被归成
+  `task` 而不是 `login`）、`EVENT_CATEGORIES`、`HIDDEN_EVENTS`（`log` / `task_progress` /
+  `media_progress` / `worker_exit`）与 `_categorize()`，`describe()` 的 `visible` 由事件类型与
+  级别推导。总览第 4 张指标卡从「站内待处理通知」改为「待处理内容」，取
+  `progress.failed + progress.blocked`。
+- 迁移：无需迁移数据。旧 `settings` 里的 `notification` 组在读取时被 `normalize()` 丢弃；
+  已存在的 `notifications` 表不会再被读写（新库不再创建它），不影响其它表。
+
+### 二、重做：界面分区与布局（单一职责）
+
+导航从 7 项减到 6 项，并按职责分成三组（工作台：工作总览 / 学习任务；档案：账号与课程 /
+已完成 / 答题缓存；系统：偏好设置）。侧栏底部原「状态点 + 一句话」改为**引擎心跳**：后台服务
+运行状态、运行中/暂停任务数、端口号，把原先藏在浮层里的信息变成常驻的一行。
+
+- **统一口径**：新增 `frontend/src/stats.ts` 的 `workspaceStats(workspaces, tasks)`，顶栏
+  `.top-stats`（账号 / 课程 / 运行中）、总览指标卡、学习任务页三处取同一份聚合数字。此前
+  「总览说 2 门课程、学习任务页列出 18 门」的口径冲突由此消除——`courses` 现在按
+  `workspaces.reduce((n, w) => n + w.courses.length, 0)` 计算，与学习任务页列出的课程条数一致。
+- **学习任务页去掉卡内滚动**：`.workspace-account` 不再写死 `height:620px` / `overflow:hidden`，
+  `.workspace-courses` 不再 `max-height:370px; overflow:auto`；改为 `.account-workspaces`
+  的 `grid-auto-rows:1fr` 让同一行卡片等高、内容自然撑开。参考的三个同类项目里没有一个把
+  滚动条塞进卡片内部。
+- **进度小窗默认最小化**：`ProgressWindow.vue` 的 `minimized` 初值改为 `true`，任务开始时只留
+  一条标题栏贴在右下角（任务结束后下一轮重新显示、仍是最小化），配合 `.page-content` 底部
+  预留 `132px`，不再长期压住第二列卡片。展开仍可看到当前动作、已用时与预计剩余。
+- **账号页只管账号**：账号卡只保留身份（头像 / 备注 / 学号 / 启用状态）、已同步课程数与
+  「查看课程」（弹窗）、同步与打开学习通、编辑与删除、`<details>登录状态与缓存`。课程列表与
+  任务列表不再在账号页重复出现（那是学习任务页的职责）。
+- **总览补「最近完成」**：在运行中任务之外补一段 `.overview-recent`，按终态任务取最近 6 条，
+  显示课程、结果与进度，点击直接打开任务详情；空态给出「去创建任务」。
+- **空态成对化**：`AccountsView.vue` 的两处裸文案空态（无账号、账号无课程）改为标题 + 说明 +
+  动作按钮。
+- 清理通知遗留的死规则：`.notification-dot`、`.nav-count`、`.problem-card` / `.problem-icon` /
+  `.problem-list` / `.problem-tags` / `.problem-actions` 全部删除（`Select-String` 复核 0 命中）。
+- 验收锚点全部保留：`.execution-account`（含总览卡的 520px 等高约束）、`.execution-course`、
+  `.media-live li`、`.execution-dashboard`、`.progress-window`、`.workspace-account`（同行等高）、
+  `.workspace-course`（种子下 18 条）、`.resume-banner` / `.resume-action` / `.resume-dismiss`、
+  `.completed-row`、`.task-row` 等类名与语义均未改动。
+
+### 改动文件（v2.3.0）
+
+| 文件 | 改动 |
+|---|---|
+| `app/notifications.py` | **删除**（关键词分类表与 `NotificationCenter` 整体移除） |
+| `app/database.py` | 删 `notifications` 表、两个索引与 7 个通知方法 |
+| `app/main.py` | 删 3 个 `/api/notifications*` 端点与 `_notification_view`；总览返回体去掉 `problems`；启动自动同步失败改为写 `sync_failed` 事件 |
+| `app/presentation.py` | 全文重写：`LOG_CATEGORIES` / `EVENT_CATEGORIES` / `HIDDEN_EVENTS` / `_categorize()`，`describe()` 改为纯叙事驱动 |
+| `app/settings.py` | 删 `notification` 组与对应 `_SOURCE_MAPPING`；`SECRET_PATHS` 只剩 `llm.api_key` |
+| `app/task_manager.py`、`app/sync_service.py` | 去掉 `NotificationCenter` 引用，失败只写事件 |
+| `cli_copy/utils/notification.py` | **删除**（外部推送整体移除） |
+| `cli_copy/core/config.py` | 删 `notification` 配置组 |
+| `worker/runner.py`、`worker/sync_runner.py`、`worker/session_runner.py`、`worker/catalog_runner.py` | 删注入的 `"notification": {"enabled": False}` |
+| `frontend/src/components/NoticeBar.vue`、`ProblemsView.vue` | **删除** |
+| `frontend/src/App.vue` | 导航 7→6 项并按三组分区；侧栏引擎心跳；顶栏 `.top-stats` 统一口径；删 `.eyebrow`；6 条页副标题按单一职责重写 |
+| `frontend/src/stats.ts` | **新增** `workspaceStats()`，三处共用聚合数字 |
+| `frontend/src/store.ts` | 删 `problems` / `unreadProblems` 与 `/notifications` 请求（刷新 4→3 个请求） |
+| `frontend/src/types.ts` | 删 `Problem` 接口与 `View` 的 `"problems"` |
+| `frontend/src/components/OverviewDashboard.vue` | 第 4 张指标卡改「待处理内容」；新增「最近完成」区块 |
+| `frontend/src/components/AccountsView.vue` | 空态成对化；只保留账号职责 |
+| `frontend/src/components/ProgressWindow.vue` | 默认最小化 |
+| `frontend/src/components/SettingsView.vue` | 删「通知提醒」页签与全部 `notification.*` 字段 |
+| `frontend/src/style.css` | `.nav-group` 分组、`.engine` 心跳、`.top-stats`、`.recent-row`；去掉账号卡死高度与卡内滚动；`.page-content` 底部预留 132px；删通知遗留死规则 |
+| `tools/vue_check.py` | 删站内通知栏与问题中心分页验收；导航遍历列表改为 6 项；进度小窗验收改为「默认最小化 → 展开 → 收回」 |
+| `tools/ui_check.py`、`tools/smoke_test.py` | 删通知种子与「8.6 问题中心」冒烟段 |
+| `tests/` | 通知相关测试删除或改写为事件断言；新增 `tests/test_narrative_and_settings.py` |
+| `docs/architecture.md`、`README.md`、`docs/layout-research.md` | 同步更新；新增布局调研文档 |
+
+### 兼容性与迁移（v2.3.0）
+
+- **破坏性**：`/api/notifications*` 三个端点与 `notification` 设置组已不存在，直接调用会 404；
+  旧的 `notification` 配置在读取时被丢弃，其余设置不受影响。
+- 数据库：新库不再创建 `notifications` 表；旧库里已存在的该表不再被读写，**不需要迁移**，
+  也可手动 `DROP TABLE notifications` 释放空间。
+- 任务数据、答题缓存、已完成记录、界面偏好（`ui.dismissed_resume_tasks` /
+  `ui.completed_page_size`）均保持原格式，无需迁移。
+- 数据目录与安装方式见文末通用说明（仍适用）。
+
+---
+
+## v2.2.4
 
 > 相对 v2.2.3 的**纯前端修复版**：后端无任何改动，不新增端点、不改协议、不改数据格式。
 
