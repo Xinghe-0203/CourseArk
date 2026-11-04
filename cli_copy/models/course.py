@@ -9,7 +9,8 @@ import re
 import time
 from urllib import parse
 
-from loguru import logger
+from core import runtime
+from core.runtime import logger
 from lxml import etree
 
 from core.request_client import get as doGet, post as doPost, xpath_first
@@ -672,7 +673,6 @@ class Course:
     def get_progress_data(self) -> list:
         results, seen = [], set()
         for page in range(1, 1001):
-            from core import runtime
             runtime.checkpoint()
             url = f"https://stat2-ans.chaoxing.com/stat2/task/s/progress/detail?clazzid={self.class_id}&courseid={self.course_id}&cpi={self.cpi}&ut=s&pEnc={self.jobEnc}&page={page}&pageSize=16&status=0"
             response = doGet(url=url, headers=self.headers)
@@ -715,3 +715,5 @@ class Course:
             if not self._jobEnc:
                 logger.warning("未找到jobEnc")
         return self._jobEnc
+
+

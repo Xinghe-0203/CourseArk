@@ -14,7 +14,8 @@ AutoChaoxingCLI - 课程独立考试处理器
 
 import json
 
-from loguru import logger
+from core import runtime
+from core.runtime import logger
 
 from core import exam_form, runtime
 from core.request_client import get as doGet, post as doPost
@@ -196,14 +197,14 @@ class DealExamRoom:
             "total": len(pending),
         })
         if self.ui:
-            self.ui.record_exam_result(total_q, total_cache, 0, total_llm, total_random,
+            self.ui.record_exam_result(total_q, total_cache, total_llm, total_random,
                                        submit_ok_total, submit_fail_total)
             self.ui.record_course_result(success, failed, 0)
 
     # ------------------------------------------------------------------ 单场考试
     def answer_exam(self, item: dict) -> dict | None:
         """进入一场考试、作答并提交"""
-        empty = {"questions": 0, "cache_hits": 0, "tiku_hits": 0, "llm_calls": 0,
+        empty = {"questions": 0, "cache_hits": 0, "llm_calls": 0,
                  "random_answers": 0, "submit_ok": 0, "submit_fail": 0}
         title = item.get("title") or "考试"
         exam_id = str(item.get("exam_id") or item.get("id") or "")
@@ -319,11 +320,11 @@ class DealExamRoom:
                 "id": exam_unit(item), "name": title, "current": idx, "total": len(questions)})
             runtime.emit("exam_stats", "答题进度", stage="exam", payload={
                 "media": title, "current": idx, "total": len(questions),
-                "cache_hits": cache_hits, "tiku_hits": 0,
+                "cache_hits": cache_hits,
                 "llm_calls": llm_calls, "random_answers": random_answers,
             })
 
-        stats = {"questions": len(questions), "cache_hits": cache_hits, "tiku_hits": 0,
+        stats = {"questions": len(questions), "cache_hits": cache_hits,
                  "llm_calls": llm_calls, "random_answers": random_answers,
                  "submit_ok": 0, "submit_fail": 0}
         if not answers:
@@ -472,6 +473,3 @@ class DealExamRoom:
                           f"{extra}{window}]")
 
 
-def run(user, course, log, ui=None, selection=None):
-    """考试功能入口（供 worker 调用）"""
-    DealExamRoom(user, course, log, ui).do_finish(selection=selection)

@@ -1,4 +1,4 @@
-"""
+﻿"""
 AutoChaoxingCLI - 学习次数刷取功能模块
 
 超星"章节学习次数"由服务端在访问章节页面时下发 setlog 打点脚本记录。
@@ -15,9 +15,9 @@ import re
 import time
 from urllib.parse import urlencode
 
-from loguru import logger
-
 from core import runtime
+from core.runtime import logger
+
 from core.config import Config
 from core.exceptions import AntispiderException
 from core.request_client import get as doGet, get_session
@@ -221,3 +221,5 @@ def _increase_via_chapters(user, course, log, points, times: int, dwell: float) 
             break
 
     return added
+
+

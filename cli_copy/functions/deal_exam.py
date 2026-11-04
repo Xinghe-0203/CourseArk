@@ -1,4 +1,4 @@
-"""
+﻿"""
 AutoChaoxingCLI - 答题/作业处理器
 
 负责：
@@ -16,10 +16,11 @@ import re
 import time
 from urllib.parse import urlencode
 
-from loguru import logger
+from core import runtime
+from core.runtime import logger
 from lxml import etree
 
-from core import runtime, work_form
+from core import work_form
 from core.config import Config
 from core.font_decoder import FontDecoder, SECRET_FONT_PREDICATE
 from functions.deal_course import _clean_name
@@ -96,8 +97,6 @@ class DealExam:
         self.auto_submit = Config.get("answer.auto_submit", True)
         self.submit_delay = Config.get("answer.submit_delay", 2)
         self.answer_mode = str(Config.get("answer.mode", "ai")).lower()
-        if self.answer_mode == "tiku":   # 在线题库已移除，历史配置归一为 AI
-            self.answer_mode = "ai"
         self.no_answer_action = str(Config.get("answer.no_answer_action", "skip")).lower()
         self.auto_save = exam_config.get("auto_save", True)
 
@@ -133,10 +132,10 @@ class DealExam:
         attach_list = dc.deal_chapter({"knowledge_id": knowledge_id})
         if not attach_list:
             self.log.warning(f"'{chapter_name}' 没有获取到任务数据")
-            return {"questions": 0, "cache_hits": 0, "tiku_hits": 0, "llm_calls": 0,
+            return {"questions": 0, "cache_hits": 0, "llm_calls": 0,
                     "random_answers": 0, "submit_ok": 0, "submit_fail": 0}
 
-        stats = {"questions": 0, "cache_hits": 0, "tiku_hits": 0, "llm_calls": 0,
+        stats = {"questions": 0, "cache_hits": 0, "llm_calls": 0,
                  "random_answers": 0, "submit_ok": 0, "submit_fail": 0}
         for attach_item in attach_list:
             medias = attach_item.get("attachments", [])
@@ -171,7 +170,7 @@ class DealExam:
         Returns:
             dict: 统计信息
         """
-        empty_stats = {"questions": 0, "cache_hits": 0, "tiku_hits": 0, "llm_calls": 0,
+        empty_stats = {"questions": 0, "cache_hits": 0, "llm_calls": 0,
                        "random_answers": 0, "submit_ok": 0, "submit_fail": 0}
         jobid = attachment.get("jobid", "")
         work_id = jobid.replace("work-", "") if jobid.startswith("work-") else jobid
@@ -211,7 +210,7 @@ class DealExam:
         Returns:
             dict: 统计信息
         """
-        empty_stats = {"questions": 0, "cache_hits": 0, "tiku_hits": 0, "llm_calls": 0,
+        empty_stats = {"questions": 0, "cache_hits": 0, "llm_calls": 0,
                        "random_answers": 0, "submit_ok": 0, "submit_fail": 0}
         media_name = _clean_name(work_item.get("title")) or "独立作业"
         work_id = str(work_item.get("work_id", ""))
@@ -283,7 +282,6 @@ class DealExam:
                 "current": idx,
                 "total": len(questions),
                 "cache_hits": cache_hits,
-                "tiku_hits": 0,
                 "llm_calls": llm_calls,
                 "random_answers": random_answers,
             })
@@ -327,7 +325,6 @@ class DealExam:
         return {
             "questions": len(questions),
             "cache_hits": cache_hits,
-            "tiku_hits": 0,
             "llm_calls": llm_calls,
             "random_answers": random_answers,
             "submit_ok": submit_ok,
@@ -969,3 +966,7 @@ class DealExam:
         except Exception as e:
             self.log.error(f"  提交异常: {e}")
             return (0, len(answered))
+
+
+
+

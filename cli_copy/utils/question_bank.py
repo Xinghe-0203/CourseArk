@@ -1,4 +1,4 @@
-"""
+﻿"""
 AutoChaoxingCLI - 本地题库缓存模块 (SQLite)
 
 提供题目缓存功能：
@@ -16,7 +16,8 @@ import sqlite3
 import threading
 import time
 
-from loguru import logger
+from core import runtime
+from core.runtime import logger
 
 from core.paths import get_user_data_path
 
@@ -219,3 +220,5 @@ class QuestionBank:
             "hit_rate": round(cache_hits / lookups, 4) if lookups else 0.0,
             "by_type": {row[0] or "未知": row[1] for row in by_type},
         }
+
+

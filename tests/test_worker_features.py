@@ -179,7 +179,7 @@ def test_chapter_exam_dispatches(runner_module, sink):
         def do_finish(self):
             seen["called"] = True
             if seen["ui"]:
-                seen["ui"].record_exam_result(10, 4, 2, 3, 1, 9, 1)
+                seen["ui"].record_exam_result(10, 4, 3, 1, 9, 1)
 
     with patch("functions.deal_exam.DealExam", FakeExam):
         ui = runner_module.TaskStatsUI(sink)
@@ -188,7 +188,6 @@ def test_chapter_exam_dispatches(runner_module, sink):
     assert seen["called"] is True
     assert ui.stats["questions"] == 10
     assert ui.stats["cache_hits"] == 4
-    assert ui.stats["tiku_hits"] == 2
     assert ui.stats["llm_calls"] == 3
     assert ui.stats["random_answers"] == 1
     assert ui.stats["submit_ok"] == 9
@@ -245,7 +244,7 @@ def test_exam_feature_dispatches(runner_module, sink):
         def do_finish(self, selection=None):
             seen["called"] = True
             seen["selection"] = selection
-            seen["ui"].record_exam_result(10, 0, 0, 9, 1, 9, 1)
+            seen["ui"].record_exam_result(10, 0, 9, 1, 9, 1)
 
     task = _task("exam", {"selection": {"mode": "all", "ids": []}})
     with patch("functions.deal_exam_room.DealExamRoom", FakeExamRoom):

@@ -1,4 +1,4 @@
-"""
+﻿"""
 AutoChaoxingCLI - 视频时长刷取处理器
 
 支持 ThreadPoolExecutor 并发控制（0-200线程）：
@@ -17,9 +17,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List
 
-from loguru import logger
-
 from core import runtime
+from core.runtime import logger
+
 from core.config import Config
 from core.exceptions import AntispiderException
 from core.request_client import get as doGet, get_client
@@ -404,3 +404,5 @@ class DealVideo:
                                 video.work_unit_id = key
                                 _video_list.append(video)
         return _video_list
+
+

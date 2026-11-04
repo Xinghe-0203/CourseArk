@@ -44,24 +44,3 @@ class AntispiderException(Exception):
 
     def __str__(self):
         return f"反爬虫检测: {self.detail} (URL: {self.url})"
-
-
-class CookieExpiredException(Exception):
-    """Cookie过期异常 - 登录Cookie失效时抛出"""
-
-    def __init__(self, detail: str = "Cookie已过期"):
-        self.detail = detail
-
-    def __str__(self):
-        return f"Cookie过期: {self.detail}"
-
-
-class VideoException(Exception):
-    """视频处理异常 - 视频刷取过程中出错时抛出"""
-
-    def __init__(self, video_name: str = "", detail: str = ""):
-        self.video_name = video_name
-        self.detail = detail
-
-    def __str__(self):
-        return f"视频异常: {self.detail} (视频: {self.video_name})"

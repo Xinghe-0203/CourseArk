@@ -1,4 +1,4 @@
-"""
+﻿"""
 AutoChaoxingCLI - 媒体基类
 
 所有媒体类型（视频、阅读、文档、图书、直播、作业）的抽象基类。
@@ -8,7 +8,8 @@ import json
 import time
 from abc import ABC, abstractmethod
 
-from loguru import logger
+from core import runtime
+from core.runtime import logger
 
 from core.request_client import get as doGet
 
@@ -96,3 +97,5 @@ class Media(ABC):
         except json.JSONDecodeError as e:
             logger.error(f"解析{task_name}任务响应失败: {e}")
             return False
+
+

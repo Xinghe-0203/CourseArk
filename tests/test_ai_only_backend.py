@@ -210,7 +210,7 @@ def test_answer_result_narrative_and_exam_stats_wording():
 
     stats = narrative.describe("exam_stats", "第4章组件", level="info", stage="exam",
                                payload={"media": "第4章组件", "current": 2, "total": 4,
-                                        "cache_hits": 1, "tiku_hits": 3, "llm_calls": 1})
+                                        "cache_hits": 1, "llm_calls": 1})
     assert stats["kind"] == "answer"
     assert "在线题库" not in stats["detail"]
     assert "答题缓存 1" in stats["detail"]

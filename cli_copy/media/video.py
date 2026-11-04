@@ -1,4 +1,4 @@
-"""
+﻿"""
 AutoChaoxingCLI - 视频媒体类
 
 处理视频任务点的完成逻辑，包括：
@@ -12,7 +12,8 @@ import json
 import time
 from urllib.parse import quote
 
-from loguru import logger
+from core import runtime
+from core.runtime import logger
 
 from models.media import Media
 from core.request_client import get as doGet
@@ -248,3 +249,5 @@ class Video(Media):
                      f"{extra_params}"
                      f"&_t={int(time.time() * 1000)}")
         return url_former + url_later
+
+

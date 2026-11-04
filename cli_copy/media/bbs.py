@@ -1,4 +1,4 @@
-"""
+﻿"""
 讨论媒体类 - 处理超星讨论(BBS)任务点
 通过访问讨论页面并发送回复完成讨论任务
 """
@@ -6,7 +6,8 @@ import json
 import re
 import uuid
 
-from loguru import logger
+from core import runtime
+from core.runtime import logger
 from models.media import Media
 from core.request_client import get as doGet, post as doPost
 
@@ -359,3 +360,5 @@ class Bbs(Media):
             logger.debug(f"手机端讨论回复异常: {e}")
 
         return False
+
+

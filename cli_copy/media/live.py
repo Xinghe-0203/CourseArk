@@ -1,4 +1,4 @@
-"""
+﻿"""
 直播媒体类 - 处理直播任务点
 通过 saveTimePc 接口记录观看时间
 """
@@ -6,7 +6,8 @@
 import json
 import time
 
-from loguru import logger
+from core import runtime
+from core.runtime import logger
 from models.media import Media
 from core.request_client import get as doGet
 
@@ -65,3 +66,5 @@ class Live(Media):
         except json.JSONDecodeError as e:
             logger.error(f"直播状态解析失败: {e}")
             return None
+
+

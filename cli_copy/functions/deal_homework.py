@@ -95,7 +95,7 @@ class DealHomework:
             return
 
         exam = DealExam(self.user, self.course, self.log, self.ui)
-        total_q = total_cache = total_tiku = total_llm = total_random = 0
+        total_q = total_cache = total_llm = total_random = 0
         submit_ok_total = submit_fail_total = 0
         success = failed = 0
 
@@ -122,7 +122,6 @@ class DealHomework:
 
             total_q += stats.get("questions", 0)
             total_cache += stats.get("cache_hits", 0)
-            total_tiku += stats.get("tiku_hits", 0)
             total_llm += stats.get("llm_calls", 0)
             total_random += stats.get("random_answers", 0)
             submit_ok_total += stats.get("submit_ok", 0)
@@ -163,7 +162,7 @@ class DealHomework:
         })
         if self.ui:
             self.ui.record_exam_result(
-                total_q, total_cache, total_tiku, total_llm, total_random,
+                total_q, total_cache, total_llm, total_random,
                 submit_ok_total, submit_fail_total,
             )
             self.ui.record_course_result(success, failed, 0)
@@ -197,6 +196,3 @@ class DealHomework:
             self.log.info(f"  {mark} {i}. {w.get('title')}  [{status}{extra}]")
 
 
-def run(user, course, log, ui=None):
-    """独立作业功能入口（供 main.py 调用）"""
-    DealHomework(user, course, log, ui).do_finish()

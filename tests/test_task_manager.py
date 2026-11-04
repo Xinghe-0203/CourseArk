@@ -126,7 +126,7 @@ def test_exam_stats_accumulate(manager):
     for submit in (1, 0):
         manager._handle_line(task["id"], task["account_id"], json.dumps({
             "event": "exam_stats", "task_id": task["id"], "payload": {
-                "cache_hits": 2, "tiku_hits": 1, "llm_calls": 3, "random_answers": 0,
+                "cache_hits": 2, "llm_calls": 3, "random_answers": 0,
                 "questions": 5, "submit_ok": submit, "submit_fail": 1 - submit,
             },
         }))

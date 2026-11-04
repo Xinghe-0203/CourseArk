@@ -25,10 +25,6 @@ class StopRequested(BaseException):
     """协作式停止信号，由控制检查点抛出"""
 
 
-class PauseAwareSleep:
-    """占位类型，便于外部 isinstance 判断（实际由 sleep() 函数实现）"""
-
-
 CONTROL_RUN = "run"
 CONTROL_PAUSE = "pause"
 CONTROL_STOP = "stop"
@@ -264,6 +260,47 @@ def emit(event: str, message: str = "", level: str = "info",
          stage: str = "", payload: dict = None):
     if _sink is not None:
         _sink.emit(event, message, level=level, stage=stage, payload=payload)
+
+
+class _ModuleLogger:
+    """模块级兼容 logger（v2.4.0 T3 日志单通道）：把 loguru 风格调用
+    （logger.info/debug/success/warning/error/exception）转发到当前
+    EventSink 的 "log" 事件。无 sink 时静默丢弃（子进程必有 sink）。
+
+    cli_copy 内禁止再 import loguru；文件日志（如 runner.add_file_logger）
+    由 worker/common.setup_common_logging 的 loguru 桥接统一处理。
+    """
+
+    def debug(self, message, *args, **kwargs):
+        emit("log", _format_args(message, args), level="debug", stage="log")
+
+    def info(self, message, *args, **kwargs):
+        emit("log", _format_args(message, args), level="info", stage="log")
+
+    def success(self, message, *args, **kwargs):
+        emit("log", _format_args(message, args), level="success", stage="log")
+
+    def warning(self, message, *args, **kwargs):
+        emit("log", _format_args(message, args), level="warning", stage="log")
+
+    def error(self, message, *args, **kwargs):
+        emit("log", _format_args(message, args), level="error", stage="log")
+
+    def exception(self, message, *args, **kwargs):
+        emit("log", _format_args(message, args), level="error", stage="log")
+
+    def log(self, level, message, *args, **kwargs):
+        emit("log", _format_args(message, args), level=str(level).lower(), stage="log")
+
+
+def _format_args(message, args) -> str:
+    text = str(message)
+    for arg in args or ():
+        text = text.replace("{}", str(arg), 1)
+    return text
+
+
+logger = _ModuleLogger()
 
 
 def checkpoint():

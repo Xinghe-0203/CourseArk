@@ -59,7 +59,7 @@ class TaskStatsUI:
         self.sink = sink
         self.stats = {
             "success": 0, "failed": 0, "skipped": 0, "already_done": 0,
-            "questions": 0, "cache_hits": 0, "tiku_hits": 0, "llm_calls": 0,
+            "questions": 0, "cache_hits": 0, "llm_calls": 0,
             "random_answers": 0, "submit_ok": 0, "submit_fail": 0,
         }
         self._chapter_total = 0
@@ -96,11 +96,10 @@ class TaskStatsUI:
         self.stats["already_done"] += int(already_done or 0)
         self._flush_progress()
 
-    def record_exam_result(self, questions, cache, tiku, llm, random_answers,
+    def record_exam_result(self, questions, cache, llm, random_answers,
                            submit_ok, submit_fail):
         self.stats["questions"] += int(questions or 0)
         self.stats["cache_hits"] += int(cache or 0)
-        self.stats["tiku_hits"] += int(tiku or 0)
         self.stats["llm_calls"] += int(llm or 0)
         self.stats["random_answers"] += int(random_answers or 0)
         self.stats["submit_ok"] += int(submit_ok or 0)

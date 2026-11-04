@@ -17,9 +17,9 @@
 
 import time
 
-from loguru import logger
-
 from core import runtime
+from core.runtime import logger
+
 from core.exam_answer_page import (
     ExamUrlError, build_next_url, build_submit_data, normalize_answer,
     parse_answer_page, parse_exam_url, parse_submit_response, question_from_page,
@@ -117,7 +117,7 @@ class ExamRoomByUrl:
     # ------------------------------------------------------------------ 作答
     def _answer_all(self, page: dict, title: str) -> dict:
         total = page["total"] or 1
-        stats = {"questions": 0, "cache_hits": 0, "tiku_hits": 0, "llm_calls": 0,
+        stats = {"questions": 0, "cache_hits": 0, "llm_calls": 0,
                  "random_answers": 0, "submit_ok": 0, "submit_fail": 0}
         answered = []
         submitted = False
@@ -245,7 +245,7 @@ class ExamRoomByUrl:
             "course_name": self.course_name, "success": 1, "failed": 0, "total": 1})
         if self.ui:
             self.ui.record_exam_result(
-                stats.get("questions", 0), cache, 0, ai,
+                stats.get("questions", 0), cache, ai,
                 stats.get("random_answers", 0), stats.get("submit_ok", 0),
                 stats.get("submit_fail", 0))
             self.ui.record_course_result(1, 0, 0)
@@ -258,6 +258,3 @@ class ExamRoomByUrl:
             return 0
 
 
-def run(user, course, log, ui=None, url=""):
-    """兼容 runner 的函数式调用。"""
-    return ExamRoomByUrl(user, course, log, ui).do_finish(url)

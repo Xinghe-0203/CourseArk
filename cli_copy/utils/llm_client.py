@@ -1,4 +1,4 @@
-"""
+﻿"""
 AutoChaoxingCLI - LLM客户端模块
 
 封装大语言模型API调用，支持任意OpenAI兼容API。
@@ -13,7 +13,8 @@ AutoChaoxingCLI - LLM客户端模块
 
 import re
 import json
-from loguru import logger
+from core import runtime
+from core.runtime import logger
 
 from core.request_client import get_external_session
 
@@ -230,3 +231,5 @@ class LLMClient:
             else:
                 logger.error(f"LLM 调用异常: {e}")
             return None
+
+

@@ -1,4 +1,4 @@
-"""
+﻿"""
 AutoChaoxingCLI - 用户模型
 
 管理用户登录、Cookie、课程列表等。
@@ -6,10 +6,10 @@ AutoChaoxingCLI - 用户模型
 
 import json
 
-from loguru import logger
+from core import runtime
+from core.runtime import logger
 from lxml import etree
 
-from core.config import Config
 from core.exceptions import LoginException, RequestException
 from core.request_client import post as doPost, encrypt_des, DEFAULT_USER_AGENT
 from models.course import Course
@@ -145,3 +145,5 @@ class User:
 
     def __str__(self):
         return f"Uid: {self.uid}\nUsername: {self.username}\nName: {self.name}"
+
+

@@ -1,4 +1,4 @@
-"""
+﻿"""
 投票媒体类 - 处理超星投票任务点
 通过访问投票页面并提交随机选项完成投票任务
 """
@@ -6,7 +6,8 @@ import json
 import re
 import time
 
-from loguru import logger
+from core import runtime
+from core.runtime import logger
 from models.media import Media
 from core.request_client import get as doGet, post as doPost
 
@@ -272,3 +273,5 @@ class Vote(Media):
             logger.debug(f"API投票提交异常: {e}")
 
         return False
+
+

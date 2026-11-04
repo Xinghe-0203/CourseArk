@@ -16,11 +16,11 @@ import threading
 import time
 
 import requests
-from loguru import logger
+from core import runtime
+from core.runtime import logger
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from core import runtime
 from core.exceptions import AntispiderException, RequestException
 
 # User-Agent 池 — 现代浏览器，轮换使用降低被识别风险
@@ -399,14 +399,6 @@ def encrypt_des(msg: str, key: str) -> bytes:
     return binascii.b2a_hex(secret_bytes)
 
 
-def clear_console():
-    """清空控制台"""
-    if os.name == "nt":
-        subprocess.run("cls", shell=True, check=False)
-    else:
-        subprocess.run("clear", shell=True, check=False)
-
-
 def xpath_first(element, path):
     """
     XPath便捷函数：获取第一个匹配结果
@@ -434,28 +426,3 @@ def xpath_first(element, path):
     return ""
 
 
-def parse_index_list(input_str: str) -> list[int]:
-    """
-    解析用户输入的序号列表
-
-    支持格式: "1,2,3" 或 "1，2，3"
-
-    Args:
-        input_str: 用户输入字符串
-
-    Returns:
-        list[int]: 0-based索引列表
-    """
-    import re
-
-    if not input_str or input_str.strip() == '':
-        return []
-    indices = []
-    for item in re.split("[,，]", input_str.strip()):
-        item = item.strip()
-        if item:
-            try:
-                indices.append(int(item) - 1)  # 转为0-based
-            except ValueError:
-                raise ValueError(f"无效的索引: {item}")
-    return indices

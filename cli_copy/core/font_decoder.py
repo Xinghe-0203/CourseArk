@@ -1,4 +1,4 @@
-"""
+﻿"""
 AutoChaoxingCLI - 字体解密模块
 
 处理超星学习通的字体反爬虫加密（font-cxsecret）。
@@ -16,7 +16,8 @@ import re
 
 from fontTools.ttLib import TTFont
 from lxml import etree
-from loguru import logger
+from core import runtime
+from core.runtime import logger
 
 from core.paths import get_resource_path
 
@@ -228,3 +229,5 @@ class FontDecoder:
             return hashlib.md5(pos_bin.encode()).hexdigest()
         except Exception:
             return None
+
+

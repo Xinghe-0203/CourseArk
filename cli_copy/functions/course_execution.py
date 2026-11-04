@@ -163,7 +163,7 @@ class CourseExecution:
                     exam.active_unit_id = job['id']
                     result = exam.answer_work(job['media'], job['defaults'], job['chapter']) or {}
                     if h.ui:
-                        h.ui.record_exam_result(*(result.get(k, 0) for k in ('questions', 'cache_hits', 'tiku_hits', 'llm_calls', 'random_answers', 'submit_ok', 'submit_fail')))
+                        h.ui.record_exam_result(*(result.get(k, 0) for k in ('questions', 'cache_hits', 'llm_calls', 'random_answers', 'submit_ok', 'submit_fail')))
                     answered_all = result.get('questions', 0) > 0 and result.get('submit_ok', 0) == result.get('questions') and not result.get('submit_fail')
                     ok = answered_all and Work(job['media'], h.user.headers, job['defaults'], h.course_id).do_finish()
                     self.result(job, 'succeeded' if ok else 'blocked', '测验任务点已确认' if ok else '测验有未作答题目或平台未确认完成，请核对')

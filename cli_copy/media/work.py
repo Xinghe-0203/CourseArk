@@ -1,4 +1,4 @@
-"""
+﻿"""
 AutoChaoxingCLI - 作业媒体类
 
 处理作业任务点的完成逻辑。
@@ -6,7 +6,8 @@ AutoChaoxingCLI - 作业媒体类
 实际答题和提交由 DealExam 处理。
 """
 
-from loguru import logger
+from core import runtime
+from core.runtime import logger
 from models.media import Media
 
 
@@ -27,3 +28,5 @@ class Work(Media):
             referer='https://mooc1-2.chaoxing.com/ananas/modules/work/index.html',
             task_name='Work'
         )
+
+

@@ -1,4 +1,4 @@
-"""
+﻿"""
 AutoChaoxingCLI - 课程任务处理器
 
 负责：
@@ -12,10 +12,10 @@ AutoChaoxingCLI - 课程任务处理器
 import re
 import time
 
-from loguru import logger
+from core import runtime
+from core.runtime import logger
 from lxml import etree
 
-from core import runtime
 from core.chapter_parser import parse_cards
 from core.config import Config
 from core.exceptions import AntispiderException, RequestException
@@ -198,3 +198,5 @@ class DealCourse:
             return int(card_count_str)
         except (ValueError, TypeError):
             return 0
+
+

@@ -1,4 +1,4 @@
-"""
+﻿"""
 UI 验收用种子服务
 
 在独立数据目录（data/uitest）里准备真实感的数据：
@@ -97,10 +97,10 @@ def seed():
         ("task-ui-2", "run-ui-1", 1, 1, "course_all", "running", "video",
          {"current": 12, "total": 20, "success": 10, "failed": 1}),
         ("task-ui-3", "run-ui-1", 2, 2, "independent_homework", "paused", "exam",
-         {"questions": 40, "cache_hits": 18, "tiku_hits": 0, "llm_calls": 20,
+         {"questions": 40, "cache_hits": 18, "llm_calls": 20,
           "random_answers": 2, "submit_ok": 36, "submit_fail": 4}),
         ("task-ui-4", "run-ui-2", 3, 3, "independent_homework", "succeeded", "finish",
-         {"questions": 22, "cache_hits": 12, "tiku_hits": 0, "llm_calls": 9,
+         {"questions": 22, "cache_hits": 12, "llm_calls": 9,
           "random_answers": 1, "submit_ok": 22, "submit_fail": 0}),
         ("task-ui-5", "run-ui-2", 4, 2, "course_all", "failed", "finish",
          {"success": 6, "failed": 4}),
@@ -112,7 +112,7 @@ def seed():
         # v2.2.3：考试「已交卷」分支不产生逐题明细，需要一条真实形态的已完成考试任务，
         # 供「已完成」页的 exam 信息与 outcome.reason 文案验收。
         ("task-ui-8", "run-ui-2", 2, 0, "exam", "succeeded", "finish",
-         {"questions": 0, "cache_hits": 0, "tiku_hits": 0, "llm_calls": 0,
+         {"questions": 0, "cache_hits": 0, "llm_calls": 0,
           "random_answers": 0, "submit_ok": 0, "submit_fail": 0}),
     ]
 
@@ -129,7 +129,7 @@ def seed():
         if status in ('running','paused'):
             for unit in units[confirmed:confirmed+2]:
                 work=reduce_progress(work,'work_progress',{'id':unit['id'],'current':240,'total':480})
-            stats.update({'questions': 12, 'cache_hits': 6, 'tiku_hits': 0, 'llm_calls': 5, 'submit_ok': 1,
+            stats.update({'questions': 12, 'cache_hits': 6, 'llm_calls': 5, 'submit_ok': 1,
                           'activity': {'name': '第二章 · 连续与导数'}})
         elif status in ('failed','interrupted'):
             # 2.2.1：中断/失败任务保留未完成单元（blocked + failed + running），
@@ -300,3 +300,4 @@ def seed():
     conn.close()
     db.close()
     print("种子数据准备完成")
+
