@@ -92,8 +92,7 @@ def build_config(data_dir, account, defaults):
     llm = dict(defaults.get("llm") or {})
     llm["api_key"] = ""  # 自检不使用 AI，也不打印密钥
     tmp_dir = tempfile.mkdtemp(prefix="check-work-")
-    Config._data = Config._normalize_config({
-        "account": {"phone": account["username"], "password": account.get("password", "")},
+    Config.set_defaults({
         "answer": {"mode": "manual", "no_answer_action": "skip",
                    "submit_delay": 0, "auto_submit": False},
         "llm": llm,
@@ -101,9 +100,9 @@ def build_config(data_dir, account, defaults):
                           "db_path": os.path.join(tmp_dir, "qb.db"),
                           "auto_save": False},
         "advanced": {"request_delay": 0, "request_delay_jitter": 0, "max_retries": 1,
-                     "retry_delay": 0, "learn_count_dwell": 0, "rotate_ua": False,
-                     "log_level": "INFO", "log_file": ""},
+                     "retry_delay": 0, "learn_count_dwell": 0, "rotate_ua": False},
     })
+    return account
 
 
 def print_courses(courses):
@@ -327,7 +326,7 @@ def main(argv=None):
     build_config(data_dir, account, load_defaults(data_dir))
 
     print(f"登录账号: {account.get('label') or account.get('username')}")
-    user = User(Config.get("account.phone"), Config.get("account.password"))
+    user = User(account.get("username", ""), account.get("password", ""))
     courses = user.get_courses() or user.course_list
     print(f"课程数: {len(courses)}")
 

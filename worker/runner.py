@@ -170,7 +170,6 @@ def login_and_load(task: dict, sink: "runtime.EventSink"):
 
     config = build_config(task)
     Config._data = config
-    Config._config_path = os.path.join(task["task_dir"], f"{task['task_id']}-config.json")
     init_client(config)
 
     user = User(task["username"], task["password"])

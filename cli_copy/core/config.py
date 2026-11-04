@@ -1,98 +1,46 @@
 """
-AutoChaoxingCLI - 配置管理模块
+AutoChaoxingCLI - 配置管理模块（v2.4.0 T2 配置单源化）
 
-负责YAML配置文件的加载、验证、保存和默认值管理。
-支持原子写入策略防止配置损坏。
+配置的唯一真相源是 app 层 settings：任务快照经 worker/common.build_base_config
+生成后注入 Config。本模块退化为纯内存 schema：
+- 不再读写 config.yml（config.yml 子系统在 WebUI 链路是死路，
+  且 Config._config_path 曾被指到 *.json 而 save() 用 yaml 写盘，属隐患）。
+- data()/get()/set() 语义不变，调用方无需改动。
 """
 
-import os
 from typing import Any
-
-import yaml
-from loguru import logger
-
-from core.paths import get_user_data_path
 
 
 class Config:
     """
-    全局配置管理器（单例模式）
+    全局配置管理器（单例模式，纯内存）
 
     通过类变量 _data 存储全局配置字典，所有模块通过 Config.data 访问配置。
-
-    Attributes:
-        _data (dict): 全局配置数据
-        _config_path (str): 配置文件路径
     """
+
     _data: dict = None
-    _config_path: str = "config.yml"
 
     @classmethod
     def data(cls) -> dict:
-        """获取配置数据"""
+        """获取配置数据（未注入时返回内存默认值，不再触碰文件系统）"""
         if cls._data is None:
-            cls.load(cls._config_path)
+            cls.set_defaults({})
         return cls._data
 
     @classmethod
-    def load(cls, config_path: str = "config.yml") -> dict:
+    def set_defaults(cls, overrides: dict = None) -> dict:
         """
-        加载配置文件
+        以内存默认配置为底、深度合并 overrides 后作为当前配置。
 
         Args:
-            config_path: 配置文件路径
+            overrides: 覆盖项（深度合并，override 优先）
 
         Returns:
-            dict: 配置字典
+            dict: 规范化后的配置字典
         """
-        # 解析为绝对路径（兼容 PyInstaller 打包）
-        if not os.path.isabs(config_path):
-            config_path = get_user_data_path(config_path)
-        cls._config_path = config_path
-        if not os.path.exists(config_path):
-            logger.warning(f"配置文件 {config_path} 不存在，使用默认配置")
-            cls._data = cls._default_config()
-            os.makedirs(os.path.dirname(config_path) or ".", exist_ok=True)
-            cls.save()
-            return cls._data
-
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                loaded = yaml.safe_load(f)
-            if not isinstance(loaded, dict):
-                logger.error("配置文件内容异常，本次使用内存默认配置，原文件已保留")
-                cls._data = cls._default_config()
-            else:
-                # 合并默认配置（确保新增字段有默认值）
-                cls._data = cls._normalize_config(
-                    cls._deep_merge(cls._default_config(), loaded)
-                )
-        except Exception as e:
-            logger.error(f"加载配置文件失败: {e}，本次使用内存默认配置，原文件已保留")
-            cls._data = cls._default_config()
-
+        merged = cls._deep_merge(cls._default_config(), overrides or {})
+        cls._data = cls._normalize_config(merged)
         return cls._data
-
-    @classmethod
-    def save(cls):
-        """保存配置到文件（原子写入）"""
-        if not isinstance(cls._data, dict):
-            logger.error("配置数据异常，拒绝写入")
-            return
-
-        tmp_path = cls._config_path + ".tmp"
-        try:
-            os.makedirs(os.path.dirname(cls._config_path) or ".", exist_ok=True)
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                yaml.safe_dump(cls._data, f, allow_unicode=True, sort_keys=False)
-            os.replace(tmp_path, cls._config_path)
-        except Exception as e:
-            logger.error(f"保存配置文件失败: {e}")
-            if os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except Exception:
-                    pass
 
     @classmethod
     def get(cls, key_path: str, default: Any = None) -> Any:
@@ -151,26 +99,13 @@ class Config:
                 result[key] = value
         return result
 
-    # 已移除的配置项：旧配置文件里若仍存在，加载时丢弃，避免界面/日志出现
-    REMOVED_KEYS = (("tiku",), ("answer", "fallback_to_tiku"))
-
     @staticmethod
     def _normalize_config(data: dict) -> dict:
         """校验并规范化关键配置，避免类型错误在运行中深处才爆发。"""
         defaults = Config._default_config()
-        # 在线题库已下线：清掉历史配置残留
-        for path in Config.REMOVED_KEYS:
-            node = data
-            for key in path[:-1]:
-                if not isinstance(node.get(key), dict):
-                    node = None
-                    break
-                node = node[key]
-            if isinstance(node, dict):
-                node.pop(path[-1], None)
+
         for section, default_value in defaults.items():
             if isinstance(default_value, dict) and not isinstance(data.get(section), dict):
-                logger.warning(f"配置项 {section} 应为对象，已恢复默认值")
                 data[section] = default_value.copy()
 
         def number(section: str, key: str, cast, minimum, maximum=None):
@@ -205,14 +140,12 @@ class Config:
 
     @staticmethod
     def _default_config() -> dict:
-        """生成默认配置"""
+        """生成默认配置（v2.4.0：删 account.phone/password 与
+        advanced.log_level/log_file 死键——凭据走任务快照的
+        task["username"]/task["password"]，日志级别经 T11 全链路下发）"""
         return {
-            "account": {
-                "phone": "",
-                "password": "",
-            },
             "video": {
-                "max_workers": 20,
+                "max_workers": 8,
                 "mode": "hybrid",
                 "random_progress": True,
             },
@@ -242,7 +175,5 @@ class Config:
                 "retry_delay": 5,
                 "learn_count_dwell": 30,
                 "rotate_ua": True,
-                "log_level": "INFO",
-                "log_file": "logs/autochaoxing.log",
             },
         }

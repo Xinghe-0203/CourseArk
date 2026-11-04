@@ -4,7 +4,7 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def isolated_cli_config(tmp_path, monkeypatch):
+    """v2.4.0 T2：Config 为纯内存 schema——重置 _data 即可，无文件系统副作用。"""
     from core.config import Config
     monkeypatch.setenv('AUTOCXWEBUI_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(Config, '_data', Config._default_config())
-    monkeypatch.setattr(Config, '_config_path', str(tmp_path / 'config.yml'))

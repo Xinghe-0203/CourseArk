@@ -55,8 +55,6 @@ def main() -> int:
     try:
         config = build_config(job)
         Config._data = config
-        task_dir = job.get("task_dir") or os.path.join(WEBUI_ROOT, "data", "tasks")
-        Config._config_path = os.path.join(task_dir, "sync-config.json")
         init_client(config)
 
         user = User(job["username"], job["password"])

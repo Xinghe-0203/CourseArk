@@ -38,19 +38,17 @@ def test_resource_path_still_points_to_copy(monkeypatch, sandbox):
     assert os.path.exists(resource)
 
 
-def test_config_default_path_lands_in_data_dir(sandbox, monkeypatch):
-    """未显式设置 _config_path 时，Config.load 的默认路径应落在数据目录"""
+def test_config_is_pure_memory(sandbox, monkeypatch):
+    """v2.4.0 T2：Config 纯内存化后不再读写 config.yml，数据目录/副本目录均零残留"""
     monkeypatch.setenv("AUTOCXWEBUI_DATA_DIR", sandbox)
     sys.path.insert(0, CLI_COPY)
     from core.config import Config
 
     monkeypatch.setattr(Config, "_data", None)
-    monkeypatch.setattr(Config, "_config_path", "config.yml")
-    Config.load("config.yml")
-    generated = os.path.join(sandbox, "config.yml")
-    assert os.path.exists(generated), "配置应生成在数据目录"
-    assert not os.path.exists(os.path.join(CLI_COPY, "config.yml")
-                              ) or os.path.getmtime(os.path.join(CLI_COPY, "config.yml")) < 0
+    data = Config.data()
+    assert isinstance(data, dict) and data["video"]["mode"] == "hybrid"
+    assert not os.path.exists(os.path.join(sandbox, "config.yml"))
+    assert not os.path.exists(os.path.join(CLI_COPY, "config.yml"))
 
 
 def test_cli_copy_has_no_runtime_artifacts():
@@ -141,18 +139,18 @@ def test_worker_runner_sets_up_without_writing_copy(sandbox, monkeypatch, tmp_pa
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUNBUFFERED"] = "1"
 
-    # 只跑导入与配置初始化，不发起真实网络请求
+    # 只跑导入与配置初始化，不发起真实网络请求（v2.4.0 T2：Config 纯内存，不再写 config.yml）
     probe = (
         "import sys, os;"
         f"sys.path.insert(0, r'{CLI_COPY}');"
         "from core.paths import get_base_dir;"
         "from core.config import Config;"
-        "Config.load('config.yml');"
+        "Config.data();"
         "print(get_base_dir())"
     )
     result = subprocess.run([sys.executable, "-c", probe], env=env,
                             capture_output=True, text=True, encoding="utf-8", timeout=90)
     assert result.returncode == 0, result.stderr[-800:]
     assert result.stdout.strip() == str(tmp_path / "webdata")
-    # 配置与数据都写在重定向目录，而不是副本目录
-    assert (tmp_path / "webdata" / "config.yml").exists()
+    # 配置已纯内存化：数据目录不应再生成 config.yml
+    assert not (tmp_path / "webdata" / "config.yml").exists()

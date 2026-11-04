@@ -10,7 +10,6 @@ def config_isolation(monkeypatch, tmp_path):
     monkeypatch.setattr(TaskManager, 'start', lambda self: None)
     monkeypatch.setenv('AUTOCXWEBUI_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(Config, '_data', Config._default_config())
-    monkeypatch.setattr(Config, '_config_path', str(tmp_path / 'config.yml'))
 
 
 def test_work_progress_is_deduplicated_and_not_last_video_percent():

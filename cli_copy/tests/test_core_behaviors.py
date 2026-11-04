@@ -166,17 +166,18 @@ class CoreBehaviorTests(unittest.TestCase):
         self.assertEqual(exam._normalize_answer("多选题", "A, C, E", ['A.甲', 'B.乙', 'C.丙', 'D.丁', 'E.戊']), "ACE")
         self.assertEqual(exam._normalize_answer("多选题", "AZ", ['A.甲', 'B.乙']), '')
 
-    def test_invalid_config_is_not_overwritten(self):
-        old_data, old_path = Config._data, Config._config_path
+    def test_config_defaults_merge_overrides(self):
+        """v2.4.0 T2：Config 为纯内存 schema，set_defaults 深度合并且不改默认模板。"""
+        old_data = Config._data
         try:
-            with tempfile.TemporaryDirectory() as directory:
-                path = Path(directory) / "broken.yml"
-                original = "answer: [\n"
-                path.write_text(original, encoding="utf-8")
-                Config.load(str(path))
-                self.assertEqual(path.read_text(encoding="utf-8"), original)
+            merged = Config.set_defaults({"video": {"max_workers": 3}})
+            self.assertEqual(merged["video"]["max_workers"], 3)
+            self.assertEqual(merged["video"]["mode"], "hybrid")
+            # 默认模板不被污染
+            fresh = Config._default_config()
+            self.assertEqual(fresh["video"]["max_workers"], 8)
         finally:
-            Config._data, Config._config_path = old_data, old_path
+            Config._data = old_data
 
     def test_download_path_component_is_sanitized(self):
         self.assertEqual(MediaDownload._safe_component("../course", "fallback"), "course")
