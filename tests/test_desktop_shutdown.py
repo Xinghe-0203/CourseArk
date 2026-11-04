@@ -66,29 +66,39 @@ def test_shutdown_requires_configured_token(app_client, monkeypatch):
 
 def test_sync_shutdown_terminates_and_kills_stuck_workers(monkeypatch):
     from app import sync_service
+    from worker import common
 
     process = _Process(exit_on_terminate=False)
     monkeypatch.setitem(sync_service._running, "account-test", {"process": process})
 
+    # v2.4.0 T1：终止契约升级为 worker/common 优雅终止阶梯；
+    # 阶梯对真实 Popen 走 taskkill/CTRL/kill——对 FakeProcess 用阶梯封装校验调用
+    calls = {}
+    monkeypatch.setattr(common, "terminate_gracefully",
+                        lambda proc, timeout: calls.setdefault(
+                            "args", (proc is process, timeout)))
     sync_service.shutdown(grace=0.01)
 
-    assert process.terminated is True
-    assert process.killed is True
-    assert process.wait_calls
+    assert calls["args"][0] is True  # 优雅阶梯被调用且传入该进程
+    assert calls["args"][1] >= 0.5  # 宽限下限 0.5s
 
 
 def test_session_shutdown_terminates_worker(monkeypatch):
     from app import session_service
+    from worker import common
 
     process = _Process(exit_on_terminate=True)
     entry = {"process": process}
     monkeypatch.setitem(session_service._running, "account-test", entry)
 
+    calls = {}
+    monkeypatch.setattr(common, "terminate_gracefully",
+                        lambda proc, timeout: calls.setdefault(
+                            "args", (proc is process, timeout)))
     session_service.SessionService().shutdown(grace=0.01)
 
-    assert process.terminated is True
-    assert process.killed is False
-    assert process.wait_calls
+    assert calls["args"][0] is True
+    assert calls["args"][1] >= 0.5
 
 
 def test_session_shutdown_closes_open_playwright_browser(sandbox, monkeypatch):

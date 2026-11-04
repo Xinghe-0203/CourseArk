@@ -114,15 +114,19 @@ def _run_catalog_job(job: dict) -> list:
     try:
         stdout, _ = process.communicate(timeout=CATALOG_TIMEOUT)
     except subprocess.TimeoutExpired:
+        # v2.4.0 T1：超时终止走 worker/common 优雅终止阶梯
+        from worker import common
+
         try:
-            process.kill()
-            process.communicate(timeout=5)
+            common.terminate_gracefully(process, 5.0)
         except Exception:
             pass
         raise RuntimeError("读取作业列表超时，请稍后重试")
     except Exception as exc:
+        from worker import common
+
         try:
-            process.kill()
+            common.terminate_gracefully(process, 5.0)
         except Exception:
             pass
         raise RuntimeError("读取作业列表失败，请重试") from exc

@@ -89,7 +89,7 @@ class MediaDownload(DealCourse):
             self.course.get_chapter()
         if self.course.chapter_list:
             self.log.success(f"获取'{self.course_name}'课程章节成功")
-            time.sleep(0.4)
+            runtime.sleep(0.4)
             self.chapter_all = []
             ind = 1
             for catalog_item in self.course.chapter_list:

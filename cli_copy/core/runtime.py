@@ -33,6 +33,10 @@ CONTROL_RUN = "run"
 CONTROL_PAUSE = "pause"
 CONTROL_STOP = "stop"
 
+# v2.4.0 T1.5：协作退出信号。EventSink 连续写失败（父进程死亡/通道关闭）
+# 时置位；Worker 主循环在 checkpoint/sleep 边界检查并安全退出。
+graceful_exit = threading.Event()
+
 _POLL_INTERVAL = 0.3
 
 
@@ -163,10 +167,17 @@ class ControlState:
 class EventSink:
     """事件出口：把结构化事件写成一行 JSON 到标准输出"""
 
+    # 写失败兜底（v2.4.0 T1.5）：连续 3 次写失败（通道关闭/父进程死亡）
+    # 置位 runtime.graceful_exit，Worker 在下一个 checkpoint/sleep 边界
+    # 协作退出，不再静默傻跑。成功后计数清零（计数按 sink 实例隔离）。
+    FAIL_LIMIT = 3
+
     def __init__(self, task_id: str = "", stream=None):
         self.task_id = task_id
         self._stream = stream if stream is not None else sys.stdout
         self._lock = threading.Lock()
+        self._fail_count = 0
+        self._fail_lock = threading.Lock()
 
     def emit(self, event: str, message: str = "", level: str = "info",
              stage: str = "", payload: dict = None):
@@ -184,9 +195,14 @@ class EventSink:
             try:
                 self._stream.write(line + "\n")
                 self._stream.flush()
+                with self._fail_lock:
+                    self._fail_count = 0
             except (ValueError, OSError):
-                # 通道已关闭（例如 Web 进程退出），忽略即可
-                pass
+                # 通道已关闭（例如 Web 进程退出）：计数，连续超限置位协作退出
+                with self._fail_lock:
+                    self._fail_count += 1
+                    if self._fail_count >= EventSink.FAIL_LIMIT:
+                        graceful_exit.set()
 
     # 与 loguru logger 兼容的最小接口，便于直接替换 log 对象
     def debug(self, message, *args, **kwargs):
@@ -251,13 +267,17 @@ def emit(event: str, message: str = "", level: str = "info",
 
 
 def checkpoint():
-    """控制检查点：无控制时为空操作"""
+    """控制检查点：无控制时为空操作（但 graceful_exit 置位时抛 StopRequested）"""
+    if graceful_exit.is_set():
+        raise StopRequested("事件通道已断开，协作退出")
     if _control is not None:
         _control.check()
 
 
 def sleep(seconds: float):
-    """可暂停/可停止的等待：无控制时等价于 time.sleep"""
+    """可暂停/可停止的等待：无控制时等价于 time.sleep（graceful_exit 时中断）"""
+    if graceful_exit.is_set():
+        raise StopRequested("事件通道已断开，协作退出")
     if _control is not None:
         _control.sleep(seconds)
     else:

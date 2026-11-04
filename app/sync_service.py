@@ -44,25 +44,11 @@ def shutdown(grace: float = 3.0) -> None:
 
 
 def _stop_process(process, grace: float) -> None:
+    # v2.4.0 T1：统一走 worker/common 优雅终止阶梯（taskkill 无 /F → 等待 → 强杀）
+    from worker import common
+
     try:
-        if process.poll() is not None:
-            return
-    except Exception:
-        pass
-    try:
-        process.terminate()
-    except Exception:
-        pass
-    try:
-        process.wait(timeout=max(0.1, grace))
-        return
-    except subprocess.TimeoutExpired:
-        pass
-    except Exception:
-        pass
-    try:
-        process.kill()
-        process.wait(timeout=max(1.0, grace))
+        common.terminate_gracefully(process, max(0.5, grace))
     except Exception:
         pass
 

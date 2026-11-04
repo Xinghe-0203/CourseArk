@@ -21,44 +21,16 @@ for path in (CLI_COPY, WEBUI_ROOT):
         sys.path.insert(0, path)
 
 from core import runtime  # noqa: E402
+from worker import common  # noqa: E402
 
 
 def setup_logging(sink):
-    from loguru import logger
-
-    logger.remove()
-    from app.log_redaction import patch_record
-    logger.configure(patcher=patch_record)
-
-    def _loguru_sink(message):
-        record = message.record
-        sink.emit("log", record["message"], level=record["level"].name.lower(),
-                  stage="log", payload={"module": f"{record['name']}:{record['line']}"})
-
-    logger.add(_loguru_sink, level="DEBUG", format="{message}")
+    # 统一日志桥（v2.4.0 T1）：DEBUG 级 + module:function:line payload
+    common.setup_common_logging(sink, level="DEBUG")
 
 
 def build_config(job: dict) -> dict:
-    advanced = job.get("advanced", {})
-    return {
-        "account": {"phone": job["username"], "password": job["password"]},
-        "video": {"max_workers": 1, "mode": "instant", "random_progress": False},
-        "answer": {"mode": "manual", "no_answer_action": "skip",
-                   "submit_delay": 0, "auto_submit": False},
-        "llm": {"base_url": "", "api_key": "", "model": "", "temperature": 0, "max_tokens": 0,
-                "timeout": 30},
-        "question_bank": {"enabled": False, "db_path": job["question_bank_path"], "auto_save": False},
-        "advanced": {
-            "request_delay": float(advanced.get("request_delay", 1.0)),
-            "request_delay_jitter": float(advanced.get("request_delay_jitter", 0.5)),
-            "max_retries": int(advanced.get("max_retries", 2)),
-            "retry_delay": float(advanced.get("retry_delay", 3)),
-            "learn_count_dwell": 0,
-            "rotate_ua": True,
-            "log_level": "INFO",
-            "log_file": "",
-        },
-    }
+    return common.build_base_config(job, profile="sync")
 
 
 def main() -> int:

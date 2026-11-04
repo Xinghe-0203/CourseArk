@@ -74,7 +74,7 @@ class DealCourse:
 
         if self.course.chapter_list:
             self.log.success(f"'{self.course_name}'课程章节获取成功")
-            time.sleep(0.4)
+            runtime.sleep(0.4)
             for catalog_item in self.course.chapter_list:
                 self.log.info(f"  [+] {catalog_item.get('catalog_name')}")
                 for chapter_item in catalog_item.get("child_chapter"):
@@ -170,7 +170,8 @@ class DealCourse:
                         remaining = client.antispider_until - time.monotonic()
                     wait_time = max(remaining + 5, 30)
                     logger.warning(f"触发反爬虫({e})，等待{wait_time:.0f}秒后重试")
-                    time.sleep(wait_time)
+                    # runtime.sleep：反爬冷却期间保持暂停/停止响应（v2.4.0 T1）
+                    runtime.sleep(wait_time)
                 else:
                     logger.error("反爬虫重试后仍失败，放弃此请求")
                     return ""

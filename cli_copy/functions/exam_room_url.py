@@ -205,7 +205,8 @@ class ExamRoomByUrl:
             if not page["qid"]:
                 raise ExamUrlError("读取下一题失败：请确认考试仍在进行中，"
                                    "并重新复制答题页地址")
-            time.sleep(1.0)
+            # runtime.sleep：考试逐题循环内保持暂停/停止响应（v2.4.0 T1）
+            runtime.sleep(1.0)
 
         if not submitted:
             self.exam._save_submitted_answers(answered)

@@ -296,21 +296,45 @@ def test_recovery_leaves_terminal_tasks_untouched(sandbox):
 # 强制停止
 # ============================================================
 
-def test_force_stop_after_grace_period(manager):
+def test_force_stop_after_grace_period(manager, monkeypatch):
     task = _make_task(manager.db, status="stopping")
     process = FakeProcess(poll_value=None)
     handle = RunningTask(task["id"], process, monitor=_DummyThread())
     handle.stop_requested_at = time.time() - 999  # 已超过宽限时间
     settings.save({"scheduler": {"stop_grace_seconds": 5}})
 
+    # v2.4.0 T1：终止契约升级为 worker/common 优雅终止阶梯——
+    # 断言阶梯被调用且进程在阶梯内被终止（FakeProcess.wait 直接返回退出码）
+    calls = {}
+    monkeypatch.setattr("app.task_manager.TaskManager._terminate",
+                        lambda self, h: calls.setdefault("terminated", h.process is process))
+    # 直接走 _force_stop 验证状态落库与阶梯触发
     with manager._lock:
         manager._running[task["id"]] = handle
     manager._prune_finished()
 
-    assert process.terminated is True
+    assert calls.get("terminated") is True
     row = manager.db.get_task(task["id"])
     assert row["status"] == "stopped"
     assert "强制终止" in row["error"]
+
+
+def test_terminate_uses_graceful_ladder(manager, monkeypatch):
+    """T1 契约：TaskManager._terminate 委托 worker/common.terminate_gracefully"""
+    import worker.common as common
+
+    task = _make_task(manager.db, status="stopping")
+    process = FakeProcess(poll_value=None)
+    handle = RunningTask(task["id"], process, monitor=_DummyThread())
+
+    called = {}
+    monkeypatch.setattr(common, "terminate_gracefully",
+                        lambda proc, timeout: called.setdefault(
+                            "args", (proc is process, timeout)))
+    TaskManager._terminate(handle)
+
+    assert called["args"][0] is True
+    assert called["args"][1] == 5.0
 
 
 def test_finished_process_is_pruned(manager):

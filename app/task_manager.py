@@ -44,6 +44,28 @@ class RunningTask:
         self.force_stopped = False
 
 
+class _FakeHandle:
+    """孤儿进程清理用最小句柄（只有 pid，无 Popen 对象）——供 terminate_gracefully 阶梯使用"""
+
+    def __init__(self, pid: int):
+        self.pid = int(pid)
+
+    def poll(self):
+        # 每次实时探测：不存在则视为已退出
+        return None if _pid_alive(self.pid) else 0
+
+    def wait(self, timeout=None):
+        import time as _t
+        deadline = _t.monotonic() + (timeout or 0)
+        while _t.monotonic() < deadline:
+            if not _pid_alive(self.pid):
+                return 0
+            _t.sleep(0.1)
+        if not _pid_alive(self.pid):
+            return 0
+        raise subprocess.TimeoutExpired(cmd=f"pid-{self.pid}", timeout=timeout)
+
+
 class TaskManager:
     def __init__(self, db: Database, hub: events.EventHub):
         self.db = db
@@ -67,8 +89,8 @@ class TaskManager:
             self._thread = threading.Thread(target=self._scheduler_loop, name="task-scheduler", daemon=True)
             self._thread.start()
 
-    def shutdown(self, grace: float = 5.0):
-        """WebUI 退出：请求所有 Worker 停止，短暂等待后强制终止"""
+    def shutdown(self, grace: float = 25.0):
+        """WebUI 退出：请求所有 Worker 停止，等待宽限（默认 25s，与运行期一致）后强制终止"""
         self._stopping.set()
         if self._thread and self._thread is not threading.current_thread():
             self._thread.join(timeout=max(grace, 2))
@@ -107,8 +129,10 @@ class TaskManager:
                         control.write_command(task_id, control.STOP, reason="orphan_cleanup")
                     except Exception:
                         pass
-                    time.sleep(0.2)
-                    _terminate_pid(row["pid"])
+                    # v2.4.0 T1：残留孤儿进程改走优雅终止阶梯（先 taskkill 无 /F
+                    # 给 Worker 优雅退出机会，超时才强杀），不再 sleep(0.2) 后裸强杀
+                    from worker import common
+                    common.terminate_gracefully(_FakeHandle(row["pid"]), 5.0)
             status = "interrupted"
             self.db.set_task_status(task_id, status, error=message, finished=True)
             self._record_event(task_id, row.get("account_id", "") if row else "", "interrupted",
@@ -596,13 +620,13 @@ class TaskManager:
 
     @staticmethod
     def _terminate(handle: RunningTask):
+        # v2.4.0 T1：统一优雅终止阶梯（taskkill 无 /F → 等待 → CTRL_BREAK → 强杀），
+        # Windows 不再直接 TerminateProcess——Worker 的 SIGTERM 处理器得以执行，
+        # session.close / worker_exit 事件 / 文件日志落盘不再丢失。
+        from worker import common
+
         try:
-            if handle.process.poll() is None:
-                handle.process.terminate()
-                try:
-                    handle.process.wait(timeout=5)
-                except Exception:
-                    handle.process.kill()
+            common.terminate_gracefully(handle.process, 5.0)
         except Exception:
             pass
 
