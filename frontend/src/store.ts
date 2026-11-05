@@ -1,7 +1,8 @@
-import { reactive } from "vue";
+import { reactive, watch } from "vue";
 import { request } from "./api";
 import { active } from "./format";
 import { nextDismissedResumeTasks } from "./mission";
+import { router } from "./router";
 import type {
   Account,
   Task,
@@ -38,6 +39,15 @@ export const state = reactive({
   // 运行中快照缓存（进度小窗 / 任务列表行摘要共享），键为任务 id。
   liveById: {} as Record<string, TaskLive | null>,
 });
+// T13：路由为单一事实来源——state.view 由 route 同步驱动，消费方零改动。
+watch(
+  () => router.currentRoute.value.name,
+  (name) => {
+    if (typeof name === "string" && name !== "mini")
+      state.view = name as View;
+  },
+  { immediate: true },
+);
 /** 写入运行中快照，同时同步任务列表中的行摘要。 */
 export function setTaskLive(id: string, live?: TaskLive | null) {
   state.liveById[id] = live ?? null;
@@ -157,8 +167,7 @@ export async function refresh() {
   }
 }
 export function navigate(view: View) {
-  state.view = view;
-  location.hash = view;
+  void router.push({ name: view });
 }
 export async function initialize() {
   state.loading = true;

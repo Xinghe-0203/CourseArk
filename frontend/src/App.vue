@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { useRoute, RouterView } from "vue-router";
 import {
   LayoutDashboard,
   Users,
@@ -16,19 +17,13 @@ import { engineTotals, overviewCounts } from "./overview";
 import { pushAnswerEvent } from "./windows/answers";
 import { pushAlertEvent } from "./windows/alerts";
 import { closeWindow, openWindow, windows } from "./windows/manager";
-import type { Task, View } from "./types";
-import TaskList from "./components/TaskList.vue";
+import type { Task } from "./types";
 import TaskDrawer from "./components/TaskDrawer.vue";
-import AccountsView from "./components/AccountsView.vue";
 import NewTask from "./components/NewTask.vue";
-import BankView from "./components/BankView.vue";
-import SettingsView from "./components/SettingsView.vue";
-import AccountWorkspace from "./components/AccountWorkspace.vue";
-import OverviewDashboard from "./components/OverviewDashboard.vue";
-import CompletedView from "./components/CompletedView.vue";
 import ProgressWindow from "./components/ProgressWindow.vue";
 import AnswerFeedWindow from "./components/AnswerFeedWindow.vue";
 import AlertWindow from "./components/AlertWindow.vue";
+const route = useRoute();
 const nav = [
   { key: "overview", title: "工作总览", icon: LayoutDashboard },
   { key: "tasks", title: "学习任务", icon: Layers },
@@ -48,7 +43,6 @@ const sections = groups.map((group) => ({
   items: nav.filter((item) => (group.keys as readonly string[]).includes(item.key)),
 }));
 const selected = ref<Task | null>(null);
-const taskTab = ref("accounts");
 function openNewTask() {
   state.newTaskAccount = "";
   state.newTaskFeature = "course_all";
@@ -61,7 +55,24 @@ function toggleWindow(kind: "progress" | "answers" | "alerts") {
   if (win?.open) closeWindow(kind);
   else openWindow(kind);
 }
-const page = computed(() => nav.find((n) => n.key === state.view) || nav[0]);
+// T13：页面标题/文案来自路由 meta（mini 子窗路由不在 nav 里，回退总览）。
+const page = computed(
+  () =>
+    nav.find((n) => n.key === route.name) ||
+    ({ key: "overview", title: String(route.meta.title || "工作总览") } as const),
+);
+// 页面说明文案沿用旧 view → copy 映射。
+const pageCopy = computed(
+  () =>
+    ({
+      overview: "当前状态摘要与正在运行的任务；账号、课程与任务分别在专页管理。",
+      tasks: "按账号管理课程与任务，随时暂停、继续或查看执行结果。",
+      accounts: "管理账号与登录状态、同步课程；课程详情在弹窗中查看。",
+      completed: "汇总每次跑完的任务：课程、时间、耗时、逐题明细与结果说明。",
+      bank: "查看、导入与清理本机记住的答案，减少重复调用 AI。",
+      settings: "设置默认学习方式、账号并发数量与 AI 服务。",
+    })[state.view as keyof Record<string, string>] || "",
+);
 // 顶栏统计与总览、心跳共用 /api/overview 真值；接口缺席时回退本地任务口径。
 const engine = computed(() => engineTotals(state.overview, state.tasks));
 const headCounts = computed(() => overviewCounts(state.overview, state.workspaces));
@@ -126,10 +137,6 @@ function visibility() {
     refresh();
   }
 }
-function hash() {
-  const view = location.hash.slice(1);
-  if (nav.some((n) => n.key === view)) state.view = view as View;
-}
 watch(
   () => state.toast,
   () => {
@@ -139,14 +146,12 @@ watch(
   },
 );
 onMounted(() => {
-  hash();
   initialize();
   connect();
   timer = setInterval(() => {
     if (!document.hidden) refresh();
   }, 10000);
   document.addEventListener("visibilitychange", visibility);
-  window.addEventListener("hashchange", hash);
 });
 onUnmounted(() => {
   stream?.close();
@@ -154,7 +159,6 @@ onUnmounted(() => {
   clearTimeout(toastTimer);
   clearTimeout(debounce);
   document.removeEventListener("visibilitychange", visibility);
-  window.removeEventListener("hashchange", hash);
 });
 </script>
 <template>
@@ -241,18 +245,7 @@ onUnmounted(() => {
         <div class="page-heading">
           <div>
             <h1>{{ page.title }}</h1>
-            <p>
-              {{
-                {
-                  overview: "当前状态摘要与正在运行的任务；账号、课程与任务分别在专页管理。",
-                  tasks: "按账号管理课程与任务，随时暂停、继续或查看执行结果。",
-                  accounts: "管理账号与登录状态、同步课程；课程详情在弹窗中查看。",
-                  completed: "汇总每次跑完的任务：课程、时间、耗时、逐题明细与结果说明。",
-                  bank: "查看、导入与清理本机记住的答案，减少重复调用 AI。",
-                  settings: "设置默认学习方式、账号并发数量与 AI 服务。",
-                }[state.view]
-              }}
-            </p>
+            <p>{{ pageCopy }}</p>
           </div>
           <button
             v-if="['overview', 'tasks'].includes(state.view)"
@@ -267,40 +260,10 @@ onUnmounted(() => {
           ><button @click="state.error = ''">关闭</button>
         </div>
         <div v-if="state.loading" class="empty">正在读取工作空间…</div>
-        <template v-else-if="state.view === 'overview'">
-          <OverviewDashboard @select="selected = $event" />
-        </template>
-        <AccountsView v-else-if="state.view === 'accounts'" />
-        <div v-else-if="state.view === 'tasks'">
-          <div class="tabs">
-            <button
-              :class="{ selected: taskTab === 'accounts' }"
-              @click="taskTab = 'accounts'"
-            >
-              按账号展开</button
-            ><button
-              :class="{ selected: taskTab === 'history' }"
-              @click="taskTab = 'history'"
-            >
-              任务记录与历史
-            </button>
-          </div>
-          <AccountWorkspace
-            v-if="taskTab === 'accounts'"
-            @select="selected = $event"
-          /><TaskList
-            v-else
-            :tasks="state.tasks"
-            filters
-            @select="selected = $event"
-          />
-        </div>
-        <CompletedView
-          v-else-if="state.view === 'completed'"
-          @select="selected = $event"
-        />
-        <BankView v-else-if="state.view === 'bank'" />
-        <SettingsView v-else-if="state.view === 'settings'" />
+        <!-- T13：页面主体交给 RouterView（routes 见 router.ts，锚点类名零改动）。
+             与旧模板一致，loading 期间不挂载页面——SettingsView 等组件在 setup
+             时对 state.settings 做一次性快照，必须等 initialize 完成再挂载。 -->
+        <RouterView v-else @select="selected = $event" />
         <footer>课舟 CourseArk <span>·</span> 数据保存在本机</footer>
       </div>
     </main>
