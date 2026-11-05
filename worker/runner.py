@@ -119,30 +119,41 @@ def load_task(task_path: str) -> dict:
         return json.load(f)
 
 
-def setup_logging(sink: "runtime.EventSink"):
+def setup_logging(sink: "runtime.EventSink", task: dict = None):
     """
-    日志接管（v2.4.0 T1 统一桥）：
+    日志接管（v2.4.0 T1 统一桥 / T11 级别参数化）：
     - loguru 全部输出转为 log 事件（JSON Lines），由 Web 进程解析
+    - 级别读任务快照 params.advanced.log_level（默认 INFO），
+      WARNING 以上抑制 DEBUG 噪声、控制 JSON Lines 体积
     - DEBUG 级 + module:function:line payload（与三个小 runner 口径一致）
     """
+    level = "INFO"
+    if isinstance(task, dict):
+        raw = (task.get("params", {}) or {}).get("advanced", {}) or {}
+        raw = str(raw.get("log_level", "")).strip().upper()
+        if raw in ("DEBUG", "INFO", "WARNING", "ERROR"):
+            level = raw
     common.setup_common_logging(
-        sink, level="DEBUG",
+        sink, level=level,
         extra_filter=lambda record: not record['extra'].get('instant_probe'),
     )
 
 
-def add_file_logger(log_dir: str, task_id: str):
-    """文件日志（仅 WebUI 数据目录）"""
+def add_file_logger(log_dir: str, task_id: str, retention_days: int = None):
+    """文件日志（仅 WebUI 数据目录）；retention 读设置 log_retention_days"""
     from loguru import logger
 
     try:
+        days = 7
+        if isinstance(retention_days, int) and 1 <= retention_days <= 3650:
+            days = retention_days
         os.makedirs(log_dir, exist_ok=True)
         logger.add(
             os.path.join(log_dir, f"{task_id}.log"),
             format="{time:YYYY-MM-DD HH:mm:ss} | {level:<8} | {name}:{function}:{line} - {message}",
             level="DEBUG",
             rotation="10 MB",
-            retention="7 days",
+            retention=f"{days} days",
             encoding="utf-8",
             filter=lambda record: not record['extra'].get('instant_probe'),
         )
@@ -337,8 +348,9 @@ def main() -> int:
     runtime.set_sink(sink)
     runtime.set_control(runtime.ControlState(task["control_path"], sink=sink))
 
-    setup_logging(sink)
-    add_file_logger(task.get("log_dir", ""), task["task_id"])
+    setup_logging(sink, task)
+    add_file_logger(task.get("log_dir", ""), task["task_id"],
+                    retention_days=task.get("log_retention_days"))
 
     ui = TaskStatsUI(sink)
 

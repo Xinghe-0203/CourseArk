@@ -103,6 +103,8 @@ class TaskManager:
         self._thread = None
         self._stopping = threading.Event()
         self._cancels = {}  # task_id -> 阻止继续调度的标记
+        # v2.4.0 T11.4：traceback 聚合缓冲（task 内串行读取，无需额外锁）
+        self._traceback_buffer = None
 
     # --------------------------------------------------------
     # 生命周期
@@ -361,7 +363,11 @@ class TaskManager:
         """组装任务文件：账号凭据 + 课程 + 功能 + 参数快照 + 外部服务配置"""
         config = settings.load()
         question_bank = config.get("question_bank", {})
-        return {
+        try:
+            retention_days = int(settings.resolve("storage.log_retention_days", 7))
+        except (TypeError, ValueError):
+            retention_days = 7
+        task_payload = {
             "task_id": row["id"],
             "run_id": row.get("run_id"),
             "feature": row["feature"],
@@ -380,7 +386,20 @@ class TaskManager:
             "control_path": paths.control_path(row["id"]),
             "task_dir": paths.TASK_DIR,
             "log_dir": paths.LOG_DIR,
+            # v2.4.0 T11：文件日志保留期与设置单源（此前 runner 硬编码 7 days）
+            "log_retention_days": retention_days,
         }
+        # v2.4.0 T11：设置层 advanced.log_level 注入任务参数快照，
+        # Worker 的 sink 级别据此收敛（任务 params 同名键优先，允许按任务覆盖）
+        advanced_settings = config.get("advanced", {}) or {}
+        log_level = str(advanced_settings.get("log_level", "")).strip().upper()
+        if log_level in ("DEBUG", "INFO", "WARNING", "ERROR"):
+            params = task_payload["params"]
+            advanced_params = params.setdefault("advanced", {})
+            if not isinstance(advanced_params, dict):
+                params["advanced"] = advanced_params = {}
+            advanced_params.setdefault("log_level", log_level)
+        return task_payload
 
     def _monitor(self, task_id: str, process: subprocess.Popen):
         """读取 Worker 的 JSON Lines 输出，解析事件并落库/推送"""
@@ -402,6 +421,11 @@ class TaskManager:
                               f"监控线程读取 Worker 输出失败: {exc}",
                               level="error", stage="monitor")
         finally:
+            # T11.4：监控循环结束（含异常路径）先把残余 traceback 缓冲落库
+            try:
+                self._flush_traceback(task_id, account_id)
+            except Exception:
+                pass
             try:
                 stream.close()
             except Exception:
@@ -452,6 +476,34 @@ class TaskManager:
         text = (text or "").strip()
         if not text:
             return
+
+        # v2.4.0 T11.4：traceback 聚合——Worker 的未捕获异常以多行
+        # "Traceback (most recent call last):" 形式打到 stdout，此前被
+        # _handle_line 拆成 N 条独立 raw log，动态页被刷屏且丢失整体结构。
+        if self._traceback_buffer is not None:
+            buffer = self._traceback_buffer
+            # JSON 行出现即断（异常结束后恢复的协议输出）；
+            # "Traceback (most recent call last):" 新开头重置缓冲
+            if text.lstrip().startswith("{") or text.startswith("Traceback (most recent call last):"):
+                self._flush_traceback(task_id, account_id)
+            else:
+                buffer[0].append(text)
+                # 50 行上界 + 2s 滑窗：到界或超窗立即落库，
+                # 防止管道静默时 traceback 尾部长期滞留内存
+                if len(buffer[0]) >= 50:
+                    self._flush_traceback(task_id, account_id)
+                    # 上界截断后重开缓冲：同一 traceback 的剩余行继续聚合，
+                    # 不会散落成 N 条独立日志（下一条 JSON 行/新 header 收口）
+                    self._traceback_buffer = [[], time.time()]
+                elif time.time() - buffer[1] >= 2.0:
+                    self._flush_traceback(task_id, account_id)
+                return
+
+        if text.startswith("Traceback (most recent call last):"):
+            # [行列表, 起始时间戳]：2s 滑窗从首行计
+            self._traceback_buffer = [[text], time.time()]
+            return
+
         try:
             record = json.loads(text)
             if not isinstance(record, dict):
@@ -479,6 +531,18 @@ class TaskManager:
         self._record_event(task_id, account_id, event, message, level=level, stage=stage,
                            payload=payload)
         self._apply_event(task_id, event, stage, payload, message=message)
+
+    def _flush_traceback(self, task_id: str, account_id: str):
+        """把缓冲中的 traceback 多行聚合为单条 error 级 raw log 事件"""
+        buffer = self._traceback_buffer
+        self._traceback_buffer = None
+        if not buffer or not buffer[0]:
+            return
+        lines = buffer[0]
+        joined = "\n".join(lines)[:4000]
+        self._record_event(task_id, account_id, "log", joined,
+                           level="error", stage="raw",
+                           payload={"traceback": True, "lines": len(lines)})
 
     def _apply_event(self, task_id: str, event: str, stage: str, payload: dict, message: str = ""):
         """把事件映射为任务状态/阶段/统计的变更

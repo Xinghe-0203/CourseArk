@@ -440,7 +440,10 @@ def test_task_log_redacts_credentials_in_worker_and_historical_download(app_clie
     secret = "test-password-cipher"
     token = "test-playback-token"
     raw = f"POST https://example.invalid/report?dtoken={token}&playingTime=60 data: {{'password': '{secret}', 'username': 'test-user'}}"
-    sink = Mock(); setup_logging(sink); add_file_logger(str(tmp_path), 'redaction')
+    sink = Mock()
+    # T11：默认 INFO 级别下 DEBUG 不出 sink；脱敏逻辑与级别无关，用 INFO 行验证
+    setup_logging(sink, {"params": {"advanced": {"log_level": "DEBUG"}}})
+    add_file_logger(str(tmp_path), 'redaction')
     try:
         logger.debug(raw)
         message = sink.emit.call_args.args[1]

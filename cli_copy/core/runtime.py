@@ -262,6 +262,16 @@ def emit(event: str, message: str = "", level: str = "info",
         _sink.emit(event, message, level=level, stage=stage, payload=payload)
 
 
+def _caller_payload(depth: int = 2) -> dict:
+    """取调用方的 module:function:line（v2.4.0 T11.3）。
+
+    depth 语义（sys._getframe）：0=_caller_payload 自身，1=直接调用者
+    （logger 方法），2=logger 方法的调用者（业务代码）。默认 2。
+    """
+    frame = sys._getframe(depth)
+    return {"module": f"{frame.f_code.co_filename}:{frame.f_code.co_name}:{frame.f_lineno}"}
+
+
 class _ModuleLogger:
     """模块级兼容 logger（v2.4.0 T3 日志单通道）：把 loguru 风格调用
     （logger.info/debug/success/warning/error/exception）转发到当前
@@ -272,25 +282,32 @@ class _ModuleLogger:
     """
 
     def debug(self, message, *args, **kwargs):
-        emit("log", _format_args(message, args), level="debug", stage="log")
+        emit("log", _format_args(message, args), level="debug", stage="log",
+             payload=_caller_payload())
 
     def info(self, message, *args, **kwargs):
-        emit("log", _format_args(message, args), level="info", stage="log")
+        emit("log", _format_args(message, args), level="info", stage="log",
+             payload=_caller_payload())
 
     def success(self, message, *args, **kwargs):
-        emit("log", _format_args(message, args), level="success", stage="log")
+        emit("log", _format_args(message, args), level="success", stage="log",
+             payload=_caller_payload())
 
     def warning(self, message, *args, **kwargs):
-        emit("log", _format_args(message, args), level="warning", stage="log")
+        emit("log", _format_args(message, args), level="warning", stage="log",
+             payload=_caller_payload())
 
     def error(self, message, *args, **kwargs):
-        emit("log", _format_args(message, args), level="error", stage="log")
+        emit("log", _format_args(message, args), level="error", stage="log",
+             payload=_caller_payload())
 
     def exception(self, message, *args, **kwargs):
-        emit("log", _format_args(message, args), level="error", stage="log")
+        emit("log", _format_args(message, args), level="error", stage="log",
+             payload=_caller_payload())
 
     def log(self, level, message, *args, **kwargs):
-        emit("log", _format_args(message, args), level=str(level).lower(), stage="log")
+        emit("log", _format_args(message, args), level=str(level).lower(),
+             stage="log", payload=_caller_payload())
 
 
 def _format_args(message, args) -> str:
