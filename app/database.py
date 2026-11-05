@@ -676,6 +676,22 @@ class Database:
             (int(last_id or 0), int(limit)),
         )
 
+    def events_window(self, since: float = 0, until: float = 0,
+                      after_id: int = 0, limit: int = 1000) -> list:
+        """跨任务事件窗口导出（v2.4.0 T12）：id 游标 + 可选时间范围。"""
+        clauses = ["id > ?"]
+        args = [int(after_id or 0)]
+        if since:
+            clauses.append("ts >= ?")
+            args.append(float(since))
+        if until:
+            clauses.append("ts <= ?")
+            args.append(float(until))
+        args.append(int(limit))
+        sql = (f"SELECT * FROM task_events WHERE {' AND '.join(clauses)} "
+               "ORDER BY id ASC LIMIT ?")
+        return self._query(sql, tuple(args))
+
     # --------------------------------------------------------
     # 预设
     # --------------------------------------------------------

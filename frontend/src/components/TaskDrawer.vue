@@ -376,6 +376,11 @@ watch(
           ><input v-model="follow" type="checkbox" />跟随最新</label
         ><a :href="`/api/tasks/${task.id}/logs`" download class="text-link"
           >下载完整日志</a
+        ><a
+          :href="`/api/events/export?task_id=${task.id}&format=json`"
+          download
+          class="text-link"
+          >导出 JSON</a
         >
       </div>
       <p class="muted" v-if="tab === 'logs'">

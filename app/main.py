@@ -678,6 +678,60 @@ def _register_routes(app: FastAPI):
         return StreamingResponse(lines(), media_type="text/plain; charset=utf-8",
                                  headers={"Content-Disposition": f'attachment; filename="task-{task_id}.log"'})
 
+    @app.get("/api/events/export")
+    def events_export(format: str = "json", task_id: str = "",
+                      since: float = 0, until: float = 0):
+        """事件导出（v2.4.0 T12）：JSON 完整事件数组 / txt 文本渲染，支持时间窗。
+
+        跨任务：task_id 为空导出全部任务（同步哨兵行 task_id="0" 一并包含）。
+        """
+        fmt = (format or "json").lower()
+        if fmt not in ("json", "txt"):
+            raise HTTPException(status_code=422, detail="format 仅支持 json 或 txt")
+
+        def _rows():
+            after = 0
+            while True:
+                if task_id:
+                    rows = db.list_events(task_id, after_id=after, limit=1000,
+                                          since=since or 0, until=until or 0)
+                else:
+                    rows = db.events_window(since=since or 0, until=until or 0,
+                                            after_id=after, limit=1000)
+                if not rows:
+                    return
+                yield from rows
+                after = rows[-1]["id"]
+
+        if fmt == "txt":
+            def txt_lines():
+                for row in _rows():
+                    stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(row["ts"]))
+                    yield f"{stamp} | {row['level']} | {row['stage']} | {redact(row['message'])}\n"
+
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            name = f"events-{task_id or 'all'}-{stamp}.txt"
+            return StreamingResponse(txt_lines(), media_type="text/plain; charset=utf-8",
+                                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+        items = []
+        for row in _rows():
+            view = _event_view(row)
+            from .presentation import describe as _present
+            view["presentation"] = _present(view["event"], view["message"],
+                                            level=view["level"], stage=view["stage"],
+                                            payload=view["payload"])
+            view["narrative"] = narrative.describe(view["event"], view["message"],
+                                                   level=view["level"], stage=view["stage"],
+                                                   payload=view["payload"])
+            items.append(view)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        name = f"events-{task_id or 'all'}-{stamp}.json"
+        payload_bytes = json.dumps({"total": len(items), "items": items},
+                                   ensure_ascii=False).encode("utf-8")
+        return Response(payload_bytes, media_type="application/json; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
     # ---------------- 历史 ----------------
 
     @app.get("/api/history")
