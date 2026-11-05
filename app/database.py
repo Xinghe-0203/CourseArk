@@ -23,6 +23,15 @@ from . import paths
 
 SCHEMA_VERSION = 1
 
+# 单条事件 payload 序列化后的字节数上限（T6）：超过则截断为骨架，
+# 防止大对象（整章题目、exam_stats 明细）撑爆 task_events 表。
+MAX_PAYLOAD_JSON = 4000
+
+# 事件批量缓冲（T6）：高频事件（log/media_progress）不再逐条 commit，
+# 攒够条数或超时后一次性 executemany，读方法消费前强制 flush 保证读己之写。
+EVENT_BUFFER_LIMIT = 8
+EVENT_BUFFER_SECONDS = 2.0
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS courses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,6 +138,8 @@ class Database:
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(self.path, check_same_thread=False, timeout=30.0)
         self._conn.row_factory = sqlite3.Row
+        self._event_buffer = []
+        self._buffer_flushed_at = time.time()
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=30000")
         self._conn.execute("PRAGMA synchronous=NORMAL")
@@ -142,6 +153,7 @@ class Database:
 
     def close(self):
         with self._lock:
+            self.flush_events()
             self._conn.close()
 
     # --------------------------------------------------------
@@ -156,6 +168,9 @@ class Database:
 
     def _query(self, sql: str, params=()) -> list:
         with self._lock:
+            # 事件读前先落缓冲，保证「读己之写」：刚 add_event 的事件立即可查
+            if self._event_buffer:
+                self.flush_events()
             return [dict(row) for row in self._conn.execute(sql, params).fetchall()]
 
     def _query_one(self, sql: str, params=()):
@@ -340,16 +355,25 @@ class Database:
 
     def set_task_status(self, task_id: str, status: str, error: str = None,
                         finished: bool = False):
-        fields = {"status": status}
+        """单语句条件更新（T6 CAS 化）：started_at 只在为空时补写，
+        消除「读 started_at → 决定是否写」的读改写竞争窗口"""
+        now = time.time()
+        assignments = ["status = ?"]
+        params = [status]
         if error is not None:
-            fields["error"] = error
+            assignments.append("error = ?")
+            params.append(error)
         if finished:
-            fields["finished_at"] = time.time()
+            assignments.append("finished_at = ?")
+            params.append(now)
         if status in ("running", "logging_in", "loading_courses", "starting"):
-            row = self.get_task(task_id)
-            if row and not row.get("started_at"):
-                fields["started_at"] = time.time()
-        self.update_task(task_id, **fields)
+            assignments.append("started_at = COALESCE(NULLIF(started_at, 0), ?)")
+            params.append(now)
+        params.append(task_id)
+        self._execute(
+            f"UPDATE tasks SET {', '.join(assignments)} WHERE id = ?",
+            tuple(params),
+        )
 
     @staticmethod
     def _task_filter_clause(filters: dict) -> tuple:
@@ -420,13 +444,30 @@ class Database:
     # 事件
     # --------------------------------------------------------
 
+    def _truncate_payload(self, payload) -> str:
+        """payload 序列化；超过 MAX_PAYLOAD_JSON 时降级为骨架（保键名 + 预览）"""
+        raw = json.dumps(payload or {}, ensure_ascii=False)
+        if len(raw) <= MAX_PAYLOAD_JSON:
+            return raw
+        keys = list((payload or {}).keys())
+        skeleton = {
+            "truncated": True,
+            "keys": keys[:20],
+            "preview": raw[:600],
+        }
+        return json.dumps(skeleton, ensure_ascii=False)
+
     def add_event(self, task_id: str, account_id: str, event: str, message: str,
                   level: str = "info", stage: str = "", payload: dict = None,
                   ts: float = None) -> int:
-        cursor = self._execute(
-            """INSERT INTO task_events(task_id, account_id, ts, level, event, stage, message, payload_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
+        """写入事件。高频事件进入内存缓冲，攒够 EVENT_BUFFER_LIMIT 条或
+        距上次落库超过 EVENT_BUFFER_SECONDS 秒才批量 executemany。
+        id 预分配（MAX(id)+缓冲数 推进）保证调用方立刻拿到真实行 id，
+        可直接用作 SSE 游标；未落库的行由 flush_events 按显式 id 写入。"""
+        with self._lock:
+            next_id = self._next_event_id()
+            record = (
+                next_id,
                 task_id,
                 account_id or "",
                 ts if ts is not None else time.time(),
@@ -434,10 +475,35 @@ class Database:
                 event or "log",
                 stage or "",
                 message or "",
-                json.dumps(payload or {}, ensure_ascii=False),
-            ),
+                self._truncate_payload(payload),
+            )
+            self._event_buffer.append(record)
+            due = (len(self._event_buffer) >= EVENT_BUFFER_LIMIT
+                   or time.time() - self._buffer_flushed_at >= EVENT_BUFFER_SECONDS)
+            if due:
+                self.flush_events()
+        return next_id
+
+    def _next_event_id(self) -> int:
+        """推算下一个事件 id：表内 MAX(id) 与缓冲中已预分配 id 的最大值 + 1（须持锁调用）"""
+        row = self._conn.execute("SELECT COALESCE(MAX(id), 0) AS m FROM task_events").fetchone()
+        buffered = self._event_buffer[-1][0] if self._event_buffer else 0
+        return max(int(row["m"] if row else 0), buffered) + 1
+
+    def flush_events(self):
+        """把缓冲中的事件一次性写入数据库（须持锁调用；id 已预分配，显式写入）"""
+        if not self._event_buffer:
+            self._buffer_flushed_at = time.time()
+            return
+        rows = self._event_buffer
+        self._event_buffer = []
+        self._buffer_flushed_at = time.time()
+        self._conn.executemany(
+            """INSERT INTO task_events(id, task_id, account_id, ts, level, event, stage, message, payload_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows,
         )
-        return cursor.lastrowid
+        self._conn.commit()
 
     def list_events(self, task_id: str, after_id: int = 0, limit: int = 200,
                     level: str = None, event: str = None, latest: bool = False,
@@ -571,18 +637,17 @@ class Database:
         return self._query("SELECT * FROM presets ORDER BY updated_at DESC")
 
     def upsert_preset(self, preset_id: str, name: str, params: dict) -> dict:
+        """单语句 upsert（T6 CAS 化）：消除「SELECT 存在性 → UPDATE/INSERT」二段竞争"""
         now = time.time()
-        existing = self._query_one("SELECT id FROM presets WHERE id = ?", (preset_id,))
-        if existing:
-            self._execute(
-                "UPDATE presets SET name = ?, params_json = ?, updated_at = ? WHERE id = ?",
-                (name, json.dumps(params, ensure_ascii=False), now, preset_id),
-            )
-        else:
-            self._execute(
-                "INSERT INTO presets(id, name, params_json, created_at, updated_at) VALUES(?, ?, ?, ?, ?)",
-                (preset_id, name, json.dumps(params, ensure_ascii=False), now, now),
-            )
+        self._execute(
+            """INSERT INTO presets(id, name, params_json, created_at, updated_at)
+               VALUES(?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                   name = excluded.name,
+                   params_json = excluded.params_json,
+                   updated_at = excluded.updated_at""",
+            (preset_id, name, json.dumps(params, ensure_ascii=False), now, now),
+        )
         return self._query_one("SELECT * FROM presets WHERE id = ?", (preset_id,))
 
     def delete_preset(self, preset_id: str) -> bool:
@@ -594,10 +659,17 @@ class Database:
     # --------------------------------------------------------
 
     def dashboard_stats(self, since: float) -> dict:
-        """今日统计：任务点成功/失败、答题数、来源命中、提交结果"""
+        """今日统计：任务点成功/失败、答题数、来源命中、提交结果
+
+        聚合对象是 stats_json JSON 的顶层键而非列（worker 落库的运行时统计），
+        无法纯 SQL GROUP BY——保留 Python 聚合；此处修复的是状态白名单漏状态：
+        旧版只统计 5 种状态，漏掉 pending/starting/logging_in/loading_courses/
+        stopping/interrupted，导致运行中任务的已产出统计不计入今日看板。
+        """
+        placeholders = ",".join("?" for _ in ACTIVE_STATUSES + TERMINAL_STATUSES)
         rows = self._query(
-            "SELECT stats_json FROM tasks WHERE created_at >= ? AND status IN ('succeeded','failed','stopped','running','paused')",
-            (since,),
+            f"SELECT stats_json FROM tasks WHERE created_at >= ? AND status IN ({placeholders})",
+            (since, *ACTIVE_STATUSES, *TERMINAL_STATUSES),
         )
         totals = {
             "success": 0, "failed": 0, "skipped": 0, "already_done": 0,

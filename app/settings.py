@@ -106,10 +106,15 @@ _storage = None
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
+    """递归合并；类型防御（T6）：override 用非 dict 值覆盖 base 的 dict 槽位时丢弃该键，
+    防止配置文件坏节（如 "scheduler": "reset"）在运行期深处才爆发——
+    normalize 的 _clamp 只能兜数字与枚举，兜不住「分组被整体替换成标量」"""
     result = base.copy()
     for key, value in override.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            result[key] = _deep_merge(result[key], value)
+        if key in result and isinstance(result[key], dict):
+            if isinstance(value, dict):
+                result[key] = _deep_merge(result[key], value)
+            # 非 dict 覆盖 dict 槽位：丢弃，保留 base 默认结构
         else:
             result[key] = value
     return result
@@ -134,6 +139,17 @@ def _get_path(data: dict, key_path: str, default=None):
         if value is None:
             return default
     return value
+
+
+def _path_exists(data: dict, key_path: str) -> bool:
+    """键路径是否真实出现在提交结构里（值可以是 None——与 _get_path 的区别：
+    _get_path 把显式 None 视同缺失，apply_updates 的 null 清除协议需要区分两者）"""
+    value = data
+    for key in key_path.split("."):
+        if not isinstance(value, dict) or key not in value:
+            return False
+        value = value[key]
+    return True
 
 
 def _clamp(value, minimum, maximum, fallback):
@@ -414,20 +430,48 @@ def storage_info() -> dict:
     }
 
 
+# 导出脱敏占位符（T6）：导出文件里敏感字段一律替换为它；导入时遇到它则跳过该字段
+REDACTED_PLACEHOLDER = "<redacted>"
+
+
+def _strip_secrets(data: dict) -> dict:
+    """导出前把 SECRET_PATHS 路径上的敏感值替换为占位符"""
+    data = copy.deepcopy(data)
+    for secret_path in SECRET_PATHS:
+        value = _get_path(data, secret_path, None)
+        if value:  # 空值保持空，不产生无意义占位符
+            _set_path(data, secret_path, REDACTED_PLACEHOLDER)
+    return data
+
+
 def export_json() -> str:
-    """导出设置 JSON（用于备份/迁移）"""
-    return json.dumps(load(), ensure_ascii=False, indent=2)
+    """导出设置 JSON（用于备份/迁移）；敏感字段脱敏为 <redacted>，
+    导出文件不含明文密钥（T6）"""
+    return json.dumps(_strip_secrets(load()), ensure_ascii=False, indent=2)
+
+
+def _drop_placeholders(data: dict) -> dict:
+    """导入时剔除 <redacted> 占位字段——该字段保持现状（不覆盖现有密钥）"""
+    for secret_path in SECRET_PATHS:
+        if _get_path(data, secret_path, None) == REDACTED_PLACEHOLDER:
+            group, _, leaf = secret_path.partition(".")
+            if isinstance(data.get(group), dict):
+                data[group].pop(leaf, None)
+                if not data[group]:
+                    data.pop(group, None)
+    return data
 
 
 def import_json(content: str) -> dict:
-    """导入设置 JSON（局部合并，不删除未提交的字段）"""
+    """导入设置 JSON（局部合并，不删除未提交的字段）；
+    遇到 <redacted> 占位字段按「未提交」处理（T6）"""
     try:
         payload = json.loads(content)
     except ValueError as exc:
         raise ValueError(f"JSON 解析失败: {exc}")
     if not isinstance(payload, dict):
         raise ValueError("设置 JSON 应为对象")
-    return save(payload)
+    return save(_drop_placeholders(payload))
 
 
 def resolve(key_path: str, default=None):
@@ -452,6 +496,8 @@ def apply_updates(payload: dict) -> dict:
     规则：
     - 只处理提交里出现的字段，未提交的字段保持原值（局部合并）
     - 敏感字段提交空值或未提交时，保留已保存的密钥，避免回显空值把密钥清掉
+    - 显式提交 null 表示清除该密钥（T6 协议）：_path_exists 确认键确实出现在
+      提交里且值为 None 时跳过回填，让 None 落库（normalize 容忍空值）
     """
     updates = copy.deepcopy(payload or {})
     updates.pop("secrets", None)
@@ -464,6 +510,8 @@ def apply_updates(payload: dict) -> dict:
         submitted = _get_path(updates, secret_path, None)
         if submitted is not None and str(submitted).strip() != "":
             continue  # 用户提交了非空值，按提交值保存
+        if _path_exists(updates, secret_path) and submitted is None:
+            continue  # 显式 null：清除该密钥（T6）
         group = secret_path.split(".")[0]
         if group in updates:
             # 只在该分组确实被提交时才回填旧值，避免凭空创建空分组
