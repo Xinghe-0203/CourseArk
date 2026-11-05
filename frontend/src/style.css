@@ -4447,3 +4447,192 @@ footer span {
 .progress-track.small {
   height: 3px;
 }
+
+/* ---------- T9 浮层小窗（WindowManager 多实例） ---------- */
+.float-window {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 46;
+  width: 360px;
+  max-width: calc(100vw - 44px);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  animation: window-in 0.18s ease-out;
+}
+
+/* 进度小窗默认贴右下；其余实例向左横向错开，避免完全叠死。 */
+.answer-feed-window {
+  bottom: 22px;
+}
+
+.alert-window {
+  bottom: 22px;
+}
+
+.float-window.minimized {
+  width: auto;
+  max-width: 280px;
+}
+
+.float-window-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 10px 14px;
+  border-bottom: 1px solid var(--line);
+  cursor: default;
+}
+
+.float-window.minimized .float-window-head {
+  border-bottom: none;
+}
+
+.float-window-head strong {
+  flex: 1;
+  color: var(--fg);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.float-window-head .icon-button {
+  width: 26px;
+  height: 26px;
+  padding: 4px;
+}
+
+.float-window-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow: auto;
+  padding: 12px 14px 14px;
+}
+
+.float-window-body .empty {
+  margin: 0;
+  color: var(--fg-subtle);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.answer-feed-list,
+.alert-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.answer-feed-list .recent-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+}
+
+.answer-feed-list .recent-row small {
+  overflow: hidden;
+  grid-column: 1 / 2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.answer-feed-list .feed-answer {
+  color: var(--fg);
+  font-weight: 600;
+  text-align: right;
+}
+
+/* 语义小徽章（复用 .status 胶囊形态，仅换语义色文字）。 */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pill.is-ok {
+  color: var(--ok);
+}
+
+.pill.is-warn {
+  color: #b45309;
+}
+
+.pill.is-err {
+  color: var(--danger);
+}
+
+.alert-list li {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+}
+
+.alert-list li > b {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.alert-list li p {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.alert-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.alert-actions time {
+  flex: 1;
+  color: var(--fg-subtle);
+  font-size: 11px;
+}
+
+/* 顶栏浮层开关：激活态用黑底白点标注。 */
+.window-switcher {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+}
+
+.window-switcher .icon-button,
+.window-switcher button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.window-switcher button.chosen {
+  background: #111111;
+  color: #fafafa;
+}
+

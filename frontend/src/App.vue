@@ -13,6 +13,9 @@ import {
 } from "lucide-vue-next";
 import { state, initialize, refresh, navigate } from "./store";
 import { engineTotals, overviewCounts } from "./overview";
+import { pushAnswerEvent } from "./windows/answers";
+import { pushAlertEvent } from "./windows/alerts";
+import { closeWindow, openWindow, windows } from "./windows/manager";
 import type { Task, View } from "./types";
 import TaskList from "./components/TaskList.vue";
 import TaskDrawer from "./components/TaskDrawer.vue";
@@ -24,6 +27,8 @@ import AccountWorkspace from "./components/AccountWorkspace.vue";
 import OverviewDashboard from "./components/OverviewDashboard.vue";
 import CompletedView from "./components/CompletedView.vue";
 import ProgressWindow from "./components/ProgressWindow.vue";
+import AnswerFeedWindow from "./components/AnswerFeedWindow.vue";
+import AlertWindow from "./components/AlertWindow.vue";
 const nav = [
   { key: "overview", title: "工作总览", icon: LayoutDashboard },
   { key: "tasks", title: "学习任务", icon: Layers },
@@ -49,6 +54,13 @@ function openNewTask() {
   state.newTaskFeature = "course_all";
   state.newTask = true;
 }
+// T9.6 浮层工具条：进度小窗保持「候选存在即显示」的既有行为（toggle 只控开合），
+// 逐题/告警小窗由 WindowManager 管注册、上限与持久化。
+function toggleWindow(kind: "progress" | "answers" | "alerts") {
+  const win = windows.map[kind];
+  if (win?.open) closeWindow(kind);
+  else openWindow(kind);
+}
 const page = computed(() => nav.find((n) => n.key === state.view) || nav[0]);
 // 顶栏统计与总览、心跳共用 /api/overview 真值；接口缺席时回退本地任务口径。
 const engine = computed(() => engineTotals(state.overview, state.tasks));
@@ -70,10 +82,26 @@ function connect() {
     // 记录游标：SSE id: 行只在持久化事件上出现（id=0 的即时同步消息不带 id）。
     if (event.lastEventId) state.lastEventId = Number(event.lastEventId) || 0;
     let name = "";
+    let data: Record<string, unknown> = {};
     try {
-      name = JSON.parse(event.data).event || "";
+      data = (JSON.parse(event.data) || {}) as Record<string, unknown>;
+      name = String(data.event || "");
     } catch {
       name = "";
+    }
+    // T9.6 SSE 分流：逐题小窗吃 answer_result，告警小窗吃异常事件。
+    if (name === "answer_result") {
+      const payload = (data.payload || {}) as Record<string, unknown>;
+      pushAnswerEvent(String(data.task_id || ""), payload, Number(data.ts) || 0);
+    }
+    if (name === "task_failed" || name === "worker_crash" || name === "interrupted") {
+      const narrative = (data.narrative || {}) as Record<string, unknown>;
+      pushAlertEvent(
+        String(data.task_id || ""),
+        String(data.message || narrative.title || "任务异常"),
+        Number(data.ts) || 0,
+        String(data.level || "error"),
+      );
     }
     // 课程同步结束立即刷新课程与任务点，其余事件沿用 500ms 合并刷新。
     if (name === "sync_completed" || name === "sync_failed") {
@@ -178,6 +206,32 @@ onUnmounted(() => {
               <b>{{ engine.running }}</b><span>运行中</span>
             </div>
           </div>
+          <div class="window-switcher" role="group" aria-label="浮层小窗开关">
+            <button
+              :class="{ chosen: windows.map.progress?.open }"
+              aria-label="进度小窗开关"
+              title="进度小窗"
+              @click="toggleWindow('progress')"
+            >
+              <GraduationCap :size="15" />
+            </button>
+            <button
+              :class="{ chosen: windows.map.answers?.open }"
+              aria-label="逐题小窗开关"
+              title="逐题作答小窗"
+              @click="toggleWindow('answers')"
+            >
+              <Layers :size="15" />
+            </button>
+            <button
+              :class="{ chosen: windows.map.alerts?.open }"
+              aria-label="告警小窗开关"
+              title="任务告警小窗"
+              @click="toggleWindow('alerts')"
+            >
+              <CheckCircle2 :size="15" />
+            </button>
+          </div>
           <button class="icon-button" aria-label="刷新数据" @click="refresh">
             <RefreshCw :size="17" />
           </button>
@@ -253,6 +307,11 @@ onUnmounted(() => {
     <TaskDrawer v-if="selected" :task="selected" @close="selected = null" />
     <NewTask v-if="state.newTask" @close="state.newTask = false" />
     <ProgressWindow @select="selected = $event" />
+    <AnswerFeedWindow
+      v-if="windows.map.answers?.open"
+      @select="selected = $event"
+    />
+    <AlertWindow v-if="windows.map.alerts?.open" />
     <div v-if="state.toast" class="toast" role="status">{{ state.toast }}</div>
   </div>
 </template>
