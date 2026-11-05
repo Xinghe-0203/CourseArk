@@ -10,7 +10,106 @@
 
 ---
 
-## v2.3.0（最新）
+## v2.4.0（最新）
+
+> 本版是**工程质量版**：CLI 移植遗留清理（配置单源 / 状态机 / N+1 / 存储与日志通道）、
+> 页面按实际信息重排（总览真值 + 调度队列 + 服务端筛选）、日志系统完善（单通道结构化）、
+> Electron 桌面壳双端可用（多实例小窗注册表）。无破坏性 API 变更；数据库 Schema 不变，
+> 旧数据全部兼容，无需迁移。
+
+### 一、CLI 移植遗留重构（worker 公共基座 + 配置单源 + 状态机）
+
+- **worker 公共基座**（`worker/common.py` 新增）：`build_base_config()` 统一四类 runner
+  （视频 / 会话同步 / 目录 / 课程）的配置组装，`session.rotate_ua=False` 必须保留的隐式约定
+  显式化；`terminate_gracefully()` 阶梯终止（taskkill 无 /F → CTRL_BREAK → kill）替代各处
+  手写的进程收尾；`EventSink` 失败上限 3 次 → `StopRequested`，防止日志通道坏死后无限重试。
+- **配置单源**（`cli_copy/core/config.py` 重写）：纯内存 schema，删除 `load()` / `save()` /
+  `_config_path()` 与 YAML 依赖——CLI 不再读写磁盘配置文件，一切以 API 传入为准；
+  `set_defaults` → `_normalize_config` 统一钳制与枚举校验；删除 `account.phone/password` 与
+  `advanced.log_level/log_file` 死键；`video.max_workers` 默认 8。
+- **状态机观察模式**（`app/task_model.py`）：`TRANSITIONS` 扩表覆盖中间态直达终态的合法迁移；
+  `_EVENT_HANDLERS` 查表化 16 类事件；`_guard_status` 对非法迁移仅告警（
+  `TASK_STATE_GUARD_STRICT=1` 可切严格模式，为后续收紧预留）；`_SLOT_EXEMPT_STATUSES`
+  修复暂停任务占槽导致的调度饿死。
+- **N+1 查询消灭**（`app/database.py` / `app/main.py`）：新增 `work_plans_batch` /
+  `events_after_batch`（ROW_NUMBER 窗口取每任务最新）/ `answers_batch` 批量方法；任务列表、
+  待续跑单元、逐题明细四处端点改批量预取——120 任务压测下列表页 SQL 从 142 条降到 4 条。
+- **存储加固**（`app/database.py`）：`add_event` 缓冲（8 条或 2 秒）+ `executemany` 批量落库；
+  超长 payload 截断（>4000 字符）；任务状态 CAS 更新（`COALESCE` 防覆盖）；仪表盘统计补齐
+  12 种任务状态口径；设置深合并丢弃坏节点、导出脱敏（`REDACTED_PLACEHOLDER`）、
+  `api_key: null` 显式清除；SSE 游标改为预分配 `_next_event_id()`（表 MAX 与缓冲尾取大 +1），
+  消除并发下的事件 id 回退。
+- **事件保留策略**（`tests/test_events_prune.py` 14 用例锁定）：任务事件按量保留清理；
+  SSE 断线增量重连（`Last-Event-ID` 游标）；`worker_exit` / `worker_crash` 可见化。
+
+### 二、页面按实际信息重排（前端接真值）
+
+- **总览接 `/api/overview`**（新端点）：账号/任务计数、今日完成、调度队列（最多 60 条，
+  含队列原因推断）、题库命中统计、最近事件一次取全；总览指标卡从「估算值」改为真实聚合，
+  新增「调度队列」区块展示排队中的任务及原因。
+- **已完成页服务端筛选**：状态筛选从客户端过滤改为 `GET /api/history?status=…`（上限 200），
+  大任务量下不再整页拉取；行内备注提供回退展示。
+- **答题缓存页接真值**：`/question-bank/stats?days=30` 三卡（总量 / 命中 / 命中率）替换静态
+  占位；增删后自动刷新。
+- **账号页补真实状态**：同步时间 `last_sync_at` 防字符串直显、会话最近结果、账号卡第 5 格
+  成功计数；任务列表显示批次号（`run_id` 前 8 位短码）。
+- **任务详情增强**：日志检索分页（关键词 / 级别 / 游标加载更多）、逐题明细补显（旧版本任务
+  给出未记录说明）、参数结构化表格、续跑链 chips（断点续跑的来源/去向一目了然）。
+- **vue-router@4 迁移**：手写 hash 路由改 `createWebHashHistory`（URL 形态不变，锚点零改动）；
+  `/mini` 独立懒加载 chunk。
+
+### 三、日志系统完善（单通道结构化）
+
+- CLI 18 个文件的 `loguru` 直接调用全部改经 `core.runtime` 单通道：
+  `_ModuleLogger` → `emit("log", …, stage="log")` 结构化事件，前端「诊断日志」按
+  级别 / 关键词检索、分页加载。
+- 死代码清理：`parse_index_list` / `clear_console` / `CookieExpiredException` /
+  `VideoException` / `PauseAwareSleep` / 三处未用 `run()`；`tiku` 死分支全删
+  （answer mode 只剩 `ai` / `manual`）；`TaskStatsUI.record_exam_result` 收敛为 6 参。
+- 事件呈现重写（`app/presentation.py`）：`LOG_CATEGORIES`（关键词→分类）+
+  `EVENT_CATEGORIES` + `HIDDEN_EVENTS`（`log` / `task_progress` / `media_progress` /
+  `worker_exit` 不再进活动流），`describe()` 纯叙事驱动。
+
+### 四、Electron 桌面壳：双端可用 + 多实例小窗
+
+- **通用多窗注册表**（`desktop/src/main.cjs`）：`windows:open(route, preset)` /
+  `windows:close(route)` IPC——渲染进程可按前端 hash 片段开通任意小窗；内置
+  `WINDOW_PRESETS`（迷你监控保留 v2.2.4 形态）+ 未知 route 的 `FALLBACK_PRESET`；
+  渲染端仅可覆盖白名单 8 字段（title / 宽高 / min / frame / alwaysOnTop / skipTaskbar），
+  尺寸钳制下限防 0 尺寸窗口；同 route 单实例复用，关闭=隐藏（可随时复现）。
+- **preload 桥扩展**：`coursearkDesktop.openWindow(route, preset)` / `closeWindow(route)`；
+  前端 `desktop.ts` 对应封装，浏览器端静默降级（返回 false，不报错）。
+- **迷你监控小窗**：`/#/mini` 紧凑视图（当前任务 / 进度 / 已用时，2.5s 自刷新），
+  学习任务页「浮出迷你监控」按钮直达；无边框置顶、不占任务栏。
+- **语义修正**：`window-all-closed` 仅主窗销毁才退出（子窗隐藏不算退出信号）；
+  `before-quit` 连带销毁注册表全部子窗并停后端；`second-instance` 聚焦主窗与全部可见子窗。
+- 推迟至 v2.4.1：dev 模式接 Vite dev server 热更新、托盘图标与崩溃自动恢复。
+
+### 改动文件（v2.4.0，摘要）
+
+| 领域 | 文件 |
+|---|---|
+| worker | `worker/common.py` **新增**（build_base_config / terminate_gracefully / EventSink）；四 runner 接入 |
+| CLI | `cli_copy/core/config.py` 重写（纯内存 schema）；18 文件日志改单通道；死代码删除 |
+| 后端 | `app/database.py`（批量方法 / 事件缓冲 / CAS / SSE 游标）、`app/main.py`（`/api/overview` 新端点 / 批量预取）、`app/task_model.py`（状态机查表）、`app/presentation.py`（呈现重写） |
+| 前端 | `frontend/src/overview.ts` **新增**；store / App / 总览 / 已完成 / 题库 / 账号 / 任务列表 / 任务详情接真值；`frontend/src/router.ts` **新增**（vue-router@4）；`frontend/src/windows/manager.ts` **新增**（多实例小窗窗口管理）；`views/MiniView.vue` **新增** |
+| 桌面 | `desktop/src/main.cjs`（多窗注册表 / IPC / 生命周期语义）、`preload.cjs`（openWindow / closeWindow） |
+| 测试 | `tests/test_state_machine.py`(15) / `test_nplus1.py` / `test_database_extra.py`(22) / `test_events_prune.py`(14)；`frontend` vitest 47（含 window.test.ts 7）；全量 pytest 539 |
+
+### 兼容性与迁移（v2.4.0）
+
+- **无破坏性变更**：API 端点只增不改（`/api/overview` 新增；既有端点响应字段只增不减）；
+  数据库 Schema 版本不变（`SCHEMA_VERSION = 1`），旧数据无需迁移。
+- CLI 不再读写磁盘配置文件（`cli_copy` 删除 YAML 配置加载）——此前直接编辑 CLI 配置文件的
+  用法失效，一切配置从应用「偏好设置」下发；`account.phone/password`、
+  `advanced.log_level/log_file` 死键被忽略。
+- Electron 小窗 API（`windows:open`）仅桌面端可用；网页端调用 `desktop.ts` 封装会静默降级，
+  无需特性检测。
+- 数据目录与安装方式见文末通用说明（仍适用）。
+
+---
+
+## v2.3.0
 
 > 本版做两件事：**删掉一整套「通知」子系统**（它一直在重复任务事件里的信息，却要求用户再去一个
 > 独立页面处理一遍），以及**按单一职责重做界面分区与布局**——总览只讲状态，学习任务只管课程与任务，

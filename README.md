@@ -32,6 +32,11 @@
   缓存可在「答题缓存」页搜索、导入、导出、单条删除或一键清空。
 - 任务控制：按账号或跨账号暂停、继续、停止；查看任务进度、逐题明细与历史。
 - 诊断日志便于定位问题：任务详情里可按分类与级别筛选，也可下载完整日志。
+- v2.4.0 工程质量版：CLI 移植遗留清理（配置单源、任务状态机、N+1 查询消灭、存储与日志通道
+  加固——120 任务下列表页 SQL 142→4 条）；页面按实际信息重排（总览接 `/api/overview` 真值、
+  调度队列可见、已完成页服务端筛选、题库统计接真值、任务详情日志检索分页与续跑链）；
+  Electron 桌面壳通用多窗（`windows:open` 注册表，迷你监控之外可开任意前端路由小窗，
+  网页端静默降级）；任务事件按量保留 + SSE 断线增量重连。
 - v2.3.0 起移除「通知」子系统（站内问题中心、顶栏铃铛、Server酱 / Bark / Telegram 外部推送
   与对应设置项一并删除），失败原因改为直接写入任务事件，在任务详情与总览里查看。
 - v2.3.0 界面分区重做：导航按「工作台 / 档案 / 系统」三组划分——**总览只讲状态摘要与运行中任务、
@@ -72,8 +77,8 @@ python run.py
 
 在 [GitHub Releases](https://github.com/Xinghe-0203/CourseArk/releases) 下载：
 
-- `CourseArk-2.3.0-Setup.exe`：Windows x64 安装版。
-- `CourseArk-2.3.0-Portable.exe`：Windows x64 便携版。
+- `CourseArk-2.4.0-Setup.exe`：Windows x64 安装版。
+- `CourseArk-2.4.0-Portable.exe`：Windows x64 便携版。
 
 桌面版内置 Python 运行时，不要求最终用户安装 Python 或 Node.js。关闭应用时会停止本机服务和 Worker。为兼容现有安装，桌面数据目录继续使用 `%APPDATA%\AutoCxWebUI`；安装包不包含账号、配置、答题缓存或任务数据库。
 
@@ -223,7 +228,7 @@ python tools/ui_check.py --serve --port 8899
 | 文档 | 内容 |
 | --- | --- |
 | [`docs/architecture.md`](docs/architecture.md) | 组件划分、作业/考试/同步链路、事件与前端结构 |
-| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | v2.1 起完整变更历史（最新 v2.3.0） |
+| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | v2.1 起完整变更历史（最新 v2.4.0） |
 | [`docs/research-exam.md`](docs/research-exam.md) | 考试协议调研（手机端 / PC 端端点、逐题提交、风控） |
 | [`docs/research-github.md`](docs/research-github.md) | 同类开源项目调研与作业协议结论 |
 

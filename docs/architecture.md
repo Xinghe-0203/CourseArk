@@ -186,6 +186,53 @@ Worker 通过 `runtime.emit` 写事件，`app/database.py` 落库，`app/narrati
   `.workspace-account`（同行等高）、`.workspace-course`、`.resume-banner`、`.task-row`、
   `.completed-row`。
 
+## Worker 公共基座与进程治理（v2.4.0）
+
+`worker/common.py` 是四类 runner（视频 / 会话同步 / 目录 / 课程）的公共基座：
+
+- `build_base_config()` 统一配置组装——`session.rotate_ua=False`（会话同步不轮换 UA 的风控
+  约定）在此显式化，runner 不再各自手写 dict。
+- `terminate_gracefully()` 阶梯终止子进程：`taskkill`（无 /F，请求体面退出）→
+  `CTRL_BREAK` 信号 → 强杀；替代各 runner 手写的收尾逻辑。
+- `EventSink` 包装 stdout 事件通道：写入失败计满 3 次抛 `StopRequested`，防止主进程日志
+  通道坏死后 worker 无限重试空转。
+
+CLI 配置单源（`cli_copy/core/config.py`）：纯内存 schema，`_normalize_config` 统一钳制与
+枚举校验；不再读写磁盘 YAML——一切配置由 API 从「偏好设置」下发。任务状态迁移由
+`app/task_model.py` 的 `TRANSITIONS` 表驱动（`_EVENT_HANDLERS` 查表 16 类事件），
+`_guard_status` 观察模式下非法迁移仅告警（`TASK_STATE_GUARD_STRICT=1` 切严格）。
+
+## 日志系统（v2.4.0）
+
+单通道结构化：CLI 侧 18 个文件的 `loguru` 直接调用全部收敛到 `core.runtime` 的
+`_ModuleLogger`，以 `emit("log", …, stage="log")` 落为任务事件；前端任务详情「诊断日志」
+按级别 / 关键词检索、游标分页。事件呈现由 `app/presentation.py` 集中分类：
+`LOG_CATEGORIES`（关键词→分类）→ `EVENT_CATEGORIES`（事件映射兜底），
+`HIDDEN_EVENTS`（`log` / `task_progress` / `media_progress` / `worker_exit`）不进活动流。
+
+存储侧配套：`add_event` 缓冲（8 条或 2 秒）+ `executemany` 批量落库；超长 payload 截断；
+SSE 游标预分配 `_next_event_id()`（表 MAX 与缓冲尾取大 +1），断线用 `Last-Event-ID`
+增量重连不丢事件；任务事件按量保留清理（`tests/test_events_prune.py`）。
+
+## 桌面壳与多窗（v2.4.0）
+
+`desktop/src/main.cjs` 以**注册表模式**管理子窗：`childWindows: Map<route, BrowserWindow>`，
+同 route 单实例复用、关闭=隐藏（可复现）。
+
+- IPC：`windows:open(route, preset)` / `windows:close(route)`；`mini:open` / `mini:close`
+  保留为迷你监控的语义别名。内置 `WINDOW_PRESETS`（迷你监控 340×220 无边框置顶）+
+  未知 route 的 `FALLBACK_PRESET`（360×420）；渲染端仅可覆盖白名单 8 字段
+  （title / width / height / minWidth / minHeight / frame / alwaysOnTop / skipTaskbar），
+  其余 BrowserWindow 选项不透传；尺寸钳制下限（width≥200 / height≥140 /
+  minWidth≥120 / minHeight≥100）。
+- preload 桥：`coursearkDesktop.openWindow(route, preset)` / `closeWindow(route)`；
+  前端 `frontend/src/desktop.ts` 封装并在浏览器端静默降级（返回 false）。
+- 子窗加载 `${baseUrl}/#/${route}`（如 `/#/mini` 紧凑监控视图，2.5s 自刷新），
+  与主窗共用同一后端与 `configureNavigation` 导航策略（内部放行、外链交系统浏览器）。
+- 生命周期：`window-all-closed` 仅主窗销毁才退出（子窗隐藏不算退出信号）；`before-quit`
+  连带销毁注册表全部子窗并 `stopBackend`；`second-instance` 聚焦主窗与全部可见子窗。
+- 推迟 v2.4.1：dev 模式接 Vite dev server、托盘图标、崩溃自动恢复。
+
 ## 本机数据
 
 网页版默认在项目 `data/` 中保存账号、配置、SQLite 数据库、日志和任务数据。桌面版使用 `%APPDATA%\AutoCxWebUI`，该目录名为兼容既有安装而保留。运行数据不随源码或安装包分发。
