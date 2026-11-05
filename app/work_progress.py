@@ -1,26 +1,39 @@
 """按稳定工作单元合并真实进度，与日志和答题统计独立。"""
-from copy import deepcopy
 import math
 
 
 def reduce_progress(state: dict, event: str, payload: dict) -> dict:
-    result = deepcopy(state or {'units': {}, 'sealed': False})
-    units = result.setdefault('units', {})
+    """合并一条进度事件，返回新 state（写时复制，不修改传入对象）。
+
+    v2.4.0 T4：原来每个事件 deepcopy 整个 state（含全部 units）——每任务几百个
+    单元 × 每秒多条播放事件时开销显著。改为单层复制：state/units 两个容器每次
+    新建，但未被本事件触及的 unit dict 原样共享（它们在原 state 里也不会再被
+    修改——本函数的所有写入都落在新建容器或复制后的 unit 上）。
+    """
+    src = state if isinstance(state, dict) else None
+    result = {
+        'units': dict(src.get('units') or {}) if src else {},
+        'sealed': bool(src.get('sealed')) if src else False,
+    }
+    units = result['units']
     if event == 'work_plan':
         for item in payload.get('units', []):
             if isinstance(item, dict) and item.get('id'):
                 key = str(item['id'])
+                # payload 先展开、旧 unit 后展开：与 deepcopy 版语义一致（旧值优先）
                 units[key] = {**item, **units.get(key, {}), 'id': key}
         if 'sealed' in payload:
             result['sealed'] = bool(payload['sealed'])
     elif payload.get('id'):
         key = str(payload['id'])
-        unit = units.setdefault(key, {'id': key})
+        old = units.get(key) or {'id': key}
         # 重复/晚到的播放事件不能把终态工作回退为运行中。
-        if unit.get('status') not in ('succeeded', 'failed', 'skipped', 'blocked'):
-            unit.update(payload)
+        if old.get('status') not in ('succeeded', 'failed', 'skipped', 'blocked'):
+            units[key] = {**old, **payload, 'id': key}
             if event == 'work_progress':
-                unit['status'] = 'running'
+                units[key]['status'] = 'running'
+        else:
+            units[key] = old
     return result
 
 

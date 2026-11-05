@@ -22,6 +22,7 @@ import time
 from . import control, events, narrative, paths, settings
 from .database import Database
 from .log_redaction import redact, redact_data
+from .task_model import TERMINAL_STATES, can_transition, is_terminal
 
 # 事件到状态/阶段的映射
 STAGE_EVENTS = {
@@ -31,6 +32,30 @@ STAGE_EVENTS = {
     "course_started": "running",
     "stage_changed": "running",
 }
+
+# v2.4.0 T4：事件处理器表——_apply_event 由 24+ 分支 if/elif 收拢为查表分发，
+# 行为等价：统计类事件只写 stats，终态事件落库收敛，状态类事件经守卫写 status。
+_EVENT_HANDLERS = {
+    "work_plan": "_ev_work",
+    "work_started": "_ev_work",
+    "work_progress": "_ev_work",
+    "work_result": "_ev_work",
+    "task_progress": "_ev_stats_update",
+    "exam_stats": "_ev_exam_stats",
+    "chapter_started": "_ev_chapter_started",
+    "media_progress": "_ev_media_progress",
+    "task_succeeded": "_ev_task_succeeded",
+    "task_failed": "_ev_task_failed",
+    "task_stopped": "_ev_task_stopped",
+    "login_failed": "_ev_login_failed",
+    "paused": "_ev_paused",
+    "resumed": "_ev_resumed",
+    "stop_requested": "_ev_stop_requested",
+    "worker_exit": "_ev_worker_exit",
+}
+
+# 不占用并发槽的状态：Worker 进程常驻（暂停等待恢复），但让出调度槽位
+_SLOT_EXEMPT_STATUSES = ("paused", "pausing")
 
 
 class RunningTask:
@@ -42,6 +67,9 @@ class RunningTask:
         self.monitor = monitor
         self.stop_requested_at = None
         self.force_stopped = False
+        # v2.4.0 T4：句柄缓存最近一次已知状态，供并发槽计数免查库；
+        # _apply_event/_monitor 每次写状态时同步刷新。
+        self.status = ""
 
 
 class _FakeHandle:
@@ -210,16 +238,28 @@ class TaskManager:
         with self._lock:
             self._prune_finished()
             limit = int(settings.resolve("scheduler.max_active_workers", 8))
-            active = len(self._running)
+            active = self._active_slots()
         if active >= limit:
             return
         for row in self.db.pending_tasks(limit=limit - active):
             with self._lock:
                 if row["id"] in self._running:
                     continue
-                if len(self._running) >= limit:
+                if self._active_slots() >= limit:
                     break
             self._launch(row)
+
+    def _active_slots(self) -> int:
+        """v2.4.0 T4：并发槽按「非暂停态的常驻 Worker」计。
+
+        paused/pausing 任务的 Worker 进程仍在等待恢复，但不应饿死排队任务；
+        句柄状态由 _apply_event 在 paused/resumed 事件时刷新。
+        """
+        slots = 0
+        for handle in self._running.values():
+            if handle.status not in _SLOT_EXEMPT_STATUSES:
+                slots += 1
+        return slots
 
     def _prune_finished(self):
         for task_id, handle in list(self._running.items()):
@@ -303,7 +343,9 @@ class TaskManager:
         monitor = threading.Thread(target=self._monitor, args=(task_id, process),
                                    name=f"monitor-{task_id[:8]}", daemon=True)
         with self._lock:
-            self._running[task_id] = RunningTask(task_id, process, monitor)
+            handle = RunningTask(task_id, process, monitor)
+            handle.status = "starting"
+            self._running[task_id] = handle
         monitor.start()
 
     def _build_task_file(self, row: dict, account: dict) -> dict:
@@ -374,9 +416,11 @@ class TaskManager:
                 final, level, message = "failed", "error", f"Worker 异常退出 (exit={exit_code})"
             self.db.set_task_status(task_id, final, finished=True,
                                     error="" if final == "succeeded" else message)
+            self._remember_status(task_id, final)
             self._record_event(task_id, account_id, final, message, level=level, stage="finish")
         elif forced:
             self.db.set_task_status(task_id, "stopped", error="超过宽限时间，已强制终止", finished=True)
+            self._remember_status(task_id, "stopped")
 
         if row and row.get("run_id"):
             self.db.refresh_run_status(row["run_id"])
@@ -416,97 +460,164 @@ class TaskManager:
         self._apply_event(task_id, event, stage, payload, message=message)
 
     def _apply_event(self, task_id: str, event: str, stage: str, payload: dict, message: str = ""):
-        """把事件映射为任务状态/阶段/统计的变更"""
+        """把事件映射为任务状态/阶段/统计的变更
+
+        v2.4.0 T4：分支 if/elif 收拢为 _EVENT_HANDLERS 查表分发；状态写入统一经
+        _guard_status 观察模式守卫（非法迁移记 warning 事件，状态照写）。
+        """
         current = self.db.get_task(task_id)
         if not current:
             return
         status = current.get("status")
-        if status in ("succeeded", "failed", "stopped", "interrupted"):
+        if status in TERMINAL_STATES:
             return
 
         fields = {}
         if stage:
             fields["stage"] = stage
 
-        if event in ("work_plan", "work_started", "work_progress", "work_result"):
-            from .work_progress import reduce_progress
-            stats = self._load_json(current.get("stats_json"))
-            stats["work"] = reduce_progress(stats.get("work", {}), event, payload)
-            fields["stats_json"] = json.dumps(stats, ensure_ascii=False)
-        elif event == "task_progress" and payload:
-            stats = self._load_json(current.get("stats_json"))
-            stats.update(payload)
-            fields["stats_json"] = json.dumps(stats, ensure_ascii=False)
-        elif event == "exam_stats":
-            stats = self._load_json(current.get("stats_json"))
-            for key in ("cache_hits", "tiku_hits", "llm_calls", "random_answers"):
-                if key in payload:
-                    stats[key] = max(int(payload.get(key, 0) or 0), int(stats.get(key, 0) or 0))
-            if payload.get("submit_ok") is not None:
-                stats["submit_ok"] = int(stats.get("submit_ok", 0) or 0) + int(payload.get("submit_ok", 0) or 0)
-                stats["submit_fail"] = int(stats.get("submit_fail", 0) or 0) + int(payload.get("submit_fail", 0) or 0)
-            if payload.get("questions"):
-                stats["questions"] = int(stats.get("questions", 0) or 0) + int(payload.get("questions", 0) or 0)
-            fields["stats_json"] = json.dumps(stats, ensure_ascii=False)
-        elif event == 'chapter_started':
-            stats = self._load_json(current.get('stats_json'))
-            stats['activity'] = {'kind': 'chapter', 'name': payload.get('chapter', ''),
-                                 'current': payload.get('current'), 'total': payload.get('total')}
-            fields['stats_json'] = json.dumps(stats, ensure_ascii=False)
-        elif event == "task_succeeded":
-            stats = self._load_json(current.get("stats_json"))
-            stats.update(payload.get("stats") or {})
-            if fields:
-                self.db.update_task(task_id, **fields)
-            self.db.update_task(task_id, stats_json=json.dumps(stats, ensure_ascii=False))
-            self._finish(task_id, "succeeded", "")
-            return
-        elif event == "task_failed":
-            if payload.get("stats"):
-                stats = self._load_json(current.get('stats_json'))
-                stats.update(payload['stats'])
-                self.db.update_task(task_id, stats_json=json.dumps(stats, ensure_ascii=False))
-            self._finish(task_id, "failed", payload.get("message") or message or "任务执行失败")
-            return
-        elif event == "task_stopped":
-            if payload.get("stats"):
-                stats = self._load_json(current.get('stats_json'))
-                stats.update(payload['stats'])
-                self.db.update_task(task_id, stats_json=json.dumps(stats, ensure_ascii=False))
-            self._finish(task_id, "stopped", "")
-            return
-        elif event == "paused":
-            if status in ("running", "pausing", "logging_in", "loading_courses", "starting"):
-                fields["status"] = "paused"
-        elif event == "resumed":
-            if status in ("paused", "pausing"):
-                fields["status"] = "running"
-        elif event == "login_failed":
-            if fields:
-                self.db.update_task(task_id, **fields)
-            self._finish(task_id, "failed", payload.get("message") or message or "学习通登录失败")
-            return
-        elif event == "media_progress":
-            stats = self._load_json(current.get("stats_json"))
-            stats["progress"] = payload
-            fields["stats_json"] = json.dumps(stats, ensure_ascii=False)
-        elif event == "stop_requested":
-            if status != "stopping":
-                fields["status"] = "stopping"
-        elif event == "worker_exit":
-            return
-
+        handler_name = _EVENT_HANDLERS.get(event)
+        handler = getattr(self, handler_name, None) if handler_name else None
+        if handler is not None:
+            # _current_event：work 系列四事件共用一个处理器，需要原始事件名传给 reduce_progress
+            prev_event = getattr(self, "_current_event", None)
+            self._current_event = event
+            try:
+                result = handler(task_id, current, status, fields, stage, payload, message)
+            finally:
+                self._current_event = prev_event
+            if result:  # 终态处理器已完成落库，直接返回
+                return
         if event in STAGE_EVENTS and status in ("starting", "logging_in", "loading_courses", "pending"):
+            self._guard_status(task_id, status, STAGE_EVENTS[event])
             fields.setdefault("status", STAGE_EVENTS[event])
 
         if fields:
             self.db.update_task(task_id, **fields)
+            new_status = fields.get("status")
+            if new_status:
+                self._remember_status(task_id, new_status)
+
+    def _guard_status(self, task_id: str, current: str, target: str):
+        """v2.4.0 T4 观察模式守卫：非法迁移只记 warning 事件，不拦截。
+
+        - 同值幂等放行（终态同值重放不告警，且终态在 _apply_event 已早退）
+        - 终态→pending 理论放行：本库 retry 是新建 pending 任务，不改原状态行，
+          无实际触发点，仅在收紧模式预留语义
+        - 收紧模式（TASK_STATE_GUARD_STRICT=1）拒绝非法迁移并返回 False
+        """
+        if current == target:
+            return True
+        if can_transition(current, target):
+            return True
+        row = self.db.get_task(task_id)
+        account_id = row.get("account_id", "") if row else ""
+        text = f"状态机告警: {current} → {target} 不在允许的迁移表内（观察模式，未拦截）"
+        self.db.add_event(task_id, account_id, "state_guard", text,
+                          level="warning", stage="state_guard")
+        if os.environ.get("TASK_STATE_GUARD_STRICT") == "1":
+            return False
+        return True
+
+    def _remember_status(self, task_id: str, status: str):
+        """刷新运行期句柄缓存的状态（并发槽计数使用，不查库）"""
+        with self._lock:
+            handle = self._running.get(task_id)
+            if handle is not None:
+                handle.status = status
+
+    # ---- 事件处理器（v2.4.0 T4：由 _apply_event 分支收拢）----
+    # 统一签名 (task_id, current, status, fields, stage, payload, message)；
+    # 返回 True 表示终态已落库（_apply_event 直接返回），None 继续公共路径。
+
+    def _ev_work(self, task_id, current, status, fields, stage, payload, message):
+        from .work_progress import reduce_progress
+        stats = self._load_json(current.get("stats_json"))
+        stats["work"] = reduce_progress(stats.get("work", {}), self._current_event, payload)
+        fields["stats_json"] = json.dumps(stats, ensure_ascii=False)
+
+    def _ev_stats_update(self, task_id, current, status, fields, stage, payload, message):
+        if not payload:
+            return
+        stats = self._load_json(current.get("stats_json"))
+        stats.update(payload)
+        fields["stats_json"] = json.dumps(stats, ensure_ascii=False)
+
+    def _ev_exam_stats(self, task_id, current, status, fields, stage, payload, message):
+        stats = self._load_json(current.get("stats_json"))
+        for key in ("cache_hits", "tiku_hits", "llm_calls", "random_answers"):
+            if key in payload:
+                stats[key] = max(int(payload.get(key, 0) or 0), int(stats.get(key, 0) or 0))
+        if payload.get("submit_ok") is not None:
+            stats["submit_ok"] = int(stats.get("submit_ok", 0) or 0) + int(payload.get("submit_ok", 0) or 0)
+            stats["submit_fail"] = int(stats.get("submit_fail", 0) or 0) + int(payload.get("submit_fail", 0) or 0)
+        if payload.get("questions"):
+            stats["questions"] = int(stats.get("questions", 0) or 0) + int(payload.get("questions", 0) or 0)
+        fields["stats_json"] = json.dumps(stats, ensure_ascii=False)
+
+    def _ev_chapter_started(self, task_id, current, status, fields, stage, payload, message):
+        stats = self._load_json(current.get('stats_json'))
+        stats['activity'] = {'kind': 'chapter', 'name': payload.get('chapter', ''),
+                             'current': payload.get('current'), 'total': payload.get('total')}
+        fields['stats_json'] = json.dumps(stats, ensure_ascii=False)
+
+    def _ev_media_progress(self, task_id, current, status, fields, stage, payload, message):
+        stats = self._load_json(current.get("stats_json"))
+        stats["progress"] = payload
+        fields["stats_json"] = json.dumps(stats, ensure_ascii=False)
+
+    def _ev_task_succeeded(self, task_id, current, status, fields, stage, payload, message):
+        stats = self._load_json(current.get("stats_json"))
+        stats.update(payload.get("stats") or {})
+        if fields:
+            self.db.update_task(task_id, **fields)
+        self.db.update_task(task_id, stats_json=json.dumps(stats, ensure_ascii=False))
+        self._finish(task_id, "succeeded", "")
+        return True
+
+    def _ev_task_failed(self, task_id, current, status, fields, stage, payload, message):
+        if payload.get("stats"):
+            stats = self._load_json(current.get('stats_json'))
+            stats.update(payload['stats'])
+            self.db.update_task(task_id, stats_json=json.dumps(stats, ensure_ascii=False))
+        self._finish(task_id, "failed", payload.get("message") or message or "任务执行失败")
+        return True
+
+    def _ev_task_stopped(self, task_id, current, status, fields, stage, payload, message):
+        if payload.get("stats"):
+            stats = self._load_json(current.get('stats_json'))
+            stats.update(payload['stats'])
+            self.db.update_task(task_id, stats_json=json.dumps(stats, ensure_ascii=False))
+        self._finish(task_id, "stopped", "")
+        return True
+
+    def _ev_login_failed(self, task_id, current, status, fields, stage, payload, message):
+        if fields:
+            self.db.update_task(task_id, **fields)
+        self._finish(task_id, "failed", payload.get("message") or message or "学习通登录失败")
+        return True
+
+    def _ev_paused(self, task_id, current, status, fields, stage, payload, message):
+        if status in ("running", "pausing", "logging_in", "loading_courses", "starting"):
+            fields["status"] = "paused"
+
+    def _ev_resumed(self, task_id, current, status, fields, stage, payload, message):
+        if status in ("paused", "pausing"):
+            fields["status"] = "running"
+
+    def _ev_stop_requested(self, task_id, current, status, fields, stage, payload, message):
+        if status != "stopping":
+            fields["status"] = "stopping"
+
+    def _ev_worker_exit(self, task_id, current, status, fields, stage, payload, message):
+        return True  # worker_exit 只记录事件，不改状态
 
     def _finish(self, task_id: str, status: str, error: str):
         row = self.db.get_task(task_id)
         if not row:
             return
         self.db.set_task_status(task_id, status, error=redact(error), finished=True)
+        self._remember_status(task_id, status)
         if row.get("run_id"):
             self.db.refresh_run_status(row["run_id"])
 
@@ -568,6 +679,7 @@ class TaskManager:
             raise ValueError("终态任务不可停止，可用重试创建新任务")
         control.write_command(task_id, control.STOP, reason="user")
         self.db.set_task_status(task_id, "stopping")
+        self._remember_status(task_id, "stopping")
         self._record_event(task_id, row["account_id"], "stop_requested",
                            "用户请求停止任务", level="warning", stage="control")
         with self._lock:
@@ -576,6 +688,7 @@ class TaskManager:
                 handle.stop_requested_at = time.time()
             if handle is None and status == "pending":
                 self.db.set_task_status(task_id, "stopped", error="任务在开始前被停止", finished=True)
+                self._remember_status(task_id, "stopped")
                 if row.get("run_id"):
                     self.db.refresh_run_status(row["run_id"])
         return self.db.get_task(task_id)
@@ -597,11 +710,13 @@ class TaskManager:
         if command == "pause":
             control.write_command(task_id, control.PAUSE, reason="user")
             self.db.set_task_status(task_id, "pausing")
+            self._remember_status(task_id, "pausing")
             self._record_event(task_id, row["account_id"], "pause_requested",
                                "用户请求暂停任务", level="info", stage="control")
         else:
             control.write_command(task_id, control.RUN, reason="user")
             self.db.set_task_status(task_id, "running")
+            self._remember_status(task_id, "running")
             self._record_event(task_id, row["account_id"], "resume_requested",
                                "用户请求继续任务", level="info", stage="control")
         return self.db.get_task(task_id)
@@ -615,6 +730,7 @@ class TaskManager:
         self._terminate(handle)
         self.db.set_task_status(handle.task_id, "stopped",
                                 error="超过宽限时间，已强制终止", finished=True)
+        self._remember_status(handle.task_id, "stopped")
         if row and row.get("run_id"):
             self.db.refresh_run_status(row["run_id"])
 
@@ -637,10 +753,13 @@ class TaskManager:
     def snapshot(self) -> dict:
         with self._lock:
             running = len(self._running)
+            # v2.4.0 T4：busy/占用槽口径=非暂停态 Worker（paused 让出槽位）
+            slots = self._active_slots()
         return {
-            "running": running,
+            "running": slots,
             "limit": int(settings.resolve("scheduler.max_active_workers", 8)),
-            "busy": running,
+            "busy": slots,
+            "workers": running,
         }
 
 
@@ -677,18 +796,3 @@ def _pid_alive(pid) -> bool:
         except Exception:
             return False
     return False
-
-
-def _terminate_pid(pid):
-    try:
-        pid = int(pid)
-    except (TypeError, ValueError):
-        return
-    try:
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
-                           check=False, capture_output=True)
-        else:
-            os.kill(pid, 15)
-    except Exception:
-        pass

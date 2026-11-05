@@ -44,11 +44,11 @@ def manager(sandbox):
     db.close()
 
 
-def _make_task(db, feature="video", status="pending"):
+def _make_task(db, feature="video", status="pending", run_id="run-1"):
     account = accounts.create_account(f"135000{int(time.time() * 1000) % 100000:05d}", "pwd")
     task = {
         "id": f"t{int(time.time() * 1000000) % 10 ** 9}",
-        "run_id": "run-1",
+        "run_id": run_id,
         "account_id": account["id"],
         "account_label": account["label"],
         "course_id": "c1",
@@ -60,7 +60,7 @@ def _make_task(db, feature="video", status="pending"):
         "params": {"video": {"mode": "instant", "max_workers": 2, "random_progress": False}},
         "created_at": time.time(),
     }
-    db.create_run("run-1", 1)
+    db.create_run(run_id, 1)
     db.create_task(task)
     return task
 

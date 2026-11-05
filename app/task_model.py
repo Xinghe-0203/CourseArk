@@ -28,15 +28,24 @@ FEATURE_LABELS = {
 }
 
 # 状态机允许的转换
+# v2.4.0 T4：补齐缺口——Worker 是异步进程，task_succeeded/failed/stopped 与
+# 对账终态可能落在任意中间态；pause/stop 控制命令也从非 running 态发起。
+# 缺口补齐后，观察模式守卫只对真正的异常迁移告警。
 TRANSITIONS = {
-    "pending": {"starting", "stopped", "failed", "interrupted"},
-    "starting": {"logging_in", "running", "failed", "stopping", "interrupted"},
-    "logging_in": {"loading_courses", "failed", "stopping", "paused", "interrupted"},
-    "loading_courses": {"running", "failed", "stopping", "paused", "interrupted"},
+    "pending": {"starting", "logging_in", "loading_courses", "running",
+                "stopping", "stopped", "failed", "interrupted"},
+    "starting": {"logging_in", "running", "failed", "stopping", "interrupted",
+                 "paused", "pausing", "succeeded", "stopped"},
+    "logging_in": {"loading_courses", "failed", "stopping", "paused", "interrupted",
+                   "running", "pausing", "succeeded", "stopped"},
+    "loading_courses": {"running", "failed", "stopping", "paused", "interrupted",
+                        "pausing", "succeeded", "stopped"},
     "running": {"pausing", "paused", "stopping", "stopped", "succeeded", "failed", "interrupted"},
-    "pausing": {"paused", "stopping", "running", "failed", "interrupted"},
-    "paused": {"running", "stopping", "stopped", "failed", "interrupted"},
-    "stopping": {"stopped", "failed", "interrupted"},
+    "pausing": {"paused", "stopping", "running", "failed", "interrupted",
+                "succeeded", "stopped"},
+    "paused": {"running", "stopping", "stopped", "failed", "interrupted",
+               "succeeded"},
+    "stopping": {"stopped", "failed", "interrupted", "succeeded"},
     "succeeded": set(),
     "failed": set(),
     "stopped": set(),
