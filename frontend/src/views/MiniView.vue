@@ -4,6 +4,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { state, refresh } from "../store";
 import { activityOf, formatDuration, unitPercent, unitText } from "../live";
+import { closeDesktopMini } from "../desktop";
 
 const now = ref(Date.now());
 let timer: ReturnType<typeof setInterval>;
@@ -32,6 +33,11 @@ onUnmounted(() => clearInterval(timer));
 </script>
 <template>
   <div class="mini-view">
+    <header class="mini-drag">
+      <span class="mini-dot" />
+      <span class="mini-title">课舟监控</span>
+      <button class="mini-close" aria-label="关闭迷你监控" @click="closeDesktopMini()">×</button>
+    </header>
     <template v-if="current">
       <p class="mini-course">{{ current.course_name }}</p>
       <p class="mini-activity">{{ activityOf(current) || "准备中" }}</p>
@@ -47,3 +53,4 @@ onUnmounted(() => clearInterval(timer));
     </p>
   </div>
 </template>
+

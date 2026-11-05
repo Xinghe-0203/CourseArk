@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { ChevronDown, LoaderCircle, X } from "lucide-vue-next";
+import { ChevronDown, LoaderCircle, PictureInPicture2, X } from "lucide-vue-next";
 import { request } from "../api";
 import { active } from "../format";
 import {
@@ -13,6 +13,7 @@ import {
   unitText,
 } from "../live";
 import { setTaskLive, state } from "../store";
+import { isDesktop, openDesktopMini } from "../desktop";
 import type { Task } from "../types";
 defineEmits<{ select: [task: Task] }>();
 const POLL_MS = 2000;
@@ -105,6 +106,15 @@ onUnmounted(() => clearTimeout(timer));
         <strong>{{ task.course_name || "学习任务" }}</strong>
         <small>{{ task.account_label }} · {{ task.feature_label }}</small>
       </div>
+      <button
+        v-if="isDesktop()"
+        class="icon-button"
+        aria-label="浮出迷你监控"
+        title="浮出独立迷你监控小窗"
+        @click="openDesktopMini()"
+      >
+        <PictureInPicture2 :size="16" />
+      </button>
       <button
         class="icon-button"
         :aria-label="minimized ? '展开进度小窗' : '最小化进度小窗'"

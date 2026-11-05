@@ -4636,3 +4636,63 @@ footer span {
   color: #fafafa;
 }
 
+
+/* —— T14 迷你监控子窗（Electron 无框小窗 #/mini） —— */
+.mini-view {
+  padding: 10px 14px 12px;
+  font-size: 13px;
+  color: var(--fg);
+  background: #ffffff;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+.mini-drag {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: -4px -8px 0;
+  padding: 6px 8px;
+  -webkit-app-region: drag;
+  user-select: none;
+  cursor: default;
+}
+.mini-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--ok);
+  flex: none;
+}
+.mini-title { font-weight: 600; letter-spacing: -0.01em; }
+.mini-close {
+  margin-left: auto;
+  -webkit-app-region: no-drag;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.mini-close:hover { background: var(--bg-subtle); color: var(--fg); }
+.mini-course {
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mini-activity { margin: 0; color: var(--fg-muted); }
+.mini-progress { margin: 0; color: var(--fg-subtle); font-variant-numeric: tabular-nums; }
+.mini-idle { margin: 10px 0 0; color: var(--fg-muted); }
+.mini-meta {
+  margin: auto 0 0;
+  color: var(--fg-subtle);
+  font-size: 12px;
+}

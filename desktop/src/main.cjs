@@ -10,6 +10,8 @@ const { selectLoopbackPort, startBackend, stopBackend } = require("./server-mana
 app.setName("AutoCxWebUI");
 
 let mainWindow = null;
+let miniWindow = null;
+let miniHidden = false; // 关闭迷你窗=隐藏（应用还在跑），主窗销毁才真正关。
 let backend = null;
 let quitting = false;
 let exitDialogOpen = false;
@@ -63,6 +65,7 @@ function createOrReuseWindow(baseUrl) {
       autoHideMenuBar: true,
       icon: windowIconPath(),
       webPreferences: {
+        preload: path.join(__dirname, "preload.cjs"),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
@@ -77,7 +80,56 @@ function createOrReuseWindow(baseUrl) {
   return mainWindow.loadURL(baseUrl);
 }
 
+// T14：迷你监控子窗——无边框置顶小条，加载前端的 /#/mini 紧凑视图。
+function createMiniWindow(baseUrl) {
+  if (miniWindow && !miniWindow.isDestroyed()) return miniWindow;
+  miniWindow = new BrowserWindow({
+    width: 340,
+    height: 220,
+    minWidth: 280,
+    minHeight: 160,
+    show: false,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    title: "课舟 · 迷你监控",
+    backgroundColor: "#ffffff",
+    icon: windowIconPath(),
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  miniWindow.setAlwaysOnTop(true, "screen-saver");
+  miniWindow.on("closed", () => { miniWindow = null; });
+  configureNavigation(miniWindow, baseUrl);
+  miniWindow.loadURL(`${baseUrl}/#/mini`);
+  return miniWindow;
+}
+
+async function openMiniWindow() {
+  miniHidden = false;
+  const current = backend;
+  if (!current) return false;
+  const win = createMiniWindow(current.baseUrl);
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  if (!win.isVisible()) win.show();
+  win.focus();
+  return true;
+}
+
 async function startDesktop() {
+  const { ipcMain } = require("electron");
+  ipcMain.handle("mini:open", () => openMiniWindow());
+  ipcMain.handle("mini:close", () => {
+    miniHidden = true;
+    if (miniWindow && !miniWindow.isDestroyed()) miniWindow.hide();
+    return true;
+  });
   const port = await selectLoopbackPort();
   const paths = runtimePaths();
   const shutdownToken = randomBytes(32).toString("hex");
@@ -154,11 +206,18 @@ if (!hasSingleInstanceLock) {
     app.quit();
   });
 
-  app.on("window-all-closed", () => app.quit());
+  app.on("window-all-closed", () => {
+    // T14 语义修正：迷你子窗关闭（隐藏）不算退出信号——应用随主窗生命周期。
+    // 主窗销毁后剩余窗口为空时才退出；后台服务由 before-quit 统一收尾。
+    const mainAlive = mainWindow && !mainWindow.isDestroyed();
+    if (!mainAlive) app.quit();
+  });
   app.on("before-quit", (event) => {
     if (quitting) return;
     event.preventDefault();
     quitting = true;
+    // 主窗随应用退出时连带关闭迷你子窗（hide 语义下窗口对象还在）。
+    if (miniWindow && !miniWindow.isDestroyed()) miniWindow.destroy();
     const current = backend;
     backend = null;
     Promise.resolve(current ? stopBackend({

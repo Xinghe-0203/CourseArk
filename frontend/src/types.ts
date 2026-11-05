@@ -187,6 +187,16 @@ export interface CompletedResponse {
   total: number;
   items: CompletedTask[];
 }
+/** T14：Electron preload 桥（仅桌面端存在，浏览器端 undefined）。 */
+export interface CoursearkDesktop {
+  openMini: () => Promise<boolean>;
+  closeMini: () => Promise<boolean>;
+}
+declare global {
+  interface Window {
+    coursearkDesktop?: CoursearkDesktop;
+  }
+}
 export interface TaskEvent {
   id: number;
   event: string;
