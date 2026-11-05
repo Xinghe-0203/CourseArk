@@ -147,7 +147,10 @@ function showResume(task: Task) {
               ><b>{{ task.course_name || "未命名课程" }}</b
               ><small
                 >{{ features[task.feature] }} ·
-                {{ date(task.created_at) }}</small
+                {{ date(task.created_at)
+                }}<template v-if="task.run_id">
+                  · 批次 {{ task.run_id.slice(0, 8) }}</template
+                ></small
               ></span
             >
           </button>
@@ -192,6 +195,17 @@ function showResume(task: Task) {
             }}</small
             ><small v-else-if="task.progress?.failed"
               >{{ task.progress.failed }} 项未完成，请查看详情</small
+            >
+            <!-- T7.8：逐题统计行（后端早已返回，列表此前未展示） -->
+            <small
+              v-else-if="
+                Number(task.stats?.questions) || Number(task.stats?.submit_ok)
+              "
+              class="task-stats-line"
+              >答题 {{ Number(task.stats?.questions) || 0 }} 题 ·
+              缓存命中 {{ Number(task.stats?.cache_hits) || 0 }} · AI
+              {{ Number(task.stats?.llm_calls) || 0 }} · 提交接受
+              {{ Number(task.stats?.submit_ok) || 0 }}</small
             >
           </div>
           <span :class="['status', task.status]"

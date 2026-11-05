@@ -1253,6 +1253,12 @@ textarea {
   font-size: 12px;
 }
 
+/* T7.7：账号卡上的课程同步结果行 */
+.account-sync-line {
+  color: var(--fg-subtle);
+  font-size: 12px;
+}
+
 .card-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1726,6 +1732,14 @@ textarea {
 }
 
 /* ---------- 答题缓存 ---------- */
+.bank-stats {
+  margin-bottom: 18px;
+}
+
+.bank-stats strong {
+  font-size: 26px;
+}
+
 .bank-list {
   overflow: hidden;
   border: 1px solid var(--line);
@@ -2472,6 +2486,45 @@ footer span {
 
 .account-result p {
   color: var(--warn);
+}
+
+/* T7.7：账号卡内其余最近完成任务行 */
+.account-recent-more {
+  flex-basis: 100%;
+  display: grid;
+  gap: 4px;
+}
+
+.account-recent-more .recent-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease;
+}
+
+.account-recent-more .recent-row:hover {
+  border-color: var(--fg-subtle);
+}
+
+.account-recent-more b {
+  flex: none;
+  min-width: 0;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-recent-more small {
+  flex-basis: auto;
+  color: var(--fg-subtle);
 }
 
 /* ---------- 通知面板 ---------- */

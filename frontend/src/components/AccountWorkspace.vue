@@ -248,6 +248,11 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
             <strong>{{ p.counts.failed }}</strong
             ><span>需处理任务</span>
           </div>
+          <!-- T7.7：counts.succeeded 之前已返回但从未渲染 -->
+          <div v-if="p.counts.succeeded">
+            <strong>{{ p.counts.succeeded }}</strong
+            ><span>最近完成</span>
+          </div>
         </div>
         <div
           class="account-live"
@@ -330,6 +335,25 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
           <button class="text-link" @click="emit('select', p.recent[0]!)">
             查看结果
           </button>
+          <!-- T7.7：recent 其余条目不再丢弃，最近结束的任务一目了然 -->
+          <div
+            class="account-recent-more"
+            v-if="p.recent.length > 1"
+          >
+            <button
+              v-for="t in p.recent.slice(1)"
+              :key="t.id"
+              class="recent-row"
+              @click="emit('select', t)"
+            >
+              <span :class="['status', t.status]">{{ statuses[t.status] }}</span>
+              <b>{{ t.course_name }}</b>
+              <small
+                >完成 {{ t.progress.completed }} /
+                {{ t.progress.total || "—" }} 项</small
+              >
+            </button>
+          </div>
         </div>
         <div class="account-course-heading">
           <h3>课程与任务</h3>

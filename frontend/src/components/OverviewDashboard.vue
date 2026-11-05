@@ -13,16 +13,51 @@ import {
 import { state, act, navigate, resumeTask, dismissResumeTask } from "../store";
 import { request } from "../api";
 import { features, statuses, date, terminal } from "../format";
-import { executionProfiles } from "../overview";
+import { executionProfiles, queueReason, summarizeWork } from "../overview";
 import {
   visibleLatestUnfinished,
   visibleResumableTasks,
   visibleUnfinishedTotal,
 } from "../mission";
-import type { Task } from "../types";
+import type { Overview, Task } from "../types";
 const emit = defineEmits<{ select: [task: Task] }>();
 const profiles = computed(() => executionProfiles(state.workspaces));
 const tasks = computed(() => profiles.value.flatMap((p) => p.tasks));
+/** /api/overview 聚合真值：指标卡与调度队列同源，缺席时回退本地任务口径。 */
+const overview = computed(() => state.overview);
+/** 调度队列：后端已排好 active+paused+pending 前 60 条。 */
+const queue = computed(() => overview.value?.queue ?? []);
+const queueTotal = computed(() => {
+  const t = overview.value?.tasks;
+  return (t?.active ?? 0) + (t?.paused ?? 0) + (t?.pending ?? 0);
+});
+const ACTIVE_STATUSES = ["running", "starting", "logging_in", "loading_courses", "pausing", "stopping"];
+const activeAccounts = computed(() => {
+  if (overview.value) {
+    const ids = new Set(
+      queue.value.filter((q) => ACTIVE_STATUSES.includes(q.status)).map((q) => q.account_id),
+    );
+    return ids.size;
+  }
+  return profiles.value.length;
+});
+const activeCourses = computed(() => {
+  if (overview.value) {
+    const keys = new Set(
+      queue.value
+        .filter((q) => ACTIVE_STATUSES.includes(q.status))
+        .map((q) => q.account_id + ":" + q.course_name),
+    );
+    return keys.size;
+  }
+  return profiles.value.reduce((n, p) => n + p.courses.length, 0);
+});
+/** 队列行点「详情」：完整任务在本地列表里就开抽屉，否则去任务页。 */
+function openQueue(item: Overview["queue"][number]) {
+  const task = state.tasks.find((t) => t.id === item.id);
+  if (task) emit("select", task);
+  else navigate("tasks");
+}
 /** 最近结束的任务：与「已完成」页共用同一批数据，这里只做摘要。 */
 const recent = computed(() => state.tasks.filter(terminal).slice(0, 6));
 const totals = computed(() =>
@@ -126,16 +161,13 @@ async function control(id: string, op: string) {
   <div class="metrics overview-metrics">
     <div>
       <span>执行中的账号</span
-      ><strong>{{ profiles.length }}<small>个账号</small></strong>
+      ><strong>{{ activeAccounts }}<small>个账号</small></strong>
       <p>{{ tasks.length }} 项任务正在执行</p>
       <Users :size="21" />
     </div>
     <div>
       <span>执行中的课程</span
-      ><strong
-        >{{ profiles.reduce((n, p) => n + p.courses.length, 0)
-        }}<small>门课程</small></strong
-      >
+      ><strong>{{ activeCourses }}<small>门课程</small></strong>
       <p>课程任务点与独立作业</p>
       <Layers :size="21" />
     </div>
@@ -202,6 +234,34 @@ async function control(id: string, op: string) {
       </p>
       <p v-else>各账号独立执行，视频进度、答题来源与提交结果持续更新。</p>
     </div>
+  </div>
+  <div v-if="queueTotal" class="section-heading queue-heading">
+    <div>
+      <h2>调度队列</h2>
+      <p>正在执行、已暂停与排队等待的任务，共 {{ queueTotal }} 项</p>
+    </div>
+    <button class="text-link" @click="navigate('tasks')">
+      全部任务 <ArrowUpRight :size="16" />
+    </button>
+  </div>
+  <div v-if="queue.length" class="overview-queue">
+    <button
+      v-for="item in queue"
+      :key="item.id"
+      class="queue-row"
+      @click="openQueue(item)"
+    >
+      <span class="queue-main">
+        <b>{{ item.course_name }}</b>
+        <small>{{ item.account_label }} · {{ item.feature_label }}</small>
+      </span>
+      <span :class="['status', item.status]">{{ statuses[item.status] }}</span>
+      <span class="queue-reason">{{ queueReason(item) }}</span>
+      <span class="queue-meta">
+        <b>{{ summarizeWork(item).completed }}/{{ summarizeWork(item).total }}</b>
+        <small>{{ date(item.created_at) }}</small>
+      </span>
+    </button>
   </div>
   <div class="section-heading">
     <div>
@@ -375,3 +435,77 @@ async function control(id: string, op: string) {
     <button @click="navigate('tasks')">去创建任务</button>
   </div>
 </template>
+<style scoped>
+.queue-heading {
+  margin-top: 18px;
+}
+.overview-queue {
+  display: grid;
+  gap: 8px;
+}
+.queue-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  border: 1px solid var(--line, #e8e8ea);
+  border-radius: var(--r-md, 14px);
+  background: var(--surface, #f7f7f8);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease;
+}
+.queue-row:hover {
+  border-color: #b9b9c0;
+}
+.queue-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.queue-main b {
+  font-size: 13px;
+  color: var(--fg, #0a0a0a);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue-main small {
+  color: var(--fg-muted, #6b6b74);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue-reason {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--fg-muted, #6b6b74);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue-meta {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+}
+.queue-meta b {
+  font-size: 12px;
+  color: var(--fg, #0a0a0a);
+}
+.queue-meta small {
+  font-size: 11px;
+  color: var(--fg-subtle, #a1a1aa);
+}
+@media (max-width: 850px) {
+  .queue-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .queue-reason,
+  .queue-meta {
+    display: none;
+  }
+}
+</style>

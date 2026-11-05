@@ -132,6 +132,8 @@ export interface Task {
   course_id: string;
   class_id: string;
   id: string;
+  /** 所属运行批次（/api/runs 的 id）；重建后端时一并补齐。 */
+  run_id?: string;
   account_id: string;
   account_label: string;
   course_name: string;
@@ -206,5 +208,45 @@ export interface BankItem {
   answer: string;
   options?: string[];
   course_id?: string;
+}
+/** /api/overview 的调度队列行（active+paused+pending 前 60）。 */
+export interface QueueItem {
+  id: string;
+  account_id: string;
+  account_label: string;
+  course_name: string;
+  feature: string;
+  feature_label: string;
+  status: string;
+  stage: string;
+  stats: Record<string, unknown>;
+  created_at: number;
+}
+/** /api/overview 聚合视图（main.py /api/overview 的四节数据）。 */
+export interface Overview {
+  accounts: {
+    total: number;
+    enabled: number;
+    online: number;
+    login_failed: number;
+  };
+  tasks: { active: number; paused: number; pending: number; today_total: number };
+  today: Record<string, number>;
+  workers: { running: number; limit: number; busy: number; workers: number };
+  question_bank: { total: number; hits: number; hit_rate: number; lookups: number };
+  queue: QueueItem[];
+  recent_events: TaskEvent[];
+}
+/** /api/question-bank/stats 响应（题库统计卡）。 */
+export interface BankStats {
+  total: number;
+  hits: number;
+  lookups: number;
+  hit_rate: number;
+  by_type: Record<string, number>;
+  by_course: Record<string, number>;
+  recent_days: { day: string; hits: number; lookups: number }[];
+  recent_count: number;
+  latest: BankItem[];
 }
 export type Settings = Record<string, any>;

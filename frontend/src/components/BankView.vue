@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import {
   Search,
   Upload,
@@ -10,7 +10,7 @@ import {
 } from "lucide-vue-next";
 import { request } from "../api";
 import { act, state } from "../store";
-import type { BankItem, Settings } from "../types";
+import type { BankItem, BankStats, Settings } from "../types";
 import ModalShell from "./ModalShell.vue";
 const items = ref<BankItem[]>([]),
   total = ref(0),
@@ -28,6 +28,12 @@ const items = ref<BankItem[]>([]),
   clearing = ref(false),
   files = ref<File[]>([]),
   sourcePath = ref("");
+/** T7.6：/api/question-bank/stats 聚合卡（tab 激活即拉取，容忍 0/失败）。 */
+const stats = ref<BankStats | null>(null);
+const hitRate = computed(() => {
+  const value = stats.value?.hit_rate;
+  return typeof value === "number" ? `${Math.round(value * 100)}%` : "—";
+});
 const questionTypes = ["单选题", "多选题", "判断题", "填空题", "简答题"];
 let generation = 0,
   debounce: ReturnType<typeof setTimeout>;
@@ -52,7 +58,17 @@ async function load() {
     if (current === generation) loading.value = false;
   }
 }
-onMounted(load);
+async function loadStats() {
+  try {
+    stats.value = await request<BankStats>("/question-bank/stats?days=30");
+  } catch {
+    stats.value = null;
+  }
+}
+onMounted(() => {
+  load();
+  loadStats();
+});
 watch([query, type], () => {
   offset.value = 0;
   clearTimeout(debounce);
@@ -124,6 +140,7 @@ function clearBank() {
       clearing.value = false;
       offset.value = 0;
       await load();
+      loadStats();
       return result;
     },
     (result) => `已清空 ${(result as { deleted?: number }).deleted || 0} 条答题缓存`,
@@ -141,7 +158,14 @@ function clearBank() {
       </p>
     </div>
     <div class="button-row">
-      <button class="icon-button" aria-label="刷新缓存" @click="load">
+      <button
+        class="icon-button"
+        aria-label="刷新缓存"
+        @click="
+          load();
+          loadStats();
+        "
+      >
         <RefreshCw :size="16" :class="{ spin: loading }" /></button
       ><a class="button" href="/api/question-bank/export?format=json" download
         ><Download :size="16" />导出 JSON</a
@@ -156,6 +180,20 @@ function clearBank() {
       >
         <Eraser :size="16" />清空全部
       </button>
+    </div>
+  </div>
+  <div v-if="stats" class="metrics bank-stats">
+    <div>
+      <span>缓存题目</span><strong>{{ stats.total }}<small>条</small></strong>
+      <p>近 30 天新增 {{ stats.recent_count }} 条</p>
+    </div>
+    <div>
+      <span>命中次数</span><strong>{{ stats.hits }}<small>次</small></strong>
+      <p>共查询 {{ stats.lookups }} 次</p>
+    </div>
+    <div>
+      <span>命中率</span><strong>{{ hitRate }}</strong>
+      <p>命中后不再调用 AI</p>
     </div>
   </div>
   <div class="filterbar">
@@ -317,6 +355,7 @@ function clearBank() {
               await request('/question-bank/' + remove!.hash, 'DELETE');
               remove = null;
               await load();
+              loadStats();
             },
             '缓存已删除',
           )

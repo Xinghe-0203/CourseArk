@@ -9,12 +9,15 @@ import type {
   TaskLive,
   View,
   AccountWorkspace,
+  Overview,
 } from "./types";
 export const state = reactive({
   accounts: [] as Account[],
   tasks: [] as Task[],
   totalTasks: 0,
   workspaces: [] as AccountWorkspace[],
+  // /api/overview 聚合真值（顶栏计数、心跳与总览指标卡同源取数）。
+  overview: null as Overview | null,
   selectedCourses: [] as string[],
   selectedAccounts: [] as string[],
   settings: {} as Settings,
@@ -113,6 +116,7 @@ export async function refresh() {
       request<{ items: Account[] }>("/accounts"),
       request<{ items: Task[]; total: number }>("/tasks?limit=100"),
       request<{ items: AccountWorkspace[] }>("/workspace/accounts"),
+      request<Overview>("/overview").catch(() => null),
     ]);
     if (current !== generation) return;
     state.accounts = values[0].items;
@@ -122,6 +126,7 @@ export async function refresh() {
     );
     state.totalTasks = values[1].total;
     state.workspaces = values[2].items;
+    state.overview = values[3];
     const validAccounts = new Set(state.workspaces.map((p) => p.account.id));
     const validCourses = new Set(
       state.workspaces

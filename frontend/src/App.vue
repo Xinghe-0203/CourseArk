@@ -12,7 +12,7 @@ import {
   CheckCircle2,
 } from "lucide-vue-next";
 import { state, initialize, refresh, navigate } from "./store";
-import { workspaceStats } from "./stats";
+import { engineTotals, overviewCounts } from "./overview";
 import type { Task, View } from "./types";
 import TaskList from "./components/TaskList.vue";
 import TaskDrawer from "./components/TaskDrawer.vue";
@@ -50,8 +50,9 @@ function openNewTask() {
   state.newTask = true;
 }
 const page = computed(() => nav.find((n) => n.key === state.view) || nav[0]);
-// 顶栏统计与总览、学习任务共用同一套口径，避免同批账号出现两种课程数。
-const totals = computed(() => workspaceStats(state.workspaces, state.tasks));
+// 顶栏统计与总览、心跳共用 /api/overview 真值；接口缺席时回退本地任务口径。
+const engine = computed(() => engineTotals(state.overview, state.tasks));
+const headCounts = computed(() => overviewCounts(state.overview, state.workspaces));
 const port = computed(() => Number(state.settings.server?.port) || 8848);
 let stream: EventSource | undefined,
   timer: ReturnType<typeof setInterval>,
@@ -148,7 +149,7 @@ onUnmounted(() => {
           <div class="engine-copy">
             <b>{{ state.online ? "后台服务运行中" : "正在连接后台服务" }}</b>
             <small
-              >{{ totals.running }} 项运行中 · {{ totals.paused }} 项暂停 · 端口
+              >{{ engine.running }} 项运行中 · {{ engine.paused }} 项暂停 · 端口
               {{ port }}</small
             >
           </div>
@@ -161,13 +162,13 @@ onUnmounted(() => {
         <div class="top-actions">
           <div class="top-stats">
             <div class="stat-item" title="已添加的账号数量">
-              <b>{{ totals.accounts }}</b><span>账号</span>
+              <b>{{ headCounts.accounts }}</b><span>账号</span>
             </div>
             <div class="stat-item" title="已同步课程总数（含停用账号）">
-              <b>{{ totals.courses }}</b><span>课程</span>
+              <b>{{ headCounts.courses }}</b><span>课程</span>
             </div>
             <div class="stat-item" title="正在执行的任务数量">
-              <b>{{ totals.running }}</b><span>运行中</span>
+              <b>{{ engine.running }}</b><span>运行中</span>
             </div>
           </div>
           <button class="icon-button" aria-label="刷新数据" @click="refresh">

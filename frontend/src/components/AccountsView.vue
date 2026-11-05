@@ -14,6 +14,7 @@ import { request } from "../api";
 import type { Account, Course } from "../types";
 import ModalShell from "./ModalShell.vue";
 import { missionState } from "../mission";
+import { date } from "../format";
 const edit = ref<Partial<Account> | null>(null),
   password = ref(""),
   courses = ref<Course[]>([]),
@@ -94,6 +95,13 @@ function save() {
           查看课程
         </button>
       </div>
+      <!-- T7.7：课程同步结果（时间防字符串，UI 种子不写 last_sync_at） -->
+      <p v-if="a.last_sync_status" class="account-sync-line">
+        课程同步{{ a.last_sync_status === "failed" ? "失败" : "成功"
+        }}<template v-if="typeof a.last_sync_at === 'number'"
+          >· {{ date(a.last_sync_at) }}</template
+        >
+      </p>
       <p class="account-note">
         {{
           a.syncing
@@ -150,6 +158,11 @@ function save() {
             a.session?.has_session && a.session?.fresh ? "可用" : "未准备"
           }}
           {{ a.session?.fetching ? " · 正在获取" : "" }}
+        </p>
+        <!-- T7.7：最近一次登录缓存操作结果（仅本次运行内存里有） -->
+        <p v-if="a.session?.last_result?.message">
+          最近结果：{{ a.session.last_result.ok ? "" : "失败 · "
+          }}{{ a.session.last_result.message }}
         </p>
         <button
           @click="

@@ -48,10 +48,11 @@ const statusOptions: [string, string][] = [
 ];
 
 /**
- * 状态筛选在本地进行：后端 /api/completed 固定只返回四种终态，没有 status 参数。
- * 选中状态时按接口上限（100）取最新一批再本地过滤，避免只过滤当前一页造成误导。
+ * 状态筛选改打 /api/history 服务端过滤（T7.5）：history 支持 status 参数且
+ * 上限 200，不再本地截断 100 条；无状态筛选时仍走 /api/completed（带逐题
+ * 汇总、耗时、结果说明的完整视图，分页语义也只在无状态时成立）。
  */
-const requestLimit = computed(() => (status.value ? 100 : pageSize.value));
+const requestLimit = computed(() => (status.value ? 200 : pageSize.value));
 const requestOffset = computed(() => (status.value ? 0 : offset.value));
 const filtered = computed(() =>
   status.value
@@ -60,9 +61,9 @@ const filtered = computed(() =>
 );
 /** 状态筛选时按接口上限取最新一批，分页语义不再成立，因此隐藏分页。 */
 const paginable = computed(() => !status.value && total.value > pageSize.value);
-/** 状态筛选但结果被 100 条上限截断时给出说明，避免误以为「只有这些」。 */
+/** 状态筛选但结果被 200 条上限截断时给出说明，避免误以为「只有这些」。 */
 const statusCapped = computed(
-  () => Boolean(status.value) && total.value > 100,
+  () => Boolean(status.value) && total.value > 200,
 );
 
 /** 是否有筛选条件：决定空状态是「筛选无结果」还是「确实还没有数据」。 */
@@ -82,10 +83,15 @@ async function load() {
   loading.value = true;
   loadError.value = "";
   try {
+    /** 状态筛选走 /api/history（status 服务端过滤）；否则 /api/completed 完整视图。 */
+    const path = status.value ? "/history" : "/completed";
+    const statusParam = status.value
+      ? `&status=${encodeURIComponent(status.value)}`
+      : "";
     const data = await request<{ total: number; items: CompletedTask[] }>(
-      `/completed?feature=${encodeURIComponent(feature.value)}` +
+      `${path}?feature=${encodeURIComponent(feature.value)}` +
         `&account_id=${encodeURIComponent(account.value)}` +
-        `&q=${encodeURIComponent(query.value)}` +
+        `&q=${encodeURIComponent(query.value)}${statusParam}` +
         `&limit=${requestLimit.value}&offset=${requestOffset.value}`,
     );
     if (current !== generation) return;
@@ -185,6 +191,9 @@ function changeSize(event: Event) {
     `「已完成」每页显示 ${value} 条`,
   );
 }
+
+/** 状态筛选行来自 /api/history，缺 answers_summary/outcome：提示用户开详情补齐。 */
+const rowNoteFallback = "状态筛选结果不含逐题汇总，点「查看详情」可查看逐题与日志。";
 </script>
 <template>
   <div class="filterbar completed-filterbar">
@@ -312,6 +321,7 @@ function changeSize(event: Event) {
     <span v-if="statusCapped"
       >更早的任务未参与筛选，可缩小账号或功能范围后再试。</span
     >
+    <span>{{ rowNoteFallback }} </span>
   </div>
   <div v-if="paginable" class="pagination">
     <button
