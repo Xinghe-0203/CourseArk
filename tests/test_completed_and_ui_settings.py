@@ -206,22 +206,35 @@ def test_completed_keeps_failure_error_as_reason(app_client):
 
 
 def test_completed_avoids_full_event_scan_per_task(app_client, monkeypatch):
-    """每条任务只查一次 answer_result，不能在循环里拉全量事件"""
+    """列表端点用一次批量查询取回全部任务的逐题明细（T5：消灭逐行 N+1）"""
     from app import main as main_module
 
     account = _create_account(app_client)
     for index in range(5):
         _create_task(f"bulk-{index}", account["id"], feature="exam")
+        for q in range(2):
+            main_module.db.add_event(
+                f"bulk-{index}", account["id"], "answer_result", "作答", stage="answer",
+                payload={"media": f"bulk-{index}-m", "index": q, "total": 2,
+                         "question": "题目", "answer": "A", "source": "ai",
+                         "status": "answered"})
+
     calls = []
-    original = main_module._task_answers
+    original = main_module.db.answers_batch
 
-    def counting(task_id):
-        calls.append(task_id)
-        return original(task_id)
+    def counting(task_ids, *args, **kwargs):
+        calls.append(list(task_ids))
+        return original(task_ids, *args, **kwargs)
 
-    monkeypatch.setattr(main_module, "_task_answers", counting)
-    app_client.get("/api/completed?limit=5")
-    assert sorted(calls) == [f"bulk-{index}" for index in range(5)]
+    monkeypatch.setattr(main_module.db, "answers_batch", counting)
+    data = app_client.get("/api/completed?limit=5").json()
+    # 批量预取恰好调用一次，且 5 个任务全部走同一次查询
+    assert len(calls) == 1
+    assert sorted(calls[0]) == [f"bulk-{index}" for index in range(5)]
+    # 行数据 → 视图转换后逐题内容完整
+    for item in data["items"]:
+        assert item["answers_count"] == 2
+        assert item["answers_summary"]["answered"] == 2
 
 
 # ============================================================

@@ -488,14 +488,18 @@ def _register_routes(app: FastAPI):
                     break
                 offset += len(page)
             recent = db.list_tasks({'account_id': account_id, 'feature': 'course_all,independent_homework', 'status': 'succeeded,failed,stopped,interrupted'}, limit=12)
+            # T5：本账号 current+recent 一次性批量预取未完成单元数，消灭逐行 N+1
+            batch_all = [t for t in current + recent
+                         if t['feature'] in ('course_all', 'independent_homework')]
+            precomputed = _unfinished_units_batch(batch_all)
             items.append({'account': {**account, 'syncing': sync_service.is_syncing(account_id),
                                      'session': sessions.status(account_id)},
                           'courses': [{'course_id': c['course_id'], 'class_id': c['class_id'], 'cpi': c['cpi'],
                                        'name': c['name'], 'author': c['author'], 'if_open': bool(c['if_open']),
                                        'mission_fn': c['mission_fn'], 'mission_all': c['mission_all'],
                                        'synced_at': c['synced_at']} for c in course_rows],
-                          'tasks': [_task_view(t) for t in current if t['feature'] in ('course_all', 'independent_homework')],
-                          'recent': [_task_view(t) for t in recent if t['feature'] in ('course_all', 'independent_homework')],
+                          'tasks': [_task_view(t, precomputed) for t in current if t['feature'] in ('course_all', 'independent_homework')],
+                          'recent': [_task_view(t, precomputed) for t in recent if t['feature'] in ('course_all', 'independent_homework')],
                           'counts': {'active': db.count_tasks({'account_id': account_id, 'feature': 'course_all,independent_homework', 'status': 'running,starting,logging_in,loading_courses,pausing,stopping'}),
                                      'pending': db.count_tasks({'account_id': account_id, 'feature': 'course_all,independent_homework', 'status': 'pending'}),
                                      'paused': db.count_tasks({'account_id': account_id, 'feature': 'course_all,independent_homework', 'status': 'paused'}),
@@ -562,9 +566,11 @@ def _register_routes(app: FastAPI):
                    "feature": feature, "course_id": course_id, "q": q,
                    "since": since or None, "until": until or None}
         rows = db.list_tasks(filters, limit, offset)
+        # T5：一次批量预取非 succeeded 任务的未完成单元数，替代逐行 _unfinished_units
+        precomputed = _unfinished_units_batch(rows)
         return {
             "total": db.count_tasks(filters),
-            "items": [_task_view(row) for row in rows],
+            "items": [_task_view(row, precomputed) for row in rows],
         }
 
     @app.get("/api/tasks/{task_id}")
@@ -668,7 +674,9 @@ def _register_routes(app: FastAPI):
         filters = {"status": status or "succeeded,failed,stopped,interrupted", "account_id": account_id, "feature": feature,
                    "q": q, "since": since or None, "until": until or None}
         rows = db.list_tasks(filters, limit, offset)
-        return {"total": db.count_tasks(filters), "items": [_task_view(row) for row in rows]}
+        precomputed = _unfinished_units_batch(rows)
+        return {"total": db.count_tasks(filters),
+                "items": [_task_view(row, precomputed) for row in rows]}
 
     @app.get("/api/completed")
     def completed_tasks(feature: str = "", account_id: str = "", q: str = "",
@@ -686,8 +694,10 @@ def _register_routes(app: FastAPI):
                    "account_id": account_id, "feature": feature, "q": q,
                    "since": since or None, "until": until or None}
         rows = db.list_tasks(filters, limit, offset)
+        # T5：逐题明细一次批量预取（每任务最近 ANSWER_EVENT_LIMIT 条），消灭逐行 _task_answers
+        answer_map = db.answers_batch([row["id"] for row in rows], ANSWER_EVENT_LIMIT)
         return {"total": db.count_tasks(filters),
-                "items": [_completed_view(row) for row in rows]}
+                "items": [_completed_view(row, answer_map.get(row["id"])) for row in rows]}
 
     @app.get("/api/events/stream")
     async def stream(request: Request, last_event_id: int = Query(default=0, ge=0)):
@@ -990,6 +1000,25 @@ def _json(text, default=None):
 WORK_EVENT_LIMIT = 2000
 
 
+def _unfinished_units_from_plan(task_id: str, plan, results: list):
+    """基于已取出的 work_plan / work_result 事件行计算未完成单元数（批量预取用）"""
+    if plan is None:
+        return None
+    payload = redact_data(_json(plan.get("payload_json")))
+    units = payload.get("units") if isinstance(payload, dict) else None
+    if not isinstance(units, list):
+        return None
+    planned = [unit for unit in units if isinstance(unit, dict) and unit.get("id") is not None]
+    done = set()
+    for row in results or []:
+        result = redact_data(_json(row.get("payload_json")))
+        if not isinstance(result, dict) or result.get("status") != "succeeded":
+            continue
+        if result.get("id") is not None:
+            done.add(str(result.get("id")))
+    return sum(1 for unit in planned if str(unit.get("id")) not in done)
+
+
 def _unfinished_units(task_id: str):
     """
     未完成任务点数（中断续跑入口用）
@@ -1002,28 +1031,40 @@ def _unfinished_units(task_id: str):
     if not plans:
         return None
     plan = plans[-1]
-    payload = redact_data(_json(plan.get("payload_json")))
-    units = payload.get("units") if isinstance(payload, dict) else None
-    if not isinstance(units, list):
-        return None
-    planned = [unit for unit in units if isinstance(unit, dict) and unit.get("id") is not None]
-    done = set()
     try:
         after = int(plan.get("id") or 0)
     except (TypeError, ValueError):
         after = 0
-    for row in db.list_events(task_id, after_id=after, limit=WORK_EVENT_LIMIT, event="work_result"):
-        result = redact_data(_json(row.get("payload_json")))
-        if not isinstance(result, dict) or result.get("status") != "succeeded":
-            continue
-        if result.get("id") is not None:
-            done.add(str(result.get("id")))
-    return sum(1 for unit in planned if str(unit.get("id")) not in done)
+    results = db.list_events(task_id, after_id=after, limit=WORK_EVENT_LIMIT, event="work_result")
+    return _unfinished_units_from_plan(task_id, plan, results)
 
 
-def _task_view(row: dict) -> dict:
+def _unfinished_units_batch(rows: list) -> dict:
+    """一次查询预取一批任务的未完成单元数：{task_id: int|None}（T5 N+1 消灭）"""
+    targets = [row["id"] for row in rows if row.get("status") != "succeeded"]
+    if not targets:
+        return {}
+    plans = db.work_plans_batch(targets)
+    after = {}
+    for task_id, plan in plans.items():
+        try:
+            after[task_id] = int(plan.get("id") or 0)
+        except (TypeError, ValueError):
+            after[task_id] = 0
+    results = db.events_after_batch(targets, after, "work_result", WORK_EVENT_LIMIT)
+    return {task_id: _unfinished_units_from_plan(task_id, plans.get(task_id), results.get(task_id))
+            for task_id in targets}
+
+
+def _task_view(row: dict, precomputed: dict = None) -> dict:
     from .work_progress import summarize
     stats = redact_data(_json(row.get("stats_json")))
+    if row.get("status") == "succeeded":
+        unfinished = 0
+    elif precomputed is not None:
+        unfinished = precomputed.get(row["id"])
+    else:
+        unfinished = _unfinished_units(row["id"])
     return {
         "id": row["id"],
         "run_id": row.get("run_id"),
@@ -1042,8 +1083,7 @@ def _task_view(row: dict) -> dict:
         "stats": stats,
         "progress": summarize(stats.get("work", {})),
         # v2.2.1：从 work_plan/work_result 事件恢复的未完成任务点数；无计划事件为 None
-        "unfinished_units": (0 if row.get("status") == "succeeded"
-                             else _unfinished_units(row["id"])),
+        "unfinished_units": unfinished,
         "error": redact(row.get("error", "")),
         "created_at": row.get("created_at"),
         "started_at": row.get("started_at"),
@@ -1084,11 +1124,14 @@ def _task_exam_view(row: dict, stats: dict) -> dict:
     }
 
 
-def _completed_view(row: dict) -> dict:
+def _completed_view(row: dict, answers: list = None) -> dict:
     """已完成任务视图：在任务视图上补充耗时、逐题汇总、结果说明与考试信息"""
     view = _task_view(row)
     stats = view.get("stats") or {}
-    answers = _task_answers(row["id"])
+    if answers is None:
+        answers = _task_answers(row["id"])
+    else:
+        answers = _task_answers_from_rows(answers)
     view["answers_summary"] = _answers_summary(answers, stats)
     view["answers_count"] = len(answers)
 
@@ -1160,14 +1203,23 @@ def _answer_view(row: dict) -> dict:
 def _task_answers(task_id: str) -> list:
     """按 (media, index) 去重取最新一条，保持题目首次出现的顺序返回平铺数组"""
     rows = db.list_events(task_id, limit=ANSWER_EVENT_LIMIT, event="answer_result", latest=True)
+    return _dedupe_answers([_answer_view(row) for row in rows])
+
+
+def _dedupe_answers(items: list) -> list:
+    """按 (media, index) 去重保首现序（输入须已是 _answer_view 映射后的 dict 列表）"""
     latest, order = {}, []
-    for row in rows:
-        item = _answer_view(row)
+    for item in items:
         dedupe_key = (item["media"], item["index"])
         if dedupe_key not in latest:
             order.append(dedupe_key)
         latest[dedupe_key] = item
     return [latest[key] for key in order]
+
+
+def _task_answers_from_rows(rows: list) -> list:
+    """批量预取的原始事件行 → 去重后的 answer 视图（与 _task_answers 等价，T5 用）"""
+    return _dedupe_answers([_answer_view(row) for row in rows or []])
 
 
 def _answers_summary(items: list, stats: dict) -> dict:

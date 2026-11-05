@@ -470,6 +470,93 @@ class Database:
             "SELECT * FROM task_events ORDER BY id DESC LIMIT ?", (int(limit),)
         )
 
+    # --------------------------------------------------------
+    # 批量预取（v2.4.0 T5：列表端点 N+1 消灭）
+    # --------------------------------------------------------
+
+    def work_plans_batch(self, task_ids: list) -> dict:
+        """每个任务的最近一条 work_plan 事件：{task_id: row}；单查询覆盖全部任务。"""
+        ids = [str(value) for value in task_ids if value]
+        if not ids:
+            return {}
+        placeholders = ",".join("?" for _ in ids)
+        rows = self._query(
+            f"""SELECT * FROM task_events
+                WHERE id IN (
+                    SELECT MAX(id) FROM task_events
+                    WHERE event = 'work_plan' AND task_id IN ({placeholders})
+                    GROUP BY task_id
+                )""",
+            tuple(ids),
+        )
+        return {row["task_id"]: row for row in rows}
+
+    def events_after_batch(self, task_ids: list, after_ids: dict,
+                           event: str, limit_per_task: int) -> dict:
+        """每个任务在 after_ids[task_id] 之后（不含）的指定事件（id ASC）。
+
+        {task_id: [row, ...]}；after_id 缺失或为 0 的任务从 0 开始。
+        每任务上限 limit_per_task，超限取最新（对 work_result 对账语义足够）。
+        """
+        ids = [str(value) for value in task_ids if value]
+        if not ids:
+            return {}
+        result = {task_id: [] for task_id in ids}
+        if event != "work_result":
+            # 通用兜底：单查询按任务分组取最新 N 条（窗口函数不可用时的等价写法）
+            placeholders = ",".join("?" for _ in ids)
+            rows = self._query(
+                f"""SELECT * FROM (
+                        SELECT *, ROW_NUMBER() OVER (
+                            PARTITION BY task_id ORDER BY id DESC) AS _rn
+                        FROM task_events
+                        WHERE event = ? AND task_id IN ({placeholders})
+                    ) WHERE _rn <= ? ORDER BY task_id, id ASC""",
+                (event, *ids, int(limit_per_task)),
+            )
+            for row in rows:
+                result.setdefault(row["task_id"], []).append(row)
+            return result
+        # work_result 主路径：after_ids 过滤下推 SQL，避免整段历史扫描
+        clauses, params = [], []
+        for task_id in ids:
+            after = int(after_ids.get(task_id) or 0)
+            clauses.append("(task_id = ? AND id > ?)")
+            params.extend([task_id, after])
+        where = " OR ".join(clauses)
+        rows = self._query(
+            f"""SELECT * FROM (
+                    SELECT *, ROW_NUMBER() OVER (
+                        PARTITION BY task_id ORDER BY id DESC) AS _rn
+                    FROM task_events
+                    WHERE event = 'work_result' AND ({where})
+                ) WHERE _rn <= ? ORDER BY task_id, id ASC""",
+            (*params, int(limit_per_task)),
+        )
+        for row in rows:
+            result.setdefault(row["task_id"], []).append(row)
+        return result
+
+    def answers_batch(self, task_ids: list, limit_per_task: int = 500) -> dict:
+        """每个任务最近的 answer_result 事件（id ASC，单查询）：{task_id: [row, ...]}。"""
+        ids = [str(value) for value in task_ids if value]
+        if not ids:
+            return {}
+        placeholders = ",".join("?" for _ in ids)
+        rows = self._query(
+            f"""SELECT * FROM (
+                    SELECT *, ROW_NUMBER() OVER (
+                        PARTITION BY task_id ORDER BY id DESC) AS _rn
+                    FROM task_events
+                    WHERE event = 'answer_result' AND task_id IN ({placeholders})
+                ) WHERE _rn <= ? ORDER BY task_id, id ASC""",
+            (*ids, int(limit_per_task)),
+        )
+        result = {task_id: [] for task_id in ids}
+        for row in rows:
+            result.setdefault(row["task_id"], []).append(row)
+        return result
+
     def events_after(self, last_id: int, limit: int = 500) -> list:
         return self._query(
             "SELECT * FROM task_events WHERE id > ? ORDER BY id ASC LIMIT ?",
