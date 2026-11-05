@@ -187,10 +187,22 @@ export interface CompletedResponse {
   total: number;
   items: CompletedTask[];
 }
-/** T14：Electron preload 桥（仅桌面端存在，浏览器端 undefined）。 */
+/** T14/T15：Electron preload 桥（仅桌面端存在，浏览器端 undefined）。 */
+export interface DesktopWindowPreset {
+  title?: string;
+  width?: number;
+  height?: number;
+  minWidth?: number;
+  minHeight?: number;
+  frame?: boolean;
+  alwaysOnTop?: boolean;
+  skipTaskbar?: boolean;
+}
 export interface CoursearkDesktop {
   openMini: () => Promise<boolean>;
   closeMini: () => Promise<boolean>;
+  openWindow: (route: string, preset?: DesktopWindowPreset) => Promise<boolean>;
+  closeWindow: (route: string) => Promise<boolean>;
 }
 declare global {
   interface Window {

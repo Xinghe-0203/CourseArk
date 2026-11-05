@@ -8,4 +8,8 @@ contextBridge.exposeInMainWorld("coursearkDesktop", {
   openMini: () => ipcRenderer.invoke("mini:open"),
   /** 关闭迷你监控子窗。 */
   closeMini: () => ipcRenderer.invoke("mini:close"),
+  /** T15：通用小窗——route 为前端 hash 片段（如 "mini"），preset 可选覆盖形态。 */
+  openWindow: (route, preset) => ipcRenderer.invoke("windows:open", route, preset),
+  /** T15：按 route 关闭（隐藏）通用小窗。 */
+  closeWindow: (route) => ipcRenderer.invoke("windows:close", route),
 });

@@ -10,12 +10,55 @@ const { selectLoopbackPort, startBackend, stopBackend } = require("./server-mana
 app.setName("AutoCxWebUI");
 
 let mainWindow = null;
-let miniWindow = null;
-let miniHidden = false; // 关闭迷你窗=隐藏（应用还在跑），主窗销毁才真正关。
 let backend = null;
 let quitting = false;
 let exitDialogOpen = false;
 const smokeMode = process.env.AUTOCXWEBUI_ELECTRON_SMOKE === "1";
+
+// T15：通用子窗注册表——route 片段（如 "mini"）→ BrowserWindow。
+// 关闭=隐藏（窗口对象保留，可随时复现），主窗销毁才随应用真正退出。
+const childWindows = new Map();
+
+// 内置窗口形态预设；迷你监控是第一个预设（T14 形态不变）。
+const WINDOW_PRESETS = {
+  mini: {
+    title: "课舟 · 迷你监控",
+    width: 340,
+    height: 220,
+    minWidth: 280,
+    minHeight: 160,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+  },
+};
+
+// 未注册 route 的兜底形态：仍可开通用小窗（渲染端可覆盖字段）。
+const FALLBACK_PRESET = {
+  title: "课舟窗口",
+  width: 360,
+  height: 420,
+  minWidth: 240,
+  minHeight: 160,
+};
+
+// 渲染进程允许覆盖的字段白名单——其余 BrowserWindow 选项一律不透传。
+const PRESET_KEYS = ["title", "width", "height", "minWidth", "minHeight", "frame", "alwaysOnTop", "skipTaskbar"];
+
+function resolvePreset(route, override) {
+  const preset = { ...(WINDOW_PRESETS[route] || FALLBACK_PRESET) };
+  if (override && typeof override === "object") {
+    for (const key of PRESET_KEYS) {
+      if (override[key] !== undefined) preset[key] = override[key];
+    }
+  }
+  // 钳制下限，防止渲染端开出 0 尺寸/负尺寸窗口。
+  preset.width = Math.max(200, Number(preset.width) || FALLBACK_PRESET.width);
+  preset.height = Math.max(140, Number(preset.height) || FALLBACK_PRESET.height);
+  preset.minWidth = Math.max(120, Number(preset.minWidth) || FALLBACK_PRESET.minWidth);
+  preset.minHeight = Math.max(100, Number(preset.minHeight) || FALLBACK_PRESET.minHeight);
+  return preset;
+}
 
 function runtimePaths() {
   if (app.isPackaged) {
@@ -80,19 +123,24 @@ function createOrReuseWindow(baseUrl) {
   return mainWindow.loadURL(baseUrl);
 }
 
-// T14：迷你监控子窗——无边框置顶小条，加载前端的 /#/mini 紧凑视图。
-function createMiniWindow(baseUrl) {
-  if (miniWindow && !miniWindow.isDestroyed()) return miniWindow;
-  miniWindow = new BrowserWindow({
-    width: 340,
-    height: 220,
-    minWidth: 280,
-    minHeight: 160,
+// T15：通用子窗工厂——按 route 片段建/复用窗口，形态=preset 覆盖项+钳制，
+// 加载 `${baseUrl}/#/${route}`。注册表以 route 为键（同 route 单实例）。
+function createChildWindow(baseUrl, route, override) {
+  if (!route || typeof route !== "string") return null;
+  const preset = resolvePreset(route, override);
+  const existing = childWindows.get(route);
+  if (existing && !existing.isDestroyed()) return existing;
+  const win = new BrowserWindow({
+    width: preset.width,
+    height: preset.height,
+    minWidth: preset.minWidth,
+    minHeight: preset.minHeight,
     show: false,
-    frame: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    title: "课舟 · 迷你监控",
+    frame: preset.frame !== false,
+    title: typeof preset.title === "string" && preset.title ? preset.title : "课舟窗口",
+    autoHideMenuBar: preset.skipTaskbar !== true,
+    alwaysOnTop: preset.alwaysOnTop === true,
+    skipTaskbar: preset.skipTaskbar === true,
     backgroundColor: "#ffffff",
     icon: windowIconPath(),
     webPreferences: {
@@ -102,18 +150,30 @@ function createMiniWindow(baseUrl) {
       sandbox: true,
     },
   });
-  miniWindow.setAlwaysOnTop(true, "screen-saver");
-  miniWindow.on("closed", () => { miniWindow = null; });
-  configureNavigation(miniWindow, baseUrl);
-  miniWindow.loadURL(`${baseUrl}/#/mini`);
-  return miniWindow;
+  if (preset.alwaysOnTop === true) win.setAlwaysOnTop(true, "screen-saver");
+  win.on("closed", () => {
+    if (childWindows.get(route) === win) childWindows.delete(route);
+  });
+  configureNavigation(win, baseUrl);
+  win.loadURL(`${baseUrl}/#/${route}`);
+  childWindows.set(route, win);
+  return win;
 }
 
-async function openMiniWindow() {
-  miniHidden = false;
+// 关闭子窗=隐藏（窗口对象保留在注册表，可随时复现）。
+function closeChildWindow(route) {
+  const win = childWindows.get(route);
+  if (!win || win.isDestroyed()) return true;
+  win.hide();
+  return true;
+}
+
+// 打开（或复现）一个子窗；后端未就绪返回 false。
+async function openChildWindow(route, override) {
   const current = backend;
-  if (!current) return false;
-  const win = createMiniWindow(current.baseUrl);
+  if (!current || !route || typeof route !== "string") return false;
+  const win = createChildWindow(current.baseUrl, route, override);
+  if (!win) return false;
   if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isMinimized()) {
     mainWindow.restore();
   }
@@ -124,11 +184,17 @@ async function openMiniWindow() {
 
 async function startDesktop() {
   const { ipcMain } = require("electron");
-  ipcMain.handle("mini:open", () => openMiniWindow());
-  ipcMain.handle("mini:close", () => {
-    miniHidden = true;
-    if (miniWindow && !miniWindow.isDestroyed()) miniWindow.hide();
-    return true;
+  // T15：通用窗口 IPC。mini:open / mini:close 保留为迷你窗的语义别名，
+  // windows:open / windows:close 是带 route 参数的通用入口。
+  ipcMain.handle("mini:open", () => openChildWindow("mini"));
+  ipcMain.handle("mini:close", () => closeChildWindow("mini"));
+  ipcMain.handle("windows:open", (_event, route, preset) => {
+    const key = typeof route === "string" ? route : "";
+    return openChildWindow(key, preset);
+  });
+  ipcMain.handle("windows:close", (_event, route) => {
+    const key = typeof route === "string" ? route : "";
+    return closeChildWindow(key);
   });
   const port = await selectLoopbackPort();
   const paths = runtimePaths();
@@ -193,6 +259,10 @@ if (!hasSingleInstanceLock) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
+    // T15：聚焦扩展到注册表内全部子窗（不抢最小化，只前置已可见的）。
+    for (const win of childWindows.values()) {
+      if (win && !win.isDestroyed() && win.isVisible()) win.focus();
+    }
   });
 
   app.whenReady().then(startDesktop).catch((error) => {
@@ -216,8 +286,11 @@ if (!hasSingleInstanceLock) {
     if (quitting) return;
     event.preventDefault();
     quitting = true;
-    // 主窗随应用退出时连带关闭迷你子窗（hide 语义下窗口对象还在）。
-    if (miniWindow && !miniWindow.isDestroyed()) miniWindow.destroy();
+    // 主窗随应用退出时连带销毁全部注册表子窗（hide 语义下窗口对象还在）。
+    for (const win of childWindows.values()) {
+      if (win && !win.isDestroyed()) win.destroy();
+    }
+    childWindows.clear();
     const current = backend;
     backend = null;
     Promise.resolve(current ? stopBackend({
