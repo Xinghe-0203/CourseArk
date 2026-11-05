@@ -227,9 +227,18 @@ class TaskManager:
     # --------------------------------------------------------
 
     def _scheduler_loop(self):
+        last_prune = 0.0
         while not self._stopping.is_set():
             try:
                 self._tick()
+                # 事件保留期清理（T10）：每小时节流；失败只打日志，绝不影响调度
+                if time.time() - last_prune >= 3600:
+                    last_prune = time.time()
+                    try:
+                        days = int(settings.resolve("storage.log_retention_days", 7))
+                        self.db.prune_events(days)
+                    except Exception as exc:
+                        print(f"[scheduler] 事件清理失败: {exc}", file=sys.stderr)
             except Exception as exc:  # 调度器不允许因单次异常退出
                 print(f"[scheduler] 调度异常: {exc}", file=sys.stderr)
             self._stopping.wait(1.0)
@@ -385,8 +394,13 @@ class TaskManager:
                     continue
                 self._handle_line(task_id, account_id, text)
         except Exception as exc:
-            self.db.add_event(task_id, account_id, "log",
-                              f"读取 Worker 输出失败: {exc}", level="error", stage="monitor")
+            # v2.4.0 T10：监控循环自身异常时记录 worker_crash——此前只写一条
+            # log 事件，Worker 死因（崩溃/读管道失败）在动态页完全不可见；
+            # 异常被吞后 stdout 不再被读取，Worker 若还在写管道会卡死在
+            # 满缓冲的 PIPE 上，这里保持 except→finally 收尾语义不变。
+            self.db.add_event(task_id, account_id, "worker_crash",
+                              f"监控线程读取 Worker 输出失败: {exc}",
+                              level="error", stage="monitor")
         finally:
             try:
                 stream.close()
@@ -418,6 +432,13 @@ class TaskManager:
                                     error="" if final == "succeeded" else message)
             self._remember_status(task_id, final)
             self._record_event(task_id, account_id, final, message, level=level, stage="finish")
+            # v2.4.0 T10：worker_exit 落库并推送（此前仅在 HIDDEN_EVENTS 里静默）。
+            # exit=3 是用户主动停止、exit=0 正常收尾，异常码才标 error。
+            exit_level = "error" if exit_code not in (0, 3) else "info"
+            self._record_event(task_id, account_id, "worker_exit",
+                               f"后台进程已退出 (code {exit_code})",
+                               level=exit_level, stage="finish",
+                               payload={"exit_code": exit_code})
         elif forced:
             self.db.set_task_status(task_id, "stopped", error="超过宽限时间，已强制终止", finished=True)
             self._remember_status(task_id, "stopped")

@@ -223,9 +223,31 @@ def test_activity_survives_diagnostic_log_flood(app_client):
 
 def test_hidden_narrative_events_still_have_safe_presentation():
     from app.presentation import describe
-    for event in ('task_progress', 'media_progress', 'worker_exit'):
+    for event in ('task_progress', 'media_progress'):
         value = describe(event, 'progress', stage='progress')
         assert value['visible'] is False
+
+
+def test_worker_exit_and_crash_are_visible():
+    """v2.4.0 T10：worker_exit/worker_crash 移出 HIDDEN_EVENTS，终局事件可见。"""
+    from app.presentation import describe
+    from app import narrative
+    exit_view = describe('worker_exit', '后台进程已退出 (code 0)', stage='finish',
+                         payload={'exit_code': 0})
+    assert exit_view['visible'] is True
+    crash_view = describe('worker_crash', '监控线程读取 Worker 输出失败: boom',
+                          level='error', stage='monitor')
+    assert crash_view['visible'] is True
+    # 叙事：正常/停止退出给出人话标题，崩溃单列
+    normal = narrative.describe('worker_exit', '', payload={'exit_code': 0})
+    stopped = narrative.describe('worker_exit', '', payload={'exit_code': 3})
+    broken = narrative.describe('worker_exit', '', level='error', payload={'exit_code': 1})
+    assert normal['title'] == '后台进程正常收尾'
+    assert stopped['title'] == '后台进程正常收尾'
+    assert broken['title'] == '后台进程已退出 (code 1)'
+    crash = narrative.describe('worker_crash', '读取失败')
+    assert crash['title'] == '后台进程异常终止'
+    assert crash['level'] == 'error'
 
 
 def test_account_bulk_stop_covers_all_pages_and_preserves_other_accounts(app_client):

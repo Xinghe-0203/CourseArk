@@ -114,7 +114,7 @@ def sync_account(db, hub: events.EventHub, account_id: str, blocking: bool = Fal
                 try:
                     record = json.loads(text)
                 except ValueError:
-                    _publish(hub, account_id, "log", text[:1000], level="info")
+                    _publish(db, hub, account_id, "log", text[:1000], level="info")
                     continue
                 if not isinstance(record, dict):
                     continue
@@ -127,7 +127,7 @@ def sync_account(db, hub: events.EventHub, account_id: str, blocking: bool = Fal
                     result = payload
                 elif event == "sync_failed":
                     failure = message
-                _publish(hub, account_id, event, message,
+                _publish(db, hub, account_id, event, message,
                          level=record.get("level", "info"), payload=payload)
         except Exception:
             failure = "读取课程同步结果失败，请重试"
@@ -162,7 +162,7 @@ def _finalize(db, hub, account_id: str, result, failure, exit_code: int):
         db.replace_courses(account_id, courses)
         accounts.mark_sync(account_id, True)
         accounts.mark_login(account_id, True, display_name=result.get("display_name", ""))
-        _publish(hub, account_id, "sync_completed",
+        _publish(db, hub, account_id, "sync_completed",
                  f"课程同步完成，共 {len(courses)} 门课程", level="success",
                  payload={"courses": len(courses)})
         return
@@ -170,12 +170,19 @@ def _finalize(db, hub, account_id: str, result, failure, exit_code: int):
     accounts.mark_sync(account_id, False, error=message)
     if failure and "登录" in str(message):
         accounts.mark_login(account_id, False, error=message)
-    _publish(hub, account_id, "sync_failed", message, level="error")
-    db.add_event("", account_id, "sync_failed", message, level="error", stage="sync")
+    _publish(db, hub, account_id, "sync_failed", message, level="error")
 
 
-def _publish(hub: events.EventHub, account_id: str, event: str, message: str,
+def _publish(db, hub: events.EventHub, account_id: str, event: str, message: str,
              level: str = "info", payload: dict = None):
-    hub.publish(events.make_record(0, "", account_id, event, message,
+    """同步事件落库 + 推送（v2.4.0 T10）。
+
+    此前事件 id 恒为 0 仅存内存：SSE 不写 id: 行、重启即丢、事件页看不到。
+    现在写入 task_events 哨兵行（task_id="0"，该表无外键约束），
+    拿到真实 id 后再 publish，SSE 据此携带游标、断线可增量续传。
+    """
+    event_id = db.add_event("0", account_id, event, message, level=level,
+                            stage="sync", payload=payload)
+    hub.publish(events.make_record(event_id, "0", account_id, event, message,
                                    level=level, stage="sync", payload=payload,
                                    narrative=narrative.describe(event, message, level=level, stage="sync", payload=payload)))

@@ -269,14 +269,17 @@ def _register_routes(app: FastAPI):
     # ---------------- 总览 ----------------
 
     @app.get("/api/overview")
-    def overview():
+    def overview(level: str = "all"):
+        """总览聚合（v2.4.0 T7）；level=problem 时 recent_events 只含告警与错误。"""
         day_start = time.mktime(time.strptime(time.strftime("%Y-%m-%d"), "%Y-%m-%d"))
         stats = db.dashboard_stats(day_start)
         tasks_today = db.count_tasks({"since": day_start})
         active = db.list_tasks({"status": "running,starting,logging_in,loading_courses,pausing,stopping"}, limit=50)
         paused = db.list_tasks({"status": "paused"}, limit=50)
         pending = db.list_tasks({"status": "pending"}, limit=50)
-        recent = db.recent_events(limit=60)
+        # level=problem：总览只关心需要处理的问题（warning/error），日志噪音不上屏
+        recent = (db.problem_events(limit=60) if level == "problem"
+                  else db.recent_events(limit=60))
         bank = question_bank_manager.stats()
         account_summary = accounts.summary()
         queue_rows = []
@@ -639,11 +642,22 @@ def _register_routes(app: FastAPI):
 
     @app.get("/api/tasks/{task_id}/events")
     def task_events(task_id: str, after_id: int = 0, limit: int = Query(default=200, ge=1, le=1000),
-                    level: str = "all", event: str = "all", latest: bool = False):
+                    level: str = "all", event: str = "all", latest: bool = False,
+                    stage: str = "all", since: float = 0, until: float = 0,
+                    q: str = ""):
+        """事件检索（v2.4.0 T10.8）：游标分页 + 阶段/时间窗/关键词过滤。
+
+        next_after_id 为「按当前过滤条件继续向后翻页」的游标——传回前端，
+        下次请求 after_id=next_after_id 即可取到后续事件。
+        """
         if not db.get_task(task_id):
             raise HTTPException(status_code=404, detail="任务不存在")
-        rows = db.list_events(task_id, after_id, limit, level, event, latest=latest)
-        return {"items": [_event_view(item) for item in rows]}
+        rows = db.list_events(task_id, after_id, limit, level, event, latest=latest,
+                              stage=stage or "all", since=since or 0, until=until or 0,
+                              q=q or None)
+        items = [_event_view(item) for item in rows]
+        next_after_id = items[-1]["id"] if len(items) >= limit else 0
+        return {"items": items, "next_after_id": next_after_id}
 
     @app.get("/api/tasks/{task_id}/logs")
     def task_logs(task_id: str):

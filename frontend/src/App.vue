@@ -59,11 +59,16 @@ let stream: EventSource | undefined,
   toastTimer: ReturnType<typeof setTimeout> | undefined,
   debounce: ReturnType<typeof setTimeout> | undefined;
 function connect() {
-  stream = new EventSource("/api/events/stream");
+  // T10：携带上次收到的 id 增量重连；EventSource 原生重连自带 Last-Event-ID，
+  // 手动重建（回前台/掉线重开）需要把游标拼进 URL。
+  const cursor = state.lastEventId > 0 ? `?last_event_id=${state.lastEventId}` : "";
+  stream = new EventSource(`/api/events/stream${cursor}`);
   stream.onopen = () => (state.online = true);
   stream.onerror = () => (state.online = false);
   stream.onmessage = (event) => {
     state.eventRevision += 1;
+    // 记录游标：SSE id: 行只在持久化事件上出现（id=0 的即时同步消息不带 id）。
+    if (event.lastEventId) state.lastEventId = Number(event.lastEventId) || 0;
     let name = "";
     try {
       name = JSON.parse(event.data).event || "";
@@ -87,8 +92,10 @@ function visibility() {
     stream?.close();
     stream = undefined;
   } else {
-    refresh();
+    // 增量重连补齐离屏期间的事件；补到的数据经 onmessage 防抖刷新，
+    // 但任务/账号列表本身仍需一次全量对账（顺序无关）。
     connect();
+    refresh();
   }
 }
 function hash() {

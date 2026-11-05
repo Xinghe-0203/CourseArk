@@ -32,6 +32,9 @@ export const state = reactive({
   newTaskAccount: "",
   // SSE 事件计数：任务详情等局部视图据此按需刷新。
   eventRevision: 0,
+  // 最近收到的 SSE 事件 id（T10）：重连时作 ?last_event_id= 增量续传，
+  // 避免每次回到前台都全量重放全部历史事件。
+  lastEventId: 0,
   // 运行中快照缓存（进度小窗 / 任务列表行摘要共享），键为任务 id。
   liveById: {} as Record<string, TaskLive | null>,
 });

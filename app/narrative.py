@@ -267,6 +267,28 @@ def describe(event: str, message: str, level: str = "info", stage: str = "",
             "progress": progress,
         }
 
+    # ---- 进程终局（须在告警分支之前：异常退出的 error 级别不该落进通用告警标题）----
+    if event == "worker_exit":
+        # v2.4.0 T10：终局事件不再隐藏，给用户一句可读的退出说明。
+        code = None
+        try:
+            code = int(str(payload.get("exit_code", "")).strip() or None)
+        except (TypeError, ValueError):
+            code = None
+        detail = _clean(message)
+        if code is None:
+            title = "后台进程已退出"
+        elif code in (0, 3):
+            title = "后台进程正常收尾"
+        else:
+            title = f"后台进程已退出 (code {code})"
+        return {"kind": "finish", "actor": "运行", "title": title,
+                "detail": detail, "level": level}
+    if event == "worker_crash":
+        # 监控线程异常死亡（崩溃/OOM/强杀）：与正常退出区分开。
+        return {"kind": "finish", "actor": "运行", "title": "后台进程异常终止",
+                "detail": _clean(message), "level": "error"}
+
     # ---- 需要关注的问题 ----
     if level in ("warning", "error"):
         title = _notice_title(text, level)
@@ -299,8 +321,6 @@ def describe(event: str, message: str, level: str = "info", stage: str = "",
             "level": level,
         }
 
-    if event == "worker_exit":
-        return None
     return {
         "kind": "log",
         "actor": "运行",

@@ -20,11 +20,17 @@ LOG_CATEGORIES = (
     ('antispider', 'antispider'), ('验证码', 'antispider'), ('冷却中', 'antispider'),
     ('提交失败', 'answer'), ('未获取到题目', 'answer'), ('随机', 'answer'),
     ('登录凭据', 'login'), ('登录失败', 'login'), ('密码', 'login'),
+    ('超时', 'network'), ('timeout', 'network'),
+    ('下载', 'download'), ('导出', 'download'),
+    ('章节测验', 'homework'), ('作业', 'homework'), ('测验', 'homework'),
     ('LLM', 'llm'),
 )
 EVENT_CATEGORIES = {'login_failed': 'login', 'task_failed': 'task', 'interrupted': 'task',
-                    'force_stop': 'task', 'sync_failed': 'sync', 'worker_exit': 'worker'}
-HIDDEN_EVENTS = ('log', 'task_progress', 'media_progress', 'worker_exit')
+                    'force_stop': 'task', 'sync_failed': 'sync', 'worker_exit': 'worker',
+                    'worker_crash': 'worker'}
+# v2.4.0 T10：worker_exit 从隐藏名单移除——终局事件用户必须能看到；
+# worker_crash 记录 Worker 进程异常死亡（SIGKILL/OOM/崩溃），同样可见。
+HIDDEN_EVENTS = ('log', 'task_progress', 'media_progress')
 
 
 def _categorize(event: str, level: str, message: str, stage: str) -> str:

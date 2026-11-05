@@ -507,7 +507,9 @@ class Database:
 
     def list_events(self, task_id: str, after_id: int = 0, limit: int = 200,
                     level: str = None, event: str = None, latest: bool = False,
-                    business: bool = False) -> list:
+                    business: bool = False, stage: str = None,
+                    since: float = 0, until: float = 0,
+                    q: str = None) -> list:
         clauses = ["task_id = ?", "id > ?"]
         params = [task_id, int(after_id or 0)]
         if level and level != "all":
@@ -519,6 +521,20 @@ class Database:
         if event and event != "all":
             clauses.append("event = ?")
             params.append(event)
+        # v2.4.0 T10.8：日志页检索扩展——阶段/时间窗/关键词，与 after_id 游标可组合
+        if stage and stage != "all":
+            clauses.append("stage = ?")
+            params.append(stage)
+        if since:
+            clauses.append("ts >= ?")
+            params.append(float(since))
+        if until:
+            clauses.append("ts <= ?")
+            params.append(float(until))
+        if q:
+            clauses.append("(message LIKE ? OR payload_json LIKE ?)")
+            like = f"%{q}%"
+            params.extend([like, like])
         if business:
             # 独立读取业务动态，频繁播放上报与 DEBUG 日志不会挤掉处理结果。
             clauses.append("(event NOT IN ('log', 'task_progress', 'work_progress', 'media_progress', 'worker_exit') "
@@ -535,6 +551,37 @@ class Database:
         return self._query(
             "SELECT * FROM task_events ORDER BY id DESC LIMIT ?", (int(limit),)
         )
+
+    def problem_events(self, limit: int = 100) -> list:
+        """最新 warning/error 事件（T10.8：总览 level=problem 视图）。"""
+        return self._query(
+            "SELECT * FROM task_events WHERE level IN ('warning', 'error') "
+            "ORDER BY id DESC LIMIT ?",
+            (int(limit),),
+        )
+
+    def prune_events(self, days: int) -> int:
+        """删除 days 天前的事件行，返回删除条数。
+
+        task_events 只增不减会让长期运行的库无限膨胀（v2.4.0 T10）；
+        调用方（调度器）每小时节流调用一次。缓冲中的行不受影响——它们的
+        ts 一定是刚刚产生的，远新于保留窗口。
+        """
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            return 0
+        if days <= 0:
+            return 0
+        cutoff = time.time() - days * 86400
+        with self._lock:
+            self.flush_events()  # 先落缓冲，避免删到未落库行时窗口错位
+            cursor = self._conn.execute(
+                "DELETE FROM task_events WHERE ts < ?", (cutoff,)
+            )
+            removed = cursor.rowcount or 0
+            self._conn.commit()
+        return removed
 
     # --------------------------------------------------------
     # 批量预取（v2.4.0 T5：列表端点 N+1 消灭）
