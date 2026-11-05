@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { Task, TaskLive } from "./types";
 import {
   activityOf,
+  appendEventPage,
   elapsedSeconds,
+  filterAnswerGroups,
   focusTask,
   formatDuration,
   formatEta,
+  logLevelParam,
+  moreAfter,
   runningSummary,
   unitPercent,
   unitText,
@@ -101,5 +105,43 @@ describe("live 进度格式化", () => {
     expect(focusTask([paused, running])?.id).toBe("running");
     expect(focusTask([paused])?.id).toBe("paused");
     expect(focusTask([task({ status: "succeeded" })])).toBeUndefined();
+  });
+});
+
+describe("T8.8 日志分页与逐题筛选", () => {
+  const event = (id: number) => ({ id });
+
+  it("appendEventPage 按 id 去重追加（游标重叠窗口）", () => {
+    expect(appendEventPage([event(1), event(2)], [event(3)])).toHaveLength(3);
+    expect(appendEventPage([event(1), event(2)], [event(2), event(3)]))
+      .toHaveLength(3);
+    expect(appendEventPage([], [event(9), event(10)])).toHaveLength(2);
+    expect(appendEventPage([event(5)], [])).toHaveLength(1);
+  });
+
+  it("moreAfter 只看 next_after_id 游标", () => {
+    expect(moreAfter(0, 200)).toBe(true);
+    expect(moreAfter(200, 0)).toBe(false);
+    expect(moreAfter(200, undefined)).toBe(false);
+    expect(moreAfter(0, -1)).toBe(false);
+  });
+
+  it("logLevelParam：all/空 → null（不传参），其余直传", () => {
+    expect(logLevelParam("all")).toBeNull();
+    expect(logLevelParam("")).toBeNull();
+    expect(logLevelParam("problem")).toBe("problem");
+    expect(logLevelParam("error")).toBe("error");
+  });
+
+  it("filterAnswerGroups：all 原样，其余过滤并去掉空组", () => {
+    const groups = [
+      { media: "a", items: [{ status: "answered" }, { status: "skipped" }] },
+      { media: "b", items: [{ status: "skipped" }] },
+    ];
+    expect(filterAnswerGroups(groups, "all")).toHaveLength(2);
+    const answered = filterAnswerGroups(groups, "answered");
+    expect(answered).toHaveLength(1);
+    expect(answered[0].items).toHaveLength(1);
+    expect(filterAnswerGroups(groups, "unreadable")).toHaveLength(0);
   });
 });

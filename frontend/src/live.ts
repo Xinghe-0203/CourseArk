@@ -78,3 +78,39 @@ export function focusTask(tasks: Task[]): Task | undefined {
     live[0]
   );
 }
+
+// —— T8.8 日志分页纯函数（TaskDrawer 检索逻辑的可测形态） ——
+
+/** 合并日志页：按 id 去重追加（游标翻页可能与服务端窗口重叠）。 */
+export function appendEventPage<T extends { id: number }>(
+  current: T[],
+  incoming: T[],
+): T[] {
+  const seen = new Set(current.map((event) => event.id));
+  return [...current, ...incoming.filter((event) => !seen.has(event.id))];
+}
+
+/** 游标推进：next_after_id>0 说明服务端还有更多页。 */
+export function moreAfter(_cursor: number, next: number | undefined): boolean {
+  return (next ?? 0) > 0;
+}
+
+/** 日志级别档位 → 服务端 level 参数（all/problem 直传，其余原样）。 */
+export function logLevelParam(stage: string): string | null {
+  if (!stage || stage === "all") return null;
+  return stage;
+}
+
+/** 逐题状态筛选：all 原样，其余按 status 过滤并去掉空组。 */
+export function filterAnswerGroups<T extends { items: { status: string }[] }>(
+  groups: T[],
+  filter: string,
+): T[] {
+  if (filter === "all") return groups;
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => item.status === filter),
+    }))
+    .filter((group) => group.items.length);
+}

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { RefreshCw, Radio, LoaderCircle, ShieldAlert } from "lucide-vue-next";
+import { RefreshCw, Radio, LoaderCircle, ShieldAlert, Search } from "lucide-vue-next";
 import type { AnswerItem, Task, TaskEvent } from "../types";
 import { request } from "../api";
 import { categories, statuses, date, active, terminal } from "../format";
@@ -10,7 +10,13 @@ import {
   groupAnswers,
   summarizeAnswers,
 } from "../answers";
-import { elapsedSeconds, formatDuration, formatEta } from "../live";
+import {
+  elapsedSeconds,
+  formatDuration,
+  formatEta,
+  appendEventPage,
+  filterAnswerGroups,
+} from "../live";
 import { state } from "../store";
 import ModalShell from "./ModalShell.vue";
 const props = defineProps<{ task: Task }>();
@@ -18,7 +24,6 @@ defineEmits<{ close: [] }>();
 const detail = ref(props.task),
   events = ref<TaskEvent[]>([]),
   category = ref(""),
-  level = ref(""),
   error = ref(""),
   follow = ref(false),
   loading = ref(false),
@@ -26,6 +31,12 @@ const detail = ref(props.task),
   chosen = ref(false),
   log = ref<HTMLElement>(),
   expanded = ref<Set<string>>(new Set());
+// —— T8.2 日志检索分页（游标）——
+const logQuery = ref(""),
+  logStage = ref("all"),
+  moreEvents = ref(false),
+  logCursor = ref(0);
+let logStale = false; // 过滤条件变化后置脏，下一次轮询重取首页
 const live = computed(
   () => active(detail.value) || detail.value.status === "paused",
 );
@@ -59,7 +70,6 @@ const filtered = computed(() =>
     (e) =>
       (!category.value ||
         (e.presentation?.category || e.stage) === category.value) &&
-      (!level.value || e.level === level.value) &&
       (tab.value === "logs" ||
         (e.presentation
           ? e.presentation.visible
@@ -96,6 +106,77 @@ function categoryLabel(name: string) {
 function groupPercent(group: { answered: number; total: number }) {
   return group.total ? Math.round((group.answered / group.total) * 100) : 0;
 }
+// —— T8.2 日志分页与检索 ——
+function logFilterParams(cursor: number) {
+  const params = new URLSearchParams();
+  params.set("limit", "200");
+  if (cursor) params.set("after_id", String(cursor));
+  if (category.value) params.set("stage", category.value);
+  if (logStage.value !== "all") params.set("level", logStage.value);
+  if (logQuery.value.trim()) params.set("q", logQuery.value.trim());
+  return params;
+}
+async function reloadLogs() {
+  const id = props.task.id;
+  try {
+    const value = await request<{ items: TaskEvent[]; next_after_id: number }>(
+      `/tasks/${id}/events?${logFilterParams(0).toString()}`,
+    );
+    if (closed || id !== props.task.id) return;
+    events.value = value.items;
+    logCursor.value = value.next_after_id;
+    moreEvents.value = value.next_after_id > 0;
+    logStale = false;
+  } catch {
+    /* 检索失败不打断常规轮询 */
+  }
+}
+async function loadMoreEvents() {
+  if (!logCursor.value) return;
+  const id = props.task.id;
+  try {
+    const value = await request<{ items: TaskEvent[]; next_after_id: number }>(
+      `/tasks/${id}/events?${logFilterParams(logCursor.value).toString()}`,
+    );
+    if (closed || id !== props.task.id) return;
+    events.value = appendEventPage(events.value, value.items);
+    logCursor.value = value.next_after_id;
+    moreEvents.value = value.next_after_id > 0;
+  } catch {
+    /* 同上 */
+  }
+}
+watch([category, logStage, logQuery], () => {
+  logStale = true;
+});
+// —— T8.3 逐题状态筛选 ——
+const answerStatuses: Record<string, string> = {
+  all: "全部状态",
+  answered: "已作答",
+  skipped: "已跳过",
+  unreadable: "未识别",
+};
+const answerStatusFilter = ref<"all" | "answered" | "skipped" | "unreadable">("all");
+const statusFilteredGroups = computed(() =>
+  filterAnswerGroups(groups.value, answerStatusFilter.value),
+);
+// —— T8.5 参数结构化键值表 ——
+const SECRET_KEYS = /(password|token|key|secret)/i;
+type ParamRow = { path: string; value: string; secret: boolean; depth: number };
+function flattenParams(source: unknown, prefix = "", depth = 0, out: ParamRow[] = []) {
+  if (source && typeof source === "object") {
+    for (const [name, raw] of Object.entries(source as Record<string, unknown>)) {
+      const path = prefix ? `${prefix}.${name}` : name;
+      if (raw && typeof raw === "object") flattenParams(raw, path, depth + 1, out);
+      else {
+        const text = raw === undefined || raw === null || raw === "" ? "—" : String(raw);
+        out.push({ path, value: text, secret: SECRET_KEYS.test(path), depth });
+      }
+    }
+  }
+  return out;
+}
+const paramRows = computed(() => flattenParams(detail.value.params));
 function schedule() {
   clearTimeout(timer);
   if (closed) return;
@@ -111,7 +192,8 @@ async function load() {
     const value = await request<Task>(`/tasks/${id}`);
     if (closed || id !== props.task.id) return;
     detail.value = value;
-    events.value = value.events || [];
+    // 日志 tab：条件脏或本地为空时走检索接口取首页；否则沿用详情内嵌事件
+    if (logStale || !events.value.length) await reloadLogs();
     refreshedAt.value = Date.now();
     error.value = "";
     if (!chosen.value && (value.answers?.length || live.value))
@@ -139,6 +221,10 @@ watch(
     events.value = [];
     expanded.value = new Set();
     chosen.value = false;
+    logCursor.value = 0;
+    moreEvents.value = false;
+    logStale = false;
+    answerStatusFilter.value = "all";
     tab.value = live.value ? "answers" : "activity";
     load();
   },
@@ -164,6 +250,16 @@ watch(
       ><span v-if="live" class="live-badge"
         ><i /><Radio :size="12" />实时更新中</span
       >
+    </div>
+    <div v-if="detail.resumed_from" class="resume-chain detail-resume-chain">
+      <span class="resume-chip">续跑自任务 {{ detail.resumed_from.slice(0, 8) }}</span
+      ><button
+        v-if="detail.new_task_id"
+        class="text-link"
+        @click="$emit('close')"
+      >
+        已创建新任务 {{ detail.new_task_id.slice(0, 8) }}
+      </button>
     </div>
     <p v-if="liveLine" class="detail-live-line">
       <LoaderCircle class="spin" :size="13" />{{ liveLine }}
@@ -219,6 +315,17 @@ watch(
       </button>
     </div>
     <template v-if="tab === 'answers'">
+      <div v-if="groups.length" class="filterbar compact answer-filters">
+        <select v-model="answerStatusFilter" aria-label="按题状态筛选">
+          <option value="all">全部状态</option>
+          <option value="answered">已作答</option>
+          <option value="skipped">已跳过</option>
+          <option value="unreadable">未识别</option>
+        </select>
+        <span class="muted answer-filter-count"
+          >{{ statusFilteredGroups.reduce((n, g) => n + g.items.length, 0) }} 题</span
+        >
+      </div>
       <div v-if="groups.length" class="answer-summary">
         <span class="answer-chip strong"
           >作答 {{ summary.answered }}/{{ summary.total || "—" }}</span
@@ -247,8 +354,12 @@ watch(
       <p v-if="groups.length && live" class="muted answer-live">
         <i class="live-dot" />每题作答后立即追加，运行中每 1.5 秒自动同步。
       </p>
-      <div v-if="groups.length" class="answer-groups">
-        <section v-for="group in groups" :key="group.media" class="answer-group">
+      <div v-if="statusFilteredGroups.length" class="answer-groups">
+        <section
+          v-for="group in statusFilteredGroups"
+          :key="group.media"
+          class="answer-group"
+        >
           <header class="answer-group-head">
             <div>
               <h3>{{ group.media }}</h3>
@@ -312,6 +423,13 @@ watch(
           </article>
         </section>
       </div>
+      <div
+        v-else-if="groups.length && !statusFilteredGroups.length"
+        class="empty answer-empty"
+      >
+        <h3>没有「{{ answerStatuses[answerStatusFilter] }}」状态的题目</h3>
+        <p>换个状态筛选，或切回「全部状态」查看所有 {{ answerItems.length }} 题。</p>
+      </div>
       <div v-else class="empty answer-empty">
         <svg
           class="empty-illustration"
@@ -361,13 +479,22 @@ watch(
     </template>
     <template v-else-if="tab !== 'params'"
       ><div class="filterbar compact">
+        <label class="log-search">
+          <Search :size="13" /><input
+            v-model="logQuery"
+            type="search"
+            placeholder="搜索日志内容"
+            aria-label="搜索日志内容"
+          />
+        </label>
         <select v-model="category" aria-label="日志分类">
           <option value="">所有分类</option>
           <option v-for="key in Object.keys(categories)" :key="key" :value="key">
             {{ categoryLabel(key) }}
           </option></select
-        ><select v-model="level" aria-label="日志级别">
-          <option value="">所有级别</option>
+        ><select v-model="logStage" aria-label="日志级别">
+          <option value="all">所有级别</option>
+          <option value="problem">仅问题</option>
           <option value="error">错误</option>
           <option value="warning">需关注</option>
           <option value="info">进度</option>
@@ -384,7 +511,7 @@ watch(
         >
       </div>
       <p class="muted" v-if="tab === 'logs'">
-        显示最近 50 条。分类便于定位问题，完整记录可下载。
+        检索全部记录（{{ events.length }} 条已加载），支持关键词与级别过滤。
       </p>
       <div ref="log" :class="['event-list', { raw: tab === 'logs' }]">
         <article v-for="e in filtered" :key="e.id" :class="['event', e.level]">
@@ -409,11 +536,26 @@ watch(
             </p>
           </div>
         </article>
+        <div v-if="moreEvents" class="load-more">
+          <button class="button small" @click="loadMoreEvents">加载更多</button>
+        </div>
         <div v-if="!filtered.length" class="empty">暂无此类记录</div>
       </div></template
     >
-    <pre v-else class="params-preview">{{
-      JSON.stringify(detail.params, null, 2)
-    }}</pre>
+    <template v-else>
+      <table v-if="paramRows.length" class="params-table">
+        <tbody>
+          <tr v-for="row in paramRows" :key="row.path">
+            <th :style="{ paddingLeft: row.depth * 14 + 8 + 'px' }">
+              {{ row.path }}
+            </th>
+            <td>{{ row.secret ? "••••••" : row.value }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <pre v-else class="params-preview">{{
+        JSON.stringify(detail.params, null, 2)
+      }}</pre>
+    </template>
   </ModalShell>
 </template>

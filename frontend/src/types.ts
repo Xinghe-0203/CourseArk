@@ -157,6 +157,10 @@ export interface Task {
   unfinished_units?: number;
   /** 逐题明细为空时的可读解释（有明细时为 ""）。仅 /tasks/{id} 详情返回。 */
   answers_note?: string;
+  /** 续跑链（T8.6）：本任务由哪个旧任务继续而来（resume 端点回传）。 */
+  resumed_from?: string;
+  /** 续跑链（T8.6）：resume 新建的任务 id（resume 端点回传）。 */
+  new_task_id?: string;
 }
 /** 已完成任务的结果说明：status 与后端给出的可读原因（保证非空）。 */
 export interface CompletedOutcome {
