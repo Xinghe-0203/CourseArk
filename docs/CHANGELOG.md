@@ -72,6 +72,10 @@
   百分比 `text-align: right`；列宽 168→188px（进度页 128→152px）。
 - **390px 下五格数字折成 3+2 留一格空白**：1080px 断点里 `.account-numbers > div:last-child
   { grid-column: span 2 }`，让末格跨两列铺满。
+- **窄屏账号头挤成一团**：1080px 以下 `.workspace-account-head` 仍是
+  `26px minmax(0,1fr) auto auto` 四列，头像、账号名、状态徽标与「创建任务 / 暂停 / 停止 /
+  学习通」六个按钮被压到同一行。断点里改为两列 `26px minmax(0,1fr)`：状态徽标落到第二列
+  `justify-self: start`，`.head-actions` 用 `grid-column: 1 / -1` 独占一行并左对齐。
 
 ### 四、弹窗底部按钮被裁（真实缺陷）
 

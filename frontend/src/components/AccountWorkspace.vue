@@ -1056,6 +1056,20 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
     grid-template-columns: 26px minmax(0, 1fr) 8px;
   }
 
+  .workspace-account-head {
+    grid-template-columns: 26px minmax(0, 1fr);
+  }
+
+  .workspace-account-head .status {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .head-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
   .account-numbers {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
