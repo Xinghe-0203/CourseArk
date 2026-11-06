@@ -208,139 +208,276 @@ function importSource() {
 }
 </script>
 <template>
-  <div class="settings-layout">
-    <nav class="settings-nav" aria-label="设置分类">
-      <button
-        v-for="(name, key) in tabs"
-        :key="key"
-        :class="{ selected: tab === key }"
-        @click="tab = key"
-      >
-        {{ name }}
-      </button>
-    </nav>
-    <form class="settings-panel" @submit.prevent="save">
-      <template v-if="tab === 'learning'"
-        ><h2>默认学习方式</h2>
-        <p class="muted">
-          创建任务时可调整这些参数；已有任务使用各自保存的配置。
-        </p>
-        <h3>视频与章节任务</h3>
-        <ParameterForm
-          :params="form.defaults"
-          feature="course_all"
-        /> </template
-      ><template v-else
-        ><h2>{{ tabs[tab] }}</h2>
-        <p class="muted">{{ tabHints[tab] }}</p>
-        <div class="form-grid">
-          <template v-for="path in fields()" :key="path"
-            ><div
-              v-if="typeof get(path) === 'boolean'"
-              class="settings-switch"
-            >
-              <label class="check"
-                ><input
-                  :checked="get(path)"
-                  type="checkbox"
-                  @change="update($event, path)"
-                />{{ labels[path] }}</label
-              ><small v-if="hints[path]" class="settings-hint">{{
-                hints[path]
-              }}</small>
-            </div>
-            <label v-else class="field"
-              >{{ labels[path]
-              }}<select
-                v-if="choices[path]"
-                :value="get(path) ?? ''"
-                :aria-label="labels[path]"
-                @change="update($event, path)"
-              >
-                <option
-                  v-for="[value, name] in choices[path]"
-                  :key="value"
-                  :value="value"
-                >
-                  {{ name }}
-                </option></select
-              ><input
-                v-else
-                :type="
-                  secret(path)
-                    ? 'password'
-                    : typeof get(path) === 'number'
-                      ? 'number'
-                      : 'text'
-                "
-                :step="typeof get(path) === 'number' ? 'any' : undefined"
-                :value="
-                  Array.isArray(get(path))
-                    ? get(path).join(',')
-                    : (get(path) ?? '')
-                "
-                :aria-label="labels[path]"
-                :placeholder="hasSecret(path) ? '已配置，留空保留' : undefined"
-                @input="update($event, path)"
-              /><small v-if="hasSecret(path)"
-                >已保存 · 输入新值可替换</small
-              ><small v-if="hints[path]" class="settings-hint">{{
-                hints[path]
-              }}</small></label
-            ></template
-          >
-        </div></template
-      >
-      <div class="form-actions">
-        <button class="primary" :disabled="state.busy.has('settings')">
-          <Save :size="16" />保存设置
-        </button>
-        <span
-          v-if="feedback.text"
-          class="settings-feedback"
-          :class="{ failed: !feedback.ok }"
-          role="status"
-          >{{ feedback.text }}</span
+  <div class="settings">
+    <div class="settings-layout">
+      <nav class="settings-nav" aria-label="设置分类">
+        <button
+          v-for="(name, key) in tabs"
+          :key="key"
+          :class="{ selected: tab === key }"
+          @click="tab = key"
         >
-      </div>
-    </form>
-  </div>
-  <details class="advanced">
-    <summary>配置备份与迁移</summary>
-    <div class="button-row">
-      <a class="button" href="/api/settings/export" download
-        ><Download :size="16" />导出设置</a
-      ><label class="button"
-        >导入设置<input
-          type="file"
-          accept=".json"
-          class="file-input"
-          @change="importFile" /></label
-      ><button @click="importSource">从原 CLI 补充空白配置</button>
+          {{ name }}
+        </button>
+      </nav>
+      <form class="settings-panel" @submit.prevent="save">
+        <template v-if="tab === 'learning'">
+          <div class="panel-head">
+            <h2>默认学习方式</h2>
+            <p>创建任务时可调整这些参数；已有任务使用各自保存的配置。</p>
+          </div>
+          <div class="panel-body">
+            <h3>视频与章节任务</h3>
+            <ParameterForm :params="form.defaults" feature="course_all" />
+          </div>
+        </template>
+        <template v-else>
+          <div class="panel-head">
+            <h2>{{ tabs[tab] }}</h2>
+            <p>{{ tabHints[tab] }}</p>
+          </div>
+          <div class="panel-body form-grid">
+            <template v-for="path in fields()" :key="path">
+              <div v-if="typeof get(path) === 'boolean'" class="settings-switch">
+                <label class="check"
+                  ><input
+                    :checked="get(path)"
+                    type="checkbox"
+                    @change="update($event, path)"
+                  />{{ labels[path] }}</label
+                ><small v-if="hints[path]" class="settings-hint">{{
+                  hints[path]
+                }}</small>
+              </div>
+              <label v-else class="field"
+                >{{ labels[path]
+                }}<select
+                  v-if="choices[path]"
+                  :value="get(path) ?? ''"
+                  :aria-label="labels[path]"
+                  @change="update($event, path)"
+                >
+                  <option
+                    v-for="[value, name] in choices[path]"
+                    :key="value"
+                    :value="value"
+                  >
+                    {{ name }}
+                  </option></select
+                ><input
+                  v-else
+                  :type="
+                    secret(path)
+                      ? 'password'
+                      : typeof get(path) === 'number'
+                        ? 'number'
+                        : 'text'
+                  "
+                  :step="typeof get(path) === 'number' ? 'any' : undefined"
+                  :value="
+                    Array.isArray(get(path))
+                      ? get(path).join(',')
+                      : (get(path) ?? '')
+                  "
+                  :aria-label="labels[path]"
+                  :placeholder="hasSecret(path) ? '已配置，留空保留' : undefined"
+                  @input="update($event, path)"
+                /><small v-if="hasSecret(path)">已保存 · 输入新值可替换</small
+                ><small v-if="hints[path]" class="settings-hint">{{
+                  hints[path]
+                }}</small></label
+              >
+            </template>
+          </div>
+        </template>
+        <div class="panel-foot">
+          <button class="primary" :disabled="state.busy.has('settings')">
+            <Save :size="14" />保存设置
+          </button>
+          <span
+            v-if="feedback.text"
+            class="settings-feedback"
+            :class="{ failed: !feedback.ok }"
+            role="status"
+            >{{ feedback.text }}</span
+          >
+        </div>
+      </form>
     </div>
-  </details>
+    <details class="advanced settings-backup">
+      <summary>配置备份与迁移</summary>
+      <div class="button-row">
+        <a class="button" href="/api/settings/export" download
+          ><Download :size="13" />导出设置</a
+        ><label class="button"
+          >导入设置<input
+            type="file"
+            accept=".json"
+            class="file-input"
+            @change="importFile" /></label
+        ><button @click="importSource">从原 CLI 补充空白配置</button>
+      </div>
+    </details>
+  </div>
 </template>
+
 <style scoped>
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  background: var(--surface);
+  position: sticky;
+  top: calc(var(--topbar) + 8px);
+}
+
+.settings-nav button {
+  justify-content: flex-start;
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--r1);
+  background: transparent;
+  font-size: 11.5px;
+  color: var(--ink2);
+}
+
+.settings-nav button:hover:not(:disabled) {
+  background: var(--surface3);
+  border-color: transparent;
+}
+
+.settings-nav button.selected {
+  background: var(--navy-soft);
+  color: var(--navy);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--navy);
+}
+
+.settings-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.panel-head {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface2);
+}
+
+.panel-head h2 {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.panel-head p {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--mute);
+  line-height: 1.55;
+}
+
+.panel-body {
+  padding: 12px 14px 14px;
+}
+
+.panel-body h3 {
+  margin-bottom: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink2);
+}
+
+.panel-body.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 18px;
+}
+
+.panel-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--surface2);
+  position: sticky;
+  bottom: 0;
+}
+
 .settings-switch {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 22px;
+  gap: 3px;
+  min-width: 0;
 }
+
 .settings-switch .check {
   margin-bottom: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink2);
 }
+
 .settings-hint {
-  color: var(--fg-subtle);
-  font-size: 11px;
-  line-height: 1.6;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--faint);
 }
+
 .settings-feedback {
-  margin-left: 14px;
+  font-size: 11.5px;
   color: var(--ok);
-  font-size: 12px;
 }
+
 .settings-feedback.failed {
   color: var(--danger);
+}
+
+.settings-backup {
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  background: var(--surface);
+}
+
+.settings-backup .button-row {
+  margin-top: 8px;
+}
+
+@media (max-width: 1080px) {
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-nav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .panel-body.form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

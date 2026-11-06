@@ -113,32 +113,35 @@ onUnmounted(() => clearTimeout(timer));
         title="浮出独立迷你监控小窗"
         @click="openDesktopMini()"
       >
-        <PictureInPicture2 :size="16" />
+        <PictureInPicture2 :size="13" />
       </button>
       <button
         class="icon-button"
         :aria-label="minimized ? '展开进度小窗' : '最小化进度小窗'"
+        :title="minimized ? '展开进度小窗' : '最小化进度小窗'"
         @click="minimized = !minimized"
       >
-        <ChevronDown :size="16" :class="{ up: minimized }" />
+        <ChevronDown :size="13" :class="{ up: minimized }" />
       </button>
       <button
         class="icon-button"
         aria-label="关闭进度小窗"
+        title="关闭进度小窗"
         @click="closed = true"
       >
-        <X :size="16" />
+        <X :size="13" />
       </button>
     </header>
     <div v-if="!minimized" class="progress-window-body">
       <p class="progress-window-activity">
-        <LoaderCircle class="spin" :size="14" /><span>{{
+        <LoaderCircle class="spin" :size="12" /><span>{{
           activityOf(task)
         }}</span>
       </p>
       <div v-if="percent !== null" class="progress-window-unit">
         <div class="progress-pair">
-          <span>{{ unitLabel || "任务进度" }}</span><b>{{ percent }}%</b>
+          <span>{{ unitLabel || "任务进度" }}</span
+          ><b class="num">{{ percent }}%</b>
         </div>
         <div class="progress-track small">
           <i :style="{ width: percent + '%' }" />
@@ -147,11 +150,11 @@ onUnmounted(() => clearTimeout(timer));
       <dl class="progress-window-meta">
         <div>
           <dt>已用时</dt>
-          <dd>{{ formatDuration(elapsed) }}</dd>
+          <dd class="num">{{ formatDuration(elapsed) }}</dd>
         </div>
         <div>
           <dt>预计剩余</dt>
-          <dd>{{ eta }}</dd>
+          <dd class="num">{{ eta }}</dd>
         </div>
       </dl>
       <div class="progress-window-foot">
@@ -163,3 +166,154 @@ onUnmounted(() => clearTimeout(timer));
     </div>
   </aside>
 </template>
+
+<style scoped>
+.progress-window {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 40;
+  width: 268px;
+  border: 1px solid var(--line2);
+  border-radius: var(--r3);
+  background: var(--surface);
+  box-shadow: 0 6px 20px rgba(21, 25, 31, 0.14);
+  overflow: hidden;
+}
+
+.progress-window-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface2);
+}
+
+.progress-window.minimized .progress-window-head {
+  border-bottom: 0;
+}
+
+.progress-window-title {
+  display: grid;
+  gap: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.progress-window-title strong {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-window-title small {
+  font-size: 9.5px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-window-head .icon-button {
+  width: 22px;
+  height: 22px;
+}
+
+.progress-window-head .icon-button.up :deep(svg) {
+  transform: rotate(180deg);
+}
+
+.progress-window-head .icon-button svg.up {
+  transform: rotate(180deg);
+}
+
+.progress-window-body {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+}
+
+.progress-window-activity {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink2);
+  line-height: 1.45;
+}
+
+.progress-window-activity span {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.progress-window-unit {
+  display: grid;
+  gap: 3px;
+}
+
+.progress-window-unit .progress-pair {
+  font-size: 10.5px;
+  color: var(--mute);
+}
+
+.progress-window-unit .progress-pair b {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.progress-window-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.progress-window-meta > div {
+  padding: 4px 7px;
+  background: var(--surface);
+}
+
+.progress-window-meta dt {
+  font-size: 9.5px;
+  color: var(--faint);
+}
+
+.progress-window-meta dd {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.progress-window-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.progress-window-foot .text-link {
+  font-size: 10.5px;
+}
+
+@media (max-width: 760px) {
+  .progress-window {
+    right: 8px;
+    bottom: 8px;
+    width: calc(100vw - 16px);
+  }
+}
+</style>

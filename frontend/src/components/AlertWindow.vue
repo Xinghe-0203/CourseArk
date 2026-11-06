@@ -25,27 +25,37 @@ const resuming = computed(() => new Set([...state.busy]));
     @mousedown="focusWindow('alerts')"
   >
     <header class="float-window-head">
-      <span class="live-dot"></span>
+      <span class="live-dot warn"></span>
       <strong>任务告警</strong>
       <button
         class="icon-button"
         :aria-label="win.minimized ? '展开告警小窗' : '最小化告警小窗'"
+        :title="win.minimized ? '展开告警小窗' : '最小化告警小窗'"
         @click="toggleMinimized('alerts')"
       >
         {{ win.minimized ? "展开" : "最小化" }}
       </button>
-      <button class="icon-button" aria-label="关闭告警小窗" @click="closeWindow('alerts')">
-        <X :size="16" />
+      <button
+        class="icon-button"
+        aria-label="关闭告警小窗"
+        title="关闭告警小窗"
+        @click="closeWindow('alerts')"
+      >
+        <X :size="13" />
       </button>
     </header>
     <div v-if="!win.minimized" class="float-window-body">
-      <p v-if="!items.length" class="empty">暂无告警。任务失败或中断时会出现在这里。</p>
+      <p v-if="!items.length" class="float-empty">
+        暂无告警。任务失败或中断时会出现在这里。
+      </p>
       <ul v-else class="alert-list">
         <li v-for="item in items" :key="item.key">
-          <b>{{ item.title }}</b>
-          <p>{{ item.message }}</p>
+          <div class="alert-head">
+            <b>{{ item.title }}</b>
+            <time class="num">{{ date(item.ts) }}</time>
+          </div>
+          <p class="alert-message">{{ item.message }}</p>
           <div class="alert-actions">
-            <time>{{ date(item.ts) }}</time>
             <button
               class="button small"
               :disabled="resuming.has(`resume-${item.taskId}`)"
@@ -53,7 +63,9 @@ const resuming = computed(() => new Set([...state.busy]));
             >
               继续执行
             </button>
-            <button class="text-link" @click="dismissAlert(item.key)">忽略</button>
+            <button class="text-link" @click="dismissAlert(item.key)">
+              忽略
+            </button>
           </div>
         </li>
       </ul>

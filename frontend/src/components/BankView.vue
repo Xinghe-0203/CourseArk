@@ -32,6 +32,9 @@ const items = ref<BankItem[]>([]),
 const stats = ref<BankStats | null>(null);
 const hitRate = computed(() => {
   const value = stats.value?.hit_rate;
+  // 后端 hit_rate = hits / lookups；lookups 为 0 时它必然算出 0%，
+  // 直接显示 0% 会让人误以为「缓存完全没用」，所以这里显示占位符。
+  if (!stats.value?.lookups) return "—";
   return typeof value === "number" ? `${Math.round(value * 100)}%` : "—";
 });
 const questionTypes = ["单选题", "多选题", "判断题", "填空题", "简答题"];
@@ -148,239 +151,419 @@ function clearBank() {
 }
 </script>
 <template>
-  <div class="section-heading cache-heading">
-    <div>
-      <p class="muted">
-        共 <b>{{ total }}</b> 条答题缓存 · 命中缓存的题目不再重复调用 AI
-      </p>
-      <p class="muted cache-hint">
-        缓存来自 AI 验证过的答案；可在偏好设置中关闭自动保存。
-      </p>
-    </div>
-    <div class="button-row">
-      <button
-        class="icon-button"
-        aria-label="刷新缓存"
-        @click="
-          load();
-          loadStats();
-        "
-      >
-        <RefreshCw :size="16" :class="{ spin: loading }" /></button
-      ><a class="button" href="/api/question-bank/export?format=json" download
-        ><Download :size="16" />导出 JSON</a
-      ><a class="button" href="/api/question-bank/export?format=csv" download
-        ><Download :size="16" />导出 CSV</a
-      ><button class="primary" @click="show = true">
-        <Upload :size="16" />导入缓存</button
-      ><button
-        class="danger"
-        :disabled="!total || state.busy.has('clear-bank')"
-        @click="clearing = true"
-      >
-        <Eraser :size="16" />清空全部
-      </button>
-    </div>
-  </div>
-  <div v-if="stats" class="metrics bank-stats">
-    <div>
-      <span>缓存题目</span><strong>{{ stats.total }}<small>条</small></strong>
-      <p>近 30 天新增 {{ stats.recent_count }} 条</p>
-    </div>
-    <div>
-      <span>命中次数</span><strong>{{ stats.hits }}<small>次</small></strong>
-      <p>共查询 {{ stats.lookups }} 次</p>
-    </div>
-    <div>
-      <span>命中率</span><strong>{{ hitRate }}</strong>
-      <p>命中后不再调用 AI</p>
-    </div>
-  </div>
-  <div class="filterbar">
-    <label class="search"
-      ><Search :size="17" /><input
-        v-model="query"
-        placeholder="搜索题干内容"
-        aria-label="搜索答题缓存" /></label
-    ><select v-model="type" aria-label="题型筛选">
-      <option value="">所有题型</option>
-      <option v-for="t in questionTypes" :key="t" :value="t">{{ t }}</option>
-    </select>
-  </div>
-  <p v-if="error" class="alert error">{{ error }}</p>
-  <div class="bank-list cache-list">
-    <article v-for="item in items" :key="item.hash" class="bank-item">
-      <span class="tag">{{ item.question_type || "未分类" }}</span>
+  <div class="bank">
+    <div class="section-heading">
       <div>
-        <h3>{{ item.question_text }}</h3>
-        <details v-if="item.options?.length">
-          <summary>查看选项</summary>
-          <p v-for="(opt, i) in item.options" :key="i">{{ opt }}</p>
-        </details>
-        <p class="bank-answer">
-          答案 <b>{{ item.answer }}</b>
+        <h2>缓存题目</h2>
+        <p class="muted">
+          共 <b class="num">{{ total }}</b> 条缓存 · 命中后不再重复调用 AI
         </p>
       </div>
-      <button class="icon-button" aria-label="删除缓存" @click="remove = item">
-        <Trash2 :size="16" />
-      </button>
-    </article>
-    <div v-if="!items.length && !loading" class="empty cache-empty">
-      <svg
-        class="empty-illustration"
-        viewBox="0 0 96 96"
-        fill="none"
-        aria-hidden="true"
-      >
-        <ellipse
-          cx="48"
-          cy="36"
-          rx="26"
-          ry="10"
-          fill="var(--surface)"
-          stroke="var(--fg-subtle)"
-          stroke-width="2"
-        />
-        <path
-          d="M22 36v22c0 5.5 11.6 10 26 10s26-4.5 26-10V36"
-          stroke="var(--fg-subtle)"
-          stroke-width="2"
-          fill="var(--surface)"
-        />
-        <path
-          d="M22 47c0 5.5 11.6 10 26 10s26-4.5 26-10"
-          stroke="var(--fg-subtle)"
-          stroke-width="2"
-        />
-        <path
-          d="M62 68l6 6 12-13"
-          stroke="var(--ok)"
-          stroke-width="3.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
-      <h3>{{ query || type ? "没有匹配的答题缓存" : "答题缓存是空的" }}</h3>
-      <p v-if="query || type">
-        换个关键词，或清空筛选条件后再试。
-      </p>
-      <p v-else>
-        开启「自动保存已验证的答案」后，AI 答对的题目会自动记在这里；也可以导入
-        JSON / CSV / SQLite 缓存。
-      </p>
+      <div class="button-row">
+        <button
+          class="icon-button"
+          aria-label="刷新缓存"
+          title="刷新缓存"
+          @click="
+            load();
+            loadStats();
+          "
+        >
+          <RefreshCw :size="14" :class="{ spin: loading }" /></button
+        ><a class="button" href="/api/question-bank/export?format=json" download
+          ><Download :size="13" />导出 JSON</a
+        ><a class="button" href="/api/question-bank/export?format=csv" download
+          ><Download :size="13" />导出 CSV</a
+        ><button class="primary" @click="show = true">
+          <Upload :size="13" />导入缓存</button
+        ><button
+          class="danger"
+          :disabled="!total || state.busy.has('clear-bank')"
+          @click="clearing = true"
+        >
+          <Eraser :size="13" />清空全部
+        </button>
+      </div>
     </div>
-  </div>
-  <div v-if="total" class="pagination">
-    <button :disabled="!offset" @click="offset = Math.max(0, offset - 50)">
-      上一页</button
-    ><span
-      >{{ offset + 1 }}—{{ Math.min(offset + 50, total) }} / {{ total }}</span
-    ><button :disabled="offset + 50 >= total" @click="offset += 50">
-      下一页
-    </button>
-  </div>
-  <ModalShell v-if="show" title="导入答题缓存" wide @close="show = false"
-    ><p class="muted">
-      支持 JSON、CSV 与 SQLite 缓存。SQLite 可一并选择对应的 -wal / -shm
-      文件；导入前先预览，不影响已有缓存。
-    </p>
-    <label class="field"
-      >选择文件<input
-        type="file"
-        multiple
-        accept=".json,.csv,.db,.db-wal,.db-shm"
-        @change="selected" /></label
-    ><label class="field"
-      >或填写服务器本地缓存路径<input
-        v-model="sourcePath"
-        placeholder="留空使用下方内容" /></label
-    ><template
-      v-if="
-        !sourcePath &&
-        (!files.length || !files[0]!.name.toLowerCase().endsWith('.db'))
-      "
-      ><label class="field"
-        >内容格式<select v-model="format">
-          <option value="json">JSON</option>
-          <option value="csv">CSV</option>
-        </select></label
-      ><label class="field"
-        >缓存内容<textarea
-          v-model="content"
-          rows="8"
-          placeholder='[{"question_text":"题目","answer":"A","options":["A.甲","B.乙"]}]'
-        /></label></template
-    ><label class="check"
-      ><input
-        v-model="overwrite"
-        type="checkbox"
-      />覆盖缓存中已存在的相同题目</label
-    >
-    <div v-if="preview" class="import-preview">
-      <b
-        >已识别 {{ preview.parsed || 0 }} 道题 · 新增 {{ preview.new || 0 }} ·
-        重复 {{ preview.duplicate || 0 }}</b
-      >
-      <p v-if="preview.error_count">
-        {{ preview.error_count }} 项内容有问题，导入时会跳过。
-      </p>
-      <p v-for="(e, i) in preview.errors" :key="i">{{ e }}</p>
+    <div v-if="stats" class="bank-stats">
+      <div>
+        <span>缓存题目</span
+        ><strong class="num">{{ stats.total }}<small>条</small></strong
+        ><em>近 30 天新增 {{ stats.recent_count }}</em>
+      </div>
+      <div>
+        <span>命中次数</span
+        ><strong class="num">{{ stats.hits }}<small>次</small></strong
+        ><em>命中缓存、未调用 AI</em>
+      </div>
+      <div>
+        <span>命中率</span><strong class="num">{{ hitRate }}</strong
+        ><em>{{
+          stats.lookups
+            ? `命中 ${stats.hits} / 查询 ${stats.lookups}`
+            : "还没有查询记录"
+        }}</em>
+      </div>
     </div>
-    <div class="form-actions">
-      <button
-        :disabled="state.busy.has('import-bank')"
-        @click="act('import-bank', () => importBank(true), '预览已生成')"
-      >
-        检查并预览</button
-      ><button
-        class="primary"
-        :disabled="!preview?.parsed || state.busy.has('import-bank')"
-        @click="act('import-bank', () => importBank(false), '缓存已导入')"
-      >
-        确认导入
+    <div class="filterbar">
+      <label class="search"
+        ><Search :size="14" /><input
+          v-model="query"
+          placeholder="搜索题干内容"
+          aria-label="搜索答题缓存" /></label
+      ><select v-model="type" aria-label="题型筛选">
+        <option value="">所有题型</option>
+        <option v-for="t in questionTypes" :key="t" :value="t">{{ t }}</option>
+      </select>
+    </div>
+    <p v-if="error" class="alert error">{{ error }}</p>
+    <div class="bank-list">
+      <article v-for="item in items" :key="item.hash" class="bank-item">
+        <span class="tag">{{ item.question_type || "未分类" }}</span>
+        <div class="bank-main">
+          <p class="bank-question">{{ item.question_text }}</p>
+          <details v-if="item.options?.length">
+            <summary>查看选项</summary>
+            <p v-for="(opt, i) in item.options" :key="i">{{ opt }}</p>
+          </details>
+        </div>
+        <p class="bank-answer">{{ item.answer }}</p>
+        <button
+          class="icon-button"
+          aria-label="删除缓存"
+          title="删除这条缓存"
+          @click="remove = item"
+        >
+          <Trash2 :size="14" />
+        </button>
+      </article>
+      <div v-if="!items.length && !loading" class="empty">
+        <svg
+          class="empty-illustration"
+          viewBox="0 0 96 96"
+          fill="none"
+          aria-hidden="true"
+        >
+          <ellipse
+            cx="48"
+            cy="36"
+            rx="26"
+            ry="10"
+            fill="var(--surface)"
+            stroke="var(--fg-subtle)"
+            stroke-width="2"
+          />
+          <path
+            d="M22 36v22c0 5.5 11.6 10 26 10s26-4.5 26-10V36"
+            stroke="var(--fg-subtle)"
+            stroke-width="2"
+            fill="var(--surface)"
+          />
+          <path
+            d="M22 47c0 5.5 11.6 10 26 10s26-4.5 26-10"
+            stroke="var(--fg-subtle)"
+            stroke-width="2"
+          />
+          <path
+            d="M62 68l6 6 12-13"
+            stroke="var(--ok)"
+            stroke-width="3.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <h3>{{ query || type ? "没有匹配的答题缓存" : "答题缓存是空的" }}</h3>
+        <p v-if="query || type">换个关键词，或清空筛选条件后再试。</p>
+        <p v-else>
+          开启「自动保存已验证的答案」后，AI 答对的题目会自动记在这里；也可以导入
+          JSON / CSV / SQLite 缓存。
+        </p>
+      </div>
+    </div>
+    <div v-if="total" class="pagination">
+      <button :disabled="!offset" @click="offset = Math.max(0, offset - 50)">
+        上一页</button
+      ><span
+        >{{ offset + 1 }}—{{ Math.min(offset + 50, total) }} / {{ total }}</span
+      ><button :disabled="offset + 50 >= total" @click="offset += 50">
+        下一页
       </button>
-    </div></ModalShell
-  ><ModalShell v-if="remove" title="删除这条缓存" @close="remove = null"
-    ><p>{{ remove.question_text }}</p>
-    <p class="muted">删除后该题再次遇到时会重新调用 AI。</p>
-    <div class="form-actions">
-      <button @click="remove = null">取消</button
-      ><button
-        class="danger"
-        :disabled="state.busy.has('delete-question')"
-        @click="
-          act(
-            'delete-question',
-            async () => {
-              await request('/question-bank/' + remove!.hash, 'DELETE');
-              remove = null;
-              await load();
-              loadStats();
-            },
-            '缓存已删除',
-          )
+    </div>
+    <ModalShell v-if="show" title="导入答题缓存" wide @close="show = false"
+      ><p class="muted">
+        支持 JSON、CSV 与 SQLite 缓存。SQLite 可一并选择对应的 -wal / -shm
+        文件；导入前先预览，不影响已有缓存。
+      </p>
+      <label class="field"
+        >选择文件<input
+          type="file"
+          multiple
+          accept=".json,.csv,.db,.db-wal,.db-shm"
+          @change="selected" /></label
+      ><label class="field"
+        >或填写服务器本地缓存路径<input
+          v-model="sourcePath"
+          placeholder="留空使用下方内容" /></label
+      ><template
+        v-if="
+          !sourcePath &&
+          (!files.length || !files[0]!.name.toLowerCase().endsWith('.db'))
         "
+        ><label class="field"
+          >内容格式<select v-model="format">
+            <option value="json">JSON</option>
+            <option value="csv">CSV</option>
+          </select></label
+        ><label class="field"
+          >缓存内容<textarea
+            v-model="content"
+            rows="8"
+            placeholder='[{"question_text":"题目","answer":"A","options":["A.甲","B.乙"]}]'
+          /></label></template
+      ><label class="check"
+        ><input
+          v-model="overwrite"
+          type="checkbox"
+        />覆盖缓存中已存在的相同题目</label
       >
-        删除缓存
-      </button>
-    </div></ModalShell
-  ><ModalShell v-if="clearing" title="清空全部答题缓存" @close="clearing = false"
-    ><p>
-      即将删除全部 <b>{{ total }}</b> 条答题缓存，删除后无法恢复。
-    </p>
-    <p class="muted">
-      建议先导出备份。已有任务的历史记录不受影响，但之后的相同题目会重新调用
-      AI。
-    </p>
-    <div class="form-actions">
-      <button @click="clearing = false">取消</button
-      ><button
-        class="danger"
-        :disabled="state.busy.has('clear-bank')"
-        @click="clearBank"
-      >
-        {{ state.busy.has("clear-bank") ? "正在清空…" : "确认清空全部" }}
-      </button>
-    </div></ModalShell
-  >
+      <div v-if="preview" class="import-preview">
+        <b
+          >已识别 {{ preview.parsed || 0 }} 道题 · 新增 {{ preview.new || 0 }} ·
+          重复 {{ preview.duplicate || 0 }}</b
+        >
+        <p v-if="preview.error_count">
+          {{ preview.error_count }} 项内容有问题，导入时会跳过。
+        </p>
+        <p v-for="(e, i) in preview.errors" :key="i">{{ e }}</p>
+      </div>
+      <div class="form-actions">
+        <button
+          :disabled="state.busy.has('import-bank')"
+          @click="act('import-bank', () => importBank(true), '预览已生成')"
+        >
+          检查并预览</button
+        ><button
+          class="primary"
+          :disabled="!preview?.parsed || state.busy.has('import-bank')"
+          @click="act('import-bank', () => importBank(false), '缓存已导入')"
+        >
+          确认导入
+        </button>
+      </div></ModalShell
+    ><ModalShell v-if="remove" title="删除这条缓存" @close="remove = null"
+      ><p>{{ remove.question_text }}</p>
+      <p class="muted">删除后该题再次遇到时会重新调用 AI。</p>
+      <div class="form-actions">
+        <button @click="remove = null">取消</button
+        ><button
+          class="danger"
+          :disabled="state.busy.has('delete-question')"
+          @click="
+            act(
+              'delete-question',
+              async () => {
+                await request('/question-bank/' + remove!.hash, 'DELETE');
+                remove = null;
+                await load();
+                loadStats();
+              },
+              '缓存已删除',
+            )
+          "
+        >
+          删除缓存
+        </button>
+      </div></ModalShell
+    ><ModalShell v-if="clearing" title="清空全部答题缓存" @close="clearing = false"
+      ><p>
+        即将删除全部 <b>{{ total }}</b> 条答题缓存，删除后无法恢复。
+      </p>
+      <p class="muted">
+        建议先导出备份。已有任务的历史记录不受影响，但之后的相同题目会重新调用
+        AI。
+      </p>
+      <div class="form-actions">
+        <button @click="clearing = false">取消</button
+        ><button
+          class="danger"
+          :disabled="state.busy.has('clear-bank')"
+          @click="clearBank"
+        >
+          {{ state.busy.has("clear-bank") ? "正在清空…" : "确认清空全部" }}
+        </button>
+      </div></ModalShell
+    >
+  </div>
 </template>
+
+<style scoped>
+.bank {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.section-heading {
+  align-items: flex-start;
+}
+
+.section-heading h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.section-heading p {
+  margin-top: 2px;
+  font-size: 11.5px;
+}
+
+.bank-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.bank-stats > div {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 2px 8px;
+  padding: 8px 11px;
+  background: var(--surface);
+}
+
+.bank-stats span {
+  grid-column: 1 / -1;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+}
+
+.bank-stats strong {
+  font-family: var(--font-num);
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+.bank-stats strong small {
+  margin-left: 2px;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--faint);
+}
+
+.bank-stats em {
+  font-size: 10.5px;
+  font-style: normal;
+  color: var(--mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bank-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.bank-list:empty {
+  display: none;
+}
+
+.bank-item {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) minmax(0, 190px) 28px;
+  align-items: start;
+  gap: 10px;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--line);
+}
+
+.bank-item:last-child {
+  border-bottom: 0;
+}
+
+.bank-item:hover {
+  background: var(--surface2);
+}
+
+.bank-item .tag {
+  justify-self: start;
+  margin-top: 1px;
+}
+
+.bank-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.bank-question {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.bank-main details {
+  font-size: 10.5px;
+  color: var(--mute);
+}
+
+.bank-main details p {
+  margin: 1px 0 0;
+}
+
+.bank-answer {
+  justify-self: start;
+  max-width: 100%;
+  margin: 0;
+  padding: 2px 7px;
+  border-radius: var(--r1);
+  background: var(--ok-soft);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ok);
+  overflow-wrap: anywhere;
+}
+
+.bank-item .icon-button {
+  width: 26px;
+  height: 26px;
+}
+
+.empty {
+  border: 0;
+  border-radius: 0;
+  padding: 28px 16px;
+}
+
+@media (max-width: 1080px) {
+  .bank-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bank-item {
+    grid-template-columns: 58px minmax(0, 1fr) 26px;
+  }
+
+  .bank-answer {
+    grid-column: 2;
+  }
+
+  .bank-item .icon-button {
+    grid-row: 1;
+    grid-column: 3;
+  }
+}
+</style>

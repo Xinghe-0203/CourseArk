@@ -5,7 +5,6 @@ import {
   ExternalLink,
   FileText,
   Inbox,
-  Layers,
   Plus,
   Search,
   Timer,
@@ -196,337 +195,415 @@ function changeSize(event: Event) {
 const rowNoteFallback = "状态筛选结果不含逐题汇总，点「查看详情」可查看逐题与日志。";
 </script>
 <template>
-  <div class="filterbar completed-filterbar">
-    <label class="search"
-      ><Search :size="17" /><input
-        v-model="query"
-        placeholder="搜索课程或账号"
-        aria-label="搜索已完成任务" /></label
-    ><select v-model="account" aria-label="已完成账号筛选">
-      <option value="">所有账号</option>
-      <option v-for="a in state.accounts" :key="a.id" :value="a.id">
-        {{ a.label || a.username }}
-      </option></select
-    ><select v-model="feature" aria-label="已完成功能筛选">
-      <option value="">全部功能</option>
-      <option v-for="(name, key) in features" :key="key" :value="key">
-        {{ name }}
-      </option></select
-    ><select v-model="status" aria-label="已完成状态筛选">
-      <option value="">全部结果</option>
-      <option v-for="[value, name] in statusOptions" :key="value" :value="value">
-        {{ name }}
-      </option></select
-    ><label class="completed-size"
-      ><span>每页</span
-      ><select
-        :value="pageSize"
-        aria-label="已完成每页条数"
-        @change="changeSize"
+  <div class="completed">
+    <div class="filterbar completed-filterbar">
+      <label class="search"
+        ><Search :size="14" /><input
+          v-model="query"
+          placeholder="搜索课程或账号"
+          aria-label="搜索已完成任务" /></label
+      ><select v-model="account" aria-label="已完成账号筛选">
+        <option value="">所有账号</option>
+        <option v-for="a in state.accounts" :key="a.id" :value="a.id">
+          {{ a.label || a.username }}
+        </option></select
+      ><select v-model="feature" aria-label="已完成功能筛选">
+        <option value="">全部功能</option>
+        <option v-for="(name, key) in features" :key="key" :value="key">
+          {{ name }}
+        </option></select
+      ><select v-model="status" aria-label="已完成状态筛选">
+        <option value="">全部结果</option>
+        <option
+          v-for="[value, name] in statusOptions"
+          :key="value"
+          :value="value"
+        >
+          {{ name }}
+        </option></select
+      ><label class="completed-size"
+        ><span>每页</span
+        ><select
+          :value="pageSize"
+          aria-label="已完成每页条数"
+          @change="changeSize"
+        >
+          <option v-for="n in sizeOptions" :key="n" :value="n">
+            {{ n }} 条
+          </option>
+        </select></label
       >
-        <option v-for="n in sizeOptions" :key="n" :value="n">
-          {{ n }} 条
-        </option>
-      </select></label
+    </div>
+    <div
+      v-if="loadError"
+      class="alert error completed-load-error"
+      role="alert"
     >
-  </div>
-  <div v-if="loadError" class="alert error completed-load-error" role="alert">
-    <span>读取已完成任务失败：{{ loadError }}</span
-    ><button type="button" @click="load">重新读取</button>
-  </div>
-  <div v-if="loading" class="empty completed-loading">正在读取已完成任务…</div>
-  <div v-else class="completed-list">
-    <article v-for="task in filtered" :key="task.id" class="completed-row">
-      <div class="completed-head">
+      <span>读取已完成任务失败：{{ loadError }}</span
+      ><button type="button" @click="load">重新读取</button>
+    </div>
+    <div v-if="loading" class="empty completed-loading">
+      正在读取已完成任务…
+    </div>
+    <div v-else class="completed-list">
+      <div v-if="filtered.length" class="completed-head-row" aria-hidden="true">
+        <span>结果</span><span>课程与任务</span><span>逐题概要</span
+        ><span>耗时与时间</span><span />
+      </div>
+      <article v-for="task in filtered" :key="task.id" class="completed-row">
         <span :class="['status', task.status]"
           ><i />{{ statuses[task.status] || task.status }}</span
         >
         <button class="completed-title" @click="openDetail(task)">
-          <span class="course-icon"><Layers :size="18" /></span
-          ><span
-            ><b>{{ task.course_name || "未命名课程" }}</b
-            ><small
-              >{{ task.feature_label || features[task.feature] || task.feature }} ·
-              {{ task.account_label || "未命名账号" }}</small
-            ></span
+          <b>{{ task.course_name || "未命名课程" }}</b>
+          <small
+            >{{ task.feature_label || features[task.feature] || task.feature }}
+            · {{ task.account_label || "未命名账号" }} ·
+            {{ date(task.finished_at) }}</small
           >
         </button>
-        <div class="completed-when">
-          <span>开始 {{ date(task.started_at) }}</span>
-          <span>结束 {{ date(task.finished_at) }}</span>
-          <span class="completed-duration"
-            ><Timer :size="13" />耗时 {{ durationText(task) }}</span
-          >
-        </div>
-      </div>
-      <div class="completed-body">
-        <p v-if="rowNote(task)" class="alert completed-note" role="status">
-          {{ rowNote(task) }}
-        </p>
-        <p v-if="task.exam" class="completed-exam">
-          <FileText :size="14" /><span
-            ><b>{{ task.exam.title || "考试" }}</b
-            ><small v-if="task.exam.exam_id"
-              >编号 {{ task.exam.exam_id }}</small
-            ><em v-if="task.exam.already_done">已交卷</em> · {{ EXAM_NOTE }}</span
-          ><a
-            v-if="task.exam.url"
-            :href="task.exam.url"
-            target="_blank"
-            rel="noreferrer"
-            >打开考试地址<ExternalLink :size="12" /></a
-          >
-        </p>
-        <div class="completed-answers">
-          <span class="completed-answers-label">逐题概要</span>
+        <p class="completed-answers">
           <span class="completed-answers-text">{{ answersText(task) }}</span>
+        </p>
+        <div class="completed-when">
+          <span class="completed-duration"
+            ><Timer :size="12" />{{ durationText(task) }}</span
+          >
+          <small class="num"
+            >{{ date(task.started_at) }} → {{ date(task.finished_at) }}</small
+          >
         </div>
         <button
-          class="text-link completed-more"
+          class="icon-button completed-more"
           aria-label="查看任务详情"
+          title="查看任务详情"
           @click="openDetail(task)"
         >
-          查看详情<ChevronRight :size="14" />
+          <ChevronRight :size="14" />
         </button>
-      </div>
-    </article>
-    <div v-if="!filtered.length" class="empty completed-empty">
-      <Inbox :size="30" />
-      <h3>
-        {{
-          hasFilters ? "当前筛选条件下没有已完成的任务" : "还没有已完成的任务"
-        }}
-      </h3>
-      <p v-if="hasFilters">
-        换一个关键词或清空筛选，可以看到全部已结束的任务。
-      </p>
-      <p v-else>
-        跑完第一个学习任务后，这里会汇总课程、耗时、逐题明细与失败原因。
-      </p>
-      <div class="button-row">
-        <button v-if="hasFilters" class="button" @click="clearFilters">
-          清空筛选条件
-        </button>
-        <button v-else class="primary" @click="navigate('tasks')">
-          <Plus :size="16" />去新建学习任务
-        </button>
+        <div v-if="rowNote(task) || task.exam" class="completed-body">
+          <p v-if="rowNote(task)" class="completed-note" role="status">
+            {{ rowNote(task) }}
+          </p>
+          <p v-if="task.exam" class="completed-exam">
+            <FileText :size="13" /><b>{{ task.exam.title || "考试" }}</b
+            ><small v-if="task.exam.exam_id">编号 {{ task.exam.exam_id }}</small
+            ><em v-if="task.exam.already_done">已交卷</em>
+            <span class="completed-exam-note">{{ EXAM_NOTE }}</span
+            ><a
+              v-if="task.exam.url"
+              :href="task.exam.url"
+              target="_blank"
+              rel="noreferrer"
+              >打开考试地址<ExternalLink :size="11" /></a
+            >
+          </p>
+        </div>
+      </article>
+      <div v-if="!filtered.length" class="empty completed-empty">
+        <Inbox :size="26" />
+        <h3>
+          {{
+            hasFilters ? "当前筛选条件下没有已完成的任务" : "还没有已完成的任务"
+          }}
+        </h3>
+        <p v-if="hasFilters">
+          换一个关键词或清空筛选，可以看到全部已结束的任务。
+        </p>
+        <p v-else>
+          跑完第一个学习任务后，这里会汇总课程、耗时、逐题明细与失败原因。
+        </p>
+        <div class="button-row">
+          <button v-if="hasFilters" class="button" @click="clearFilters">
+            清空筛选条件
+          </button>
+          <button v-else class="primary" @click="navigate('tasks')">
+            <Plus :size="14" />去新建学习任务
+          </button>
+        </div>
       </div>
     </div>
-  </div>
-  <div v-if="status" class="completed-scope">
-    <span
-      >正在最近 {{ requestLimit }} 条已结束任务中筛选，命中
-      {{ filtered.length }} 条。</span
-    >
-    <span v-if="statusCapped"
-      >更早的任务未参与筛选，可缩小账号或功能范围后再试。</span
-    >
-    <span>{{ rowNoteFallback }} </span>
-  </div>
-  <div v-if="paginable" class="pagination">
-    <button
-      type="button"
-      :disabled="offset === 0"
-      @click="offset = Math.max(0, offset - pageSize)"
-    >
-      上一页
-    </button>
-    <span>{{ offset + 1 }}—{{ Math.min(offset + pageSize, total) }} / {{ total }}</span>
-    <button
-      type="button"
-      :disabled="offset + pageSize >= total"
-      @click="offset += pageSize"
-    >
-      下一页
-    </button>
+    <div v-if="status" class="completed-scope">
+      <span
+        >正在最近 {{ requestLimit }} 条已结束任务中筛选，命中
+        {{ filtered.length }} 条。</span
+      >
+      <span v-if="statusCapped"
+        >更早的任务未参与筛选，可缩小账号或功能范围后再试。</span
+      >
+      <span>{{ rowNoteFallback }}</span>
+    </div>
+    <div v-if="paginable" class="pagination">
+      <button
+        type="button"
+        :disabled="offset === 0"
+        @click="offset = Math.max(0, offset - pageSize)"
+      >
+        上一页
+      </button>
+      <span
+        >{{ offset + 1 }}—{{ Math.min(offset + pageSize, total) }} /
+        {{ total }}</span
+      >
+      <button
+        type="button"
+        :disabled="offset + pageSize >= total"
+        @click="offset += pageSize"
+      >
+        下一页
+      </button>
+    </div>
   </div>
 </template>
+
 <style scoped>
+.completed {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .completed-filterbar {
   align-items: center;
 }
+
 .completed-size {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  color: var(--fg-muted);
+  gap: 5px;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.completed-size select {
+  height: 26px;
+  width: auto;
   font-size: 11.5px;
 }
-.completed-size select {
-  height: 40px;
-}
+
 .completed-load-error {
   justify-content: space-between;
 }
-.completed-loading {
-  margin-bottom: 20px;
-}
-.completed-scope {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  margin: 0 0 14px;
-  color: var(--fg-subtle);
-  font-size: 11.5px;
-}
+
 .completed-list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  background: var(--surface);
+  overflow: hidden;
 }
+
+.completed-head-row,
 .completed-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
-  padding: 18px 22px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-}
-.completed-head {
-  display: flex;
-  flex-wrap: wrap;
+  grid-template-columns:
+    74px minmax(0, 1.5fr) minmax(0, 1.7fr) minmax(0, 200px) 30px;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
+  padding: 0 11px;
 }
+
+.completed-head-row {
+  height: 28px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface2);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--faint);
+  text-transform: uppercase;
+}
+
+.completed-row {
+  align-items: start;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.completed-row:last-child {
+  border-bottom: 0;
+}
+
+.completed-row:hover {
+  background: var(--surface2);
+}
+
+.completed-row .status {
+  justify-self: start;
+  margin-top: 2px;
+}
+
 .completed-title {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 12px;
-  min-width: 200px;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
   text-align: left;
 }
-.completed-title:hover {
+
+.completed-title:hover:not(:disabled) {
   background: transparent;
+  border-color: transparent;
 }
+
 .completed-title b {
-  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
   overflow: hidden;
-  color: var(--fg);
-  font-size: 13.5px;
-  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .completed-title small {
-  display: block;
-  margin-top: 5px;
+  font-size: 10.5px;
+  color: var(--faint);
   overflow: hidden;
-  color: var(--fg-subtle);
-  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.completed-when {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  color: var(--fg-muted);
+
+.completed-answers {
+  margin: 0;
   font-size: 11px;
+  line-height: 1.5;
+  color: var(--mute);
+  overflow-wrap: anywhere;
 }
+
+.completed-answers-text {
+  color: var(--ink2);
+}
+
+.completed-when {
+  display: grid;
+  gap: 2px;
+  font-size: 10.5px;
+}
+
 .completed-duration {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  color: var(--fg);
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
+  gap: 4px;
+  font-family: var(--font-num);
+  font-size: 12px;
+  color: var(--ink);
 }
+
+.completed-when small {
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.completed-more {
+  width: 26px;
+  height: 26px;
+  justify-self: end;
+}
+
 .completed-body {
-  display: grid;
-  gap: 10px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 12px;
+  margin-top: 2px;
 }
+
 .completed-note {
   margin: 0;
+  font-size: 11px;
+  color: var(--warn);
 }
+
 .completed-exam {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   margin: 0;
-  padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--bg-subtle);
-  color: var(--fg-muted);
-  font-size: 11.5px;
-  line-height: 1.6;
+  font-size: 11px;
+  color: var(--mute);
 }
+
 .completed-exam b {
-  color: var(--fg);
   font-weight: 600;
+  color: var(--ink2);
 }
+
 .completed-exam small {
-  margin-left: 6px;
-  color: var(--fg-subtle);
-  font-size: 10.5px;
+  font-family: var(--font-num);
+  font-size: 10px;
+  color: var(--faint);
 }
+
 .completed-exam em {
-  margin-left: 6px;
-  padding: 2px 7px;
+  padding: 1px 5px;
   border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  color: var(--ok);
+  border-radius: var(--r1);
   font-size: 10px;
   font-style: normal;
+  color: var(--ok);
+  background: var(--ok-soft);
 }
+
+.completed-exam-note {
+  color: var(--faint);
+}
+
 .completed-exam a {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-left: auto;
+  gap: 3px;
   color: var(--info);
   font-size: 11px;
   text-decoration: none;
 }
-.completed-answers {
+
+.completed-exam a:hover {
+  text-decoration: underline;
+}
+
+.completed-empty {
+  border: 0;
+  border-radius: 0;
+  padding: 34px 16px;
+}
+
+.completed-scope {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 10px;
-  color: var(--fg-muted);
-  font-size: 11.5px;
-  line-height: 1.6;
+  gap: 3px 12px;
+  font-size: 10.5px;
+  color: var(--faint);
 }
-.completed-answers-label {
-  padding: 3px 9px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  background: var(--bg-subtle);
-  color: var(--fg-subtle);
-  font-size: 10px;
-}
-.completed-answers-text {
-  overflow-wrap: anywhere;
-}
-.completed-more {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  justify-self: start;
-  color: var(--fg);
-  font-size: 11.5px;
-  font-weight: 600;
-}
-.completed-empty {
-  margin-top: 8px;
-}
-@media (max-width: 720px) {
-  .completed-row {
-    padding: 14px 16px;
+
+@media (max-width: 1080px) {
+  .completed-head-row {
+    display: none;
   }
+
+  .completed-row {
+    grid-template-columns: 70px minmax(0, 1fr) 26px;
+  }
+
+  .completed-answers,
   .completed-when {
-    gap: 8px;
+    grid-column: 2;
+  }
+
+  .completed-more {
+    grid-row: 1;
+    grid-column: 3;
+  }
+
+  .completed-body {
+    grid-column: 2 / -1;
   }
 }
 </style>

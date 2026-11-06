@@ -46,26 +46,34 @@ function pick(item: (typeof items.value)[number]) {
       <button
         class="icon-button"
         :aria-label="win.minimized ? '展开逐题小窗' : '最小化逐题小窗'"
+        :title="win.minimized ? '展开逐题小窗' : '最小化逐题小窗'"
         @click="toggleMinimized('answers')"
       >
         {{ win.minimized ? "展开" : "最小化" }}
       </button>
-      <button class="icon-button" aria-label="关闭逐题小窗" @click="closeWindow('answers')">
-        <X :size="16" />
+      <button
+        class="icon-button"
+        aria-label="关闭逐题小窗"
+        title="关闭逐题小窗"
+        @click="closeWindow('answers')"
+      >
+        <X :size="13" />
       </button>
     </header>
     <div v-if="!win.minimized" class="float-window-body">
-      <p v-if="!items.length" class="empty">暂无逐题动态。运行中的答题任务会在这里实时滚动。</p>
+      <p v-if="!items.length" class="float-empty">
+        暂无逐题动态。运行中的答题任务会在这里实时滚动。
+      </p>
       <ul v-else class="answer-feed-list">
         <li v-for="item in items" :key="item.key">
-          <button class="recent-row" @click="pick(item)">
-            <b>{{ item.courseName }}</b>
-            <small>{{ item.question || "（无题干）" }}</small>
+          <button class="feed-row" @click="pick(item)">
             <span :class="['pill', rowClass(item.status)]">{{
               statusLabel[item.status] || item.status
             }}</span>
-            <small class="feed-answer">{{ item.answer }}</small>
-            <time>{{ date(item.ts) }}</time>
+            <b>{{ item.courseName }}</b>
+            <small class="feed-question">{{ item.question || "（无题干）" }}</small>
+            <small v-if="item.answer" class="feed-answer">{{ item.answer }}</small>
+            <time class="num">{{ date(item.ts) }}</time>
           </button>
         </li>
       </ul>

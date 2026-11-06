@@ -240,322 +240,854 @@ watch(
 );
 </script>
 <template>
-  <ModalShell :title="task.course_name" wide @close="$emit('close')"
-    ><div class="detail-summary">
-      <span :class="['status', detail.status]">{{
-        statuses[detail.status]
-      }}</span
-      ><span>{{ detail.account_label }} · {{ detail.feature_label }}</span
-      ><span class="muted">{{ date(detail.started_at) }}</span
-      ><span v-if="live" class="live-badge"
-        ><i /><Radio :size="12" />实时更新中</span
-      >
-    </div>
-    <div v-if="detail.resumed_from" class="resume-chain detail-resume-chain">
-      <span class="resume-chip">续跑自任务 {{ detail.resumed_from.slice(0, 8) }}</span
-      ><button
-        v-if="detail.new_task_id"
-        class="text-link"
-        @click="$emit('close')"
-      >
-        已创建新任务 {{ detail.new_task_id.slice(0, 8) }}
-      </button>
-    </div>
-    <p v-if="liveLine" class="detail-live-line">
-      <LoaderCircle class="spin" :size="13" />{{ liveLine }}
-    </p>
-    <p v-if="detail.error || error" class="alert error">
-      {{ detail.error || error }}
-    </p>
-    <p v-if="verificationHint" class="alert warning detail-verify-hint" role="alert">
-      <ShieldAlert :size="15" /><span
-        >该考试需要人工验证，程序未启动考试。请在浏览器中打开考试说明页，完成平台安全验证后再重新创建任务。<small class="muted">{{
-          verificationHint
-        }}</small></span
-      >
-    </p>
-    <div class="detail-metrics">
-      <div>
-        <strong
-          >{{ detail.progress?.completed || 0 }} /
-          {{ detail.progress?.total || "—" }}</strong
-        ><small>已确认完成</small>
-      </div>
-      <div>
-        <strong>{{ summary.answered || detail.stats.questions || 0 }}</strong
-        ><small>已作答题目</small>
-      </div>
-      <div>
-        <strong>{{ summary.submit_ok || detail.stats.submit_ok || 0 }}</strong
-        ><small>已接受提交</small>
-      </div>
-      <div>
-        <strong>{{
-          (detail.progress?.failed || 0) + (detail.progress?.blocked || 0) ||
-          detail.stats.failed ||
-          0
-        }}</strong
-        ><small>未完成事项</small>
-      </div>
-    </div>
-    <div class="tabs">
-      <button :class="{ selected: tab === 'answers' }" @click="pick('answers')">
-        AI 做题<span v-if="answerItems.length" class="tab-badge">{{
-          answerItems.length
-        }}</span></button
-      ><button
-        :class="{ selected: tab === 'activity' }"
-        @click="pick('activity')"
-      >
-        学习动态</button
-      ><button :class="{ selected: tab === 'logs' }" @click="pick('logs')">
-        诊断日志</button
-      ><button :class="{ selected: tab === 'params' }" @click="pick('params')">
-        任务参数
-      </button>
-    </div>
-    <template v-if="tab === 'answers'">
-      <div v-if="groups.length" class="filterbar compact answer-filters">
-        <select v-model="answerStatusFilter" aria-label="按题状态筛选">
-          <option value="all">全部状态</option>
-          <option value="answered">已作答</option>
-          <option value="skipped">已跳过</option>
-          <option value="unreadable">未识别</option>
-        </select>
-        <span class="muted answer-filter-count"
-          >{{ statusFilteredGroups.reduce((n, g) => n + g.items.length, 0) }} 题</span
+  <ModalShell :title="task.course_name" wide @close="$emit('close')">
+    <div class="drawer">
+      <div class="detail-summary">
+        <span :class="['status', detail.status]">{{
+          statuses[detail.status]
+        }}</span>
+        <span class="detail-who"
+          >{{ detail.account_label }} · {{ detail.feature_label }}</span
+        >
+        <span class="muted detail-when">{{ date(detail.started_at) }}</span>
+        <span v-if="live" class="live-badge"
+          ><i /><Radio :size="11" />实时更新中</span
         >
       </div>
-      <div v-if="groups.length" class="answer-summary">
-        <span class="answer-chip strong"
-          >作答 {{ summary.answered }}/{{ summary.total || "—" }}</span
-        ><span v-if="summary.ai" class="answer-chip ai"
-          >AI {{ summary.ai }}</span
-        ><span v-if="summary.cache" class="answer-chip cache"
-          >缓存 {{ summary.cache }}</span
-        ><span v-if="summary.random" class="answer-chip random"
-          >随机 {{ summary.random }}</span
-        ><span v-if="summary.skipped" class="answer-chip failed"
-          >待处理 {{ summary.skipped }}</span
-        ><span v-if="summary.submit_ok" class="answer-chip submit-ok"
-          >提交成功 {{ summary.submit_ok }}</span
-        ><span v-if="summary.submit_fail" class="answer-chip submit-fail"
-          >提交失败 {{ summary.submit_fail }}</span
+      <div v-if="detail.resumed_from" class="resume-chain detail-resume-chain">
+        <span class="resume-chip"
+          >续跑自任务 {{ detail.resumed_from.slice(0, 8) }}</span
         ><button
-          class="text-link answer-refresh"
-          :disabled="loading"
-          @click="load"
+          v-if="detail.new_task_id"
+          class="text-link"
+          @click="$emit('close')"
         >
-          <RefreshCw :size="13" :class="{ spin: loading }" />{{
-            loading ? "同步中" : refreshedAt ? "刷新" : "同步"
-          }}
+          已创建新任务 {{ detail.new_task_id.slice(0, 8) }}
         </button>
       </div>
-      <p v-if="groups.length && live" class="muted answer-live">
-        <i class="live-dot" />每题作答后立即追加，运行中每 1.5 秒自动同步。
+      <p v-if="liveLine" class="detail-live-line">
+        <LoaderCircle class="spin" :size="12" />{{ liveLine }}
       </p>
-      <div v-if="statusFilteredGroups.length" class="answer-groups">
-        <section
-          v-for="group in statusFilteredGroups"
-          :key="group.media"
-          class="answer-group"
+      <p v-if="detail.error || error" class="alert error">
+        {{ detail.error || error }}
+      </p>
+      <p
+        v-if="verificationHint"
+        class="alert warning detail-verify-hint"
+        role="alert"
+      >
+        <ShieldAlert :size="14" /><span
+          >该考试需要人工验证，程序未启动考试。请在浏览器中打开考试说明页，完成平台安全验证后再重新创建任务。<small class="muted">{{
+            verificationHint
+          }}</small></span
         >
-          <header class="answer-group-head">
-            <div>
-              <h3>{{ group.media }}</h3>
-              <small
-                >{{ group.answered }}/{{ group.total }} 题已作答<template
-                  v-if="group.skipped"
-                >
-                  · {{ group.skipped }} 题待处理</template
-                ></small
-              >
-            </div>
-            <div class="answer-group-progress">
-              <div
-                class="progress-track"
-                role="progressbar"
-                :aria-valuenow="groupPercent(group)"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                :aria-label="group.media + '作答进度'"
-              >
-                <i :style="{ width: groupPercent(group) + '%' }" />
-              </div>
-              <b>{{ groupPercent(group) }}%</b>
-            </div>
-          </header>
-          <article
-            v-for="item in group.items"
-            :key="key(item)"
-            :class="['answer-card', { expanded: isExpanded(item) }]"
+      </p>
+      <div class="detail-metrics">
+        <div>
+          <strong class="num"
+            >{{ detail.progress?.completed || 0 }} /
+            {{ detail.progress?.total || "—" }}</strong
+          ><small>已确认完成</small>
+        </div>
+        <div>
+          <strong class="num">{{
+            summary.answered || detail.stats.questions || 0
+          }}</strong
+          ><small>已作答题目</small>
+        </div>
+        <div>
+          <strong class="num">{{
+            summary.submit_ok || detail.stats.submit_ok || 0
+          }}</strong
+          ><small>已接受提交</small>
+        </div>
+        <div>
+          <strong class="num">{{
+            (detail.progress?.failed || 0) + (detail.progress?.blocked || 0) ||
+            detail.stats.failed ||
+            0
+          }}</strong
+          ><small>未完成事项</small>
+        </div>
+      </div>
+      <div class="tabs">
+        <button
+          :class="{ selected: tab === 'answers' }"
+          @click="pick('answers')"
+        >
+          AI 做题<span v-if="answerItems.length" class="tab-badge">{{
+            answerItems.length
+          }}</span></button
+        ><button
+          :class="{ selected: tab === 'activity' }"
+          @click="pick('activity')"
+        >
+          学习动态</button
+        ><button :class="{ selected: tab === 'logs' }" @click="pick('logs')">
+          诊断日志</button
+        ><button :class="{ selected: tab === 'params' }" @click="pick('params')">
+          任务参数
+        </button>
+      </div>
+      <template v-if="tab === 'answers'">
+        <div v-if="groups.length" class="filterbar compact answer-filters">
+          <select v-model="answerStatusFilter" aria-label="按题状态筛选">
+            <option value="all">全部状态</option>
+            <option value="answered">已作答</option>
+            <option value="skipped">已跳过</option>
+            <option value="unreadable">未识别</option>
+          </select>
+          <span class="muted answer-filter-count"
+            >{{
+              statusFilteredGroups.reduce((n, g) => n + g.items.length, 0)
+            }}
+            题</span
           >
-            <div class="answer-head">
-              <span class="answer-index">#{{ item.index }}</span
-              ><span class="tag">{{ item.question_type || "未知题型" }}</span
-              ><span :class="['source-badge', item.source]">{{
-                answerSourceLabel(item.source)
-              }}</span
-              ><span :class="['answer-status', item.status]">{{
-                answerStatusLabel(item.status)
-              }}</span
-              ><time>{{ date(item.ts) }}</time>
-            </div>
-            <p class="answer-question" @click="isLong(item) && toggle(item)">
-              {{ item.question || "（题干未识别）" }}
-            </p>
-            <button
-              v-if="isLong(item)"
-              class="text-link answer-expand"
-              @click="toggle(item)"
+          <button
+            class="text-link answer-refresh"
+            :disabled="loading"
+            @click="load"
+          >
+            <RefreshCw :size="12" :class="{ spin: loading }" />{{
+              loading ? "同步中" : refreshedAt ? "刷新" : "同步"
+            }}
+          </button>
+        </div>
+        <div v-if="groups.length" class="answer-summary">
+          <span class="answer-chip strong"
+            >作答 {{ summary.answered }}/{{ summary.total || "—" }}</span
+          ><span v-if="summary.ai" class="answer-chip ai"
+            >AI {{ summary.ai }}</span
+          ><span v-if="summary.cache" class="answer-chip cache"
+            >缓存 {{ summary.cache }}</span
+          ><span v-if="summary.random" class="answer-chip random"
+            >随机 {{ summary.random }}</span
+          ><span v-if="summary.skipped" class="answer-chip failed"
+            >待处理 {{ summary.skipped }}</span
+          ><span v-if="summary.submit_ok" class="answer-chip submit-ok"
+            >提交成功 {{ summary.submit_ok }}</span
+          ><span v-if="summary.submit_fail" class="answer-chip submit-fail"
+            >提交失败 {{ summary.submit_fail }}</span
+          >
+        </div>
+        <p v-if="groups.length && live" class="muted answer-live">
+          <i class="live-dot" />每题作答后立即追加，运行中每 1.5 秒自动同步。
+        </p>
+        <div v-if="statusFilteredGroups.length" class="answer-groups">
+          <section
+            v-for="group in statusFilteredGroups"
+            :key="group.media"
+            class="answer-group"
+          >
+            <header class="answer-group-head">
+              <div>
+                <h3>{{ group.media }}</h3>
+                <small
+                  >{{ group.answered }}/{{ group.total }} 题已作答<template
+                    v-if="group.skipped"
+                  >
+                    · {{ group.skipped }} 题待处理</template
+                  ></small
+                >
+              </div>
+              <div class="answer-group-progress">
+                <div
+                  class="progress-track"
+                  role="progressbar"
+                  :aria-valuenow="groupPercent(group)"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  :aria-label="group.media + '作答进度'"
+                >
+                  <i :style="{ width: groupPercent(group) + '%' }" />
+                </div>
+                <b class="num">{{ groupPercent(group) }}%</b>
+              </div>
+            </header>
+            <article
+              v-for="item in group.items"
+              :key="key(item)"
+              :class="['answer-card', { expanded: isExpanded(item) }]"
             >
-              {{ isExpanded(item) ? "收起" : "展开题干与全部选项" }}
-            </button>
-            <ol v-if="item.options?.length" class="answer-options">
-              <li v-for="(option, i) in item.options" :key="i">{{ option }}</li>
-            </ol>
-            <div class="answer-foot">
-              <span class="answer-label">答案</span
-              ><b v-if="item.answer">{{ item.answer }}</b
-              ><span v-else class="muted">无答案</span
-              ><span v-if="item.note" class="answer-note">{{ item.note }}</span>
+              <div class="answer-head">
+                <span class="answer-index">#{{ item.index }}</span
+                ><span class="tag">{{ item.question_type || "未知题型" }}</span
+                ><span :class="['source-badge', item.source]">{{
+                  answerSourceLabel(item.source)
+                }}</span
+                ><span :class="['answer-status', item.status]">{{
+                  answerStatusLabel(item.status)
+                }}</span
+                ><time>{{ date(item.ts) }}</time>
+              </div>
+              <p class="answer-question" @click="isLong(item) && toggle(item)">
+                {{ item.question || "（题干未识别）" }}
+              </p>
+              <button
+                v-if="isLong(item) || (item.options?.length || 0) > 0"
+                class="text-link answer-expand"
+                @click="toggle(item)"
+              >
+                {{ isExpanded(item) ? "收起题干与选项" : "展开题干与选项" }}
+              </button>
+              <ol v-if="item.options?.length && isExpanded(item)" class="answer-options">
+                <li v-for="(option, i) in item.options" :key="i">
+                  {{ option }}
+                </li>
+              </ol>
+              <div class="answer-foot">
+                <span class="answer-label">答案</span
+                ><b v-if="item.answer">{{ item.answer }}</b
+                ><span v-else class="muted">无答案</span
+                ><span v-if="item.note" class="answer-note">{{
+                  item.note
+                }}</span>
+              </div>
+            </article>
+          </section>
+        </div>
+        <div
+          v-else-if="groups.length && !statusFilteredGroups.length"
+          class="empty answer-empty"
+        >
+          <h3>没有「{{ answerStatuses[answerStatusFilter] }}」状态的题目</h3>
+          <p>
+            换个状态筛选，或切回「全部状态」查看所有 {{ answerItems.length }}
+            题。
+          </p>
+        </div>
+        <div v-else class="empty answer-empty">
+          <svg
+            class="empty-illustration"
+            viewBox="0 0 96 96"
+            fill="none"
+            aria-hidden="true"
+          >
+            <rect
+              x="20"
+              y="14"
+              width="56"
+              height="68"
+              rx="8"
+              fill="var(--bg-subtle)"
+              stroke="var(--line)"
+              stroke-width="2"
+            />
+            <path
+              d="M33 34h30M33 46h30M33 58h18"
+              stroke="var(--fg-subtle)"
+              stroke-width="3"
+              stroke-linecap="round"
+            />
+            <circle
+              cx="68"
+              cy="66"
+              r="14"
+              fill="var(--surface)"
+              stroke="var(--ok)"
+              stroke-width="2"
+            />
+            <path
+              d="M61 66.5l4.6 4.4L75 62"
+              stroke="var(--ok)"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <h3>还没有逐题作答记录</h3>
+          <p v-if="detail.answers_note" class="answer-note-reason">
+            {{ detail.answers_note }}
+          </p>
+          <p v-else-if="live">
+            AI 正在识别题目，答完一题会立刻显示在这里；也可以稍后手动刷新。
+          </p>
+          <p v-else>
+            旧版本任务或未产生 AI
+            作答时不会保存明细。任务开始 AI 作答后，这里会实时出现每题题干、答案与来源。
+          </p>
+          <button class="button" :disabled="loading" @click="load">
+            <RefreshCw :size="13" :class="{ spin: loading }" />重新读取
+          </button>
+        </div>
+      </template>
+      <template v-else-if="tab !== 'params'">
+        <div class="filterbar compact">
+          <label class="log-search">
+            <Search :size="12" /><input
+              v-model="logQuery"
+              type="search"
+              placeholder="搜索日志内容"
+              aria-label="搜索日志内容"
+            />
+          </label>
+          <select v-model="category" aria-label="日志分类">
+            <option value="">所有分类</option>
+            <option
+              v-for="key in Object.keys(categories)"
+              :key="key"
+              :value="key"
+            >
+              {{ categoryLabel(key) }}
+            </option></select
+          ><select v-model="logStage" aria-label="日志级别">
+            <option value="all">所有级别</option>
+            <option value="problem">仅问题</option>
+            <option value="error">错误</option>
+            <option value="warning">需关注</option>
+            <option value="info">进度</option>
+            <option value="debug">诊断</option></select
+          ><label class="check"
+            ><input v-model="follow" type="checkbox" />跟随最新</label
+          ><a :href="`/api/tasks/${task.id}/logs`" download class="text-link"
+            >下载完整日志</a
+          ><a
+            :href="`/api/events/export?task_id=${task.id}&format=json`"
+            download
+            class="text-link"
+            >导出 JSON</a
+          >
+        </div>
+        <p class="muted" v-if="tab === 'logs'">
+          检索全部记录（{{ events.length }} 条已加载），支持关键词与级别过滤。
+        </p>
+        <div ref="log" :class="['event-list', { raw: tab === 'logs' }]">
+          <article v-for="e in filtered" :key="e.id" :class="['event', e.level]">
+            <time>{{ date(e.ts) }}</time>
+            <div>
+              <span class="event-category">{{
+                categoryLabel(e.presentation?.category || e.stage)
+              }}</span
+              ><b>{{
+                tab === "logs"
+                  ? e.message
+                  : e.presentation?.title || e.narrative.title
+              }}</b>
+              <p v-if="tab !== 'logs'">
+                {{ e.presentation?.detail || e.narrative.detail }}
+              </p>
+              <p
+                v-if="e.presentation?.action && tab !== 'logs'"
+                class="action-hint"
+              >
+                {{ e.presentation.action }}
+              </p>
             </div>
           </article>
-        </section>
-      </div>
-      <div
-        v-else-if="groups.length && !statusFilteredGroups.length"
-        class="empty answer-empty"
-      >
-        <h3>没有「{{ answerStatuses[answerStatusFilter] }}」状态的题目</h3>
-        <p>换个状态筛选，或切回「全部状态」查看所有 {{ answerItems.length }} 题。</p>
-      </div>
-      <div v-else class="empty answer-empty">
-        <svg
-          class="empty-illustration"
-          viewBox="0 0 96 96"
-          fill="none"
-          aria-hidden="true"
-        >
-          <rect
-            x="20"
-            y="14"
-            width="56"
-            height="68"
-            rx="8"
-            fill="var(--bg-subtle)"
-            stroke="var(--line)"
-            stroke-width="2"
-          />
-          <path
-            d="M33 34h30M33 46h30M33 58h18"
-            stroke="var(--fg-subtle)"
-            stroke-width="3"
-            stroke-linecap="round"
-          />
-          <circle cx="68" cy="66" r="14" fill="var(--surface)" stroke="var(--ok)" stroke-width="2" />
-          <path
-            d="M61 66.5l4.6 4.4L75 62"
-            stroke="var(--ok)"
-            stroke-width="3"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-        <h3>还没有逐题作答记录</h3>
-        <p v-if="detail.answers_note" class="answer-note-reason">
-          {{ detail.answers_note }}
-        </p>
-        <p v-else-if="live">
-          AI 正在识别题目，答完一题会立刻显示在这里；也可以稍后手动刷新。
-        </p>
-        <p v-else>
-          旧版本任务或未产生 AI 作答时不会保存明细。任务开始 AI 作答后，这里会实时出现每题题干、答案与来源。
-        </p>
-        <button class="button" :disabled="loading" @click="load">
-          <RefreshCw :size="15" :class="{ spin: loading }" />重新读取
-        </button>
-      </div>
-    </template>
-    <template v-else-if="tab !== 'params'"
-      ><div class="filterbar compact">
-        <label class="log-search">
-          <Search :size="13" /><input
-            v-model="logQuery"
-            type="search"
-            placeholder="搜索日志内容"
-            aria-label="搜索日志内容"
-          />
-        </label>
-        <select v-model="category" aria-label="日志分类">
-          <option value="">所有分类</option>
-          <option v-for="key in Object.keys(categories)" :key="key" :value="key">
-            {{ categoryLabel(key) }}
-          </option></select
-        ><select v-model="logStage" aria-label="日志级别">
-          <option value="all">所有级别</option>
-          <option value="problem">仅问题</option>
-          <option value="error">错误</option>
-          <option value="warning">需关注</option>
-          <option value="info">进度</option>
-          <option value="debug">诊断</option></select
-        ><label class="check"
-          ><input v-model="follow" type="checkbox" />跟随最新</label
-        ><a :href="`/api/tasks/${task.id}/logs`" download class="text-link"
-          >下载完整日志</a
-        ><a
-          :href="`/api/events/export?task_id=${task.id}&format=json`"
-          download
-          class="text-link"
-          >导出 JSON</a
-        >
-      </div>
-      <p class="muted" v-if="tab === 'logs'">
-        检索全部记录（{{ events.length }} 条已加载），支持关键词与级别过滤。
-      </p>
-      <div ref="log" :class="['event-list', { raw: tab === 'logs' }]">
-        <article v-for="e in filtered" :key="e.id" :class="['event', e.level]">
-          <time>{{ date(e.ts) }}</time>
-          <div>
-            <span class="event-category">{{
-              categoryLabel(e.presentation?.category || e.stage)
-            }}</span
-            ><b>{{
-              tab === "logs"
-                ? e.message
-                : e.presentation?.title || e.narrative.title
-            }}</b>
-            <p v-if="tab !== 'logs'">
-              {{ e.presentation?.detail || e.narrative.detail }}
-            </p>
-            <p
-              v-if="e.presentation?.action && tab !== 'logs'"
-              class="action-hint"
-            >
-              {{ e.presentation.action }}
-            </p>
+          <div v-if="moreEvents" class="load-more">
+            <button class="button small" @click="loadMoreEvents">
+              加载更多
+            </button>
           </div>
-        </article>
-        <div v-if="moreEvents" class="load-more">
-          <button class="button small" @click="loadMoreEvents">加载更多</button>
+          <div v-if="!filtered.length" class="empty">暂无此类记录</div>
         </div>
-        <div v-if="!filtered.length" class="empty">暂无此类记录</div>
-      </div></template
-    >
-    <template v-else>
-      <table v-if="paramRows.length" class="params-table">
-        <tbody>
-          <tr v-for="row in paramRows" :key="row.path">
-            <th :style="{ paddingLeft: row.depth * 14 + 8 + 'px' }">
-              {{ row.path }}
-            </th>
-            <td>{{ row.secret ? "••••••" : row.value }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <pre v-else class="params-preview">{{
-        JSON.stringify(detail.params, null, 2)
-      }}</pre>
-    </template>
+      </template>
+      <template v-else>
+        <table v-if="paramRows.length" class="params-table">
+          <tbody>
+            <tr v-for="row in paramRows" :key="row.path">
+              <th :style="{ paddingLeft: row.depth * 14 + 8 + 'px' }">
+                {{ row.path }}
+              </th>
+              <td>{{ row.secret ? "••••••" : row.value }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <pre v-else class="params-preview">{{
+          JSON.stringify(detail.params, null, 2)
+        }}</pre>
+      </template>
+    </div>
   </ModalShell>
 </template>
+
+<style scoped>
+.drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.detail-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--surface2);
+  font-size: 11px;
+  color: var(--mute);
+}
+
+.detail-who {
+  color: var(--ink2);
+}
+
+.detail-when {
+  font-family: var(--font-num);
+  font-size: 10.5px;
+}
+
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  font-size: 10px;
+  color: var(--ok);
+}
+
+.resume-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+}
+
+.resume-chip {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--surface2);
+  color: var(--mute);
+}
+
+.detail-live-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 5px 9px;
+  border-left: 2px solid var(--info);
+  background: var(--info-soft);
+  font-size: 11px;
+  color: var(--navy);
+}
+
+.detail-verify-hint {
+  align-items: flex-start;
+}
+
+.detail-verify-hint small {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.detail-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.detail-metrics > div {
+  display: grid;
+  gap: 0;
+  padding: 6px 9px;
+  background: var(--surface);
+}
+
+.detail-metrics strong {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.15;
+}
+
+.detail-metrics small {
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.answer-filters {
+  align-items: center;
+}
+
+.answer-filter-count {
+  font-size: 10.5px;
+}
+
+.answer-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  font-size: 10.5px;
+}
+
+.answer-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.answer-chip {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--surface2);
+  font-size: 10px;
+  color: var(--mute);
+}
+
+.answer-chip.strong {
+  border-color: var(--navy2);
+  background: var(--navy-soft);
+  color: var(--navy);
+  font-weight: 600;
+}
+
+.answer-chip.ai {
+  background: var(--info-soft);
+  border-color: #cfdcea;
+  color: var(--info);
+}
+
+.answer-chip.cache {
+  background: var(--ok-soft);
+  border-color: #cfe3d7;
+  color: var(--ok);
+}
+
+.answer-chip.random,
+.answer-chip.failed {
+  background: var(--warn-soft);
+  border-color: #e8dcc2;
+  color: var(--warn);
+}
+
+.answer-chip.submit-ok {
+  background: var(--ok-soft);
+  border-color: #cfe3d7;
+  color: var(--ok);
+}
+
+.answer-chip.submit-fail {
+  background: var(--danger-soft);
+  border-color: #eed3ce;
+  color: var(--danger);
+}
+
+.answer-live {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 10.5px;
+}
+
+.answer-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.answer-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.answer-group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.answer-group-head h3 {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.answer-group-head small {
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.answer-group-progress {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  width: 190px;
+}
+
+.answer-group-progress .progress-track {
+  flex: 1;
+  height: 4px;
+}
+
+.answer-group-progress b {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--mute);
+}
+
+.answer-card {
+  display: grid;
+  gap: 4px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--surface);
+}
+
+.answer-card:hover {
+  border-color: var(--line2);
+}
+
+.answer-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.answer-index {
+  font-family: var(--font-num);
+  color: var(--mute);
+}
+
+.answer-head time {
+  margin-left: auto;
+  font-family: var(--font-num);
+}
+
+.source-badge {
+  padding: 0 5px;
+  border-radius: var(--r1);
+  background: var(--surface3);
+  color: var(--mute);
+}
+
+.source-badge.ai {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.source-badge.cache {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.source-badge.random,
+.source-badge.failed {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.answer-status.answered {
+  color: var(--ok);
+}
+
+.answer-status.skipped {
+  color: var(--warn);
+}
+
+.answer-status.unreadable {
+  color: var(--danger);
+}
+
+.answer-question {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.answer-expand {
+  justify-self: start;
+  font-size: 10px;
+}
+
+.answer-options {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding-left: 16px;
+  font-size: 10.5px;
+  color: var(--mute);
+}
+
+.answer-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--line);
+  font-size: 11px;
+}
+
+.answer-label {
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.answer-foot b {
+  font-weight: 600;
+  color: var(--ok);
+  overflow-wrap: anywhere;
+}
+
+.answer-note {
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.answer-empty {
+  border: 1px dashed var(--line2);
+  border-radius: var(--r2);
+  padding: 24px 16px;
+}
+
+.answer-empty .empty-illustration {
+  width: 48px;
+  height: 48px;
+}
+
+.event-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 340px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--surface);
+}
+
+.event {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 8px;
+  padding: 5px 9px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+
+.event:last-child {
+  border-bottom: 0;
+}
+
+.event time {
+  font-family: var(--font-num);
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.event div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.event-category {
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  color: var(--faint);
+  text-transform: uppercase;
+}
+
+.event b {
+  font-weight: 500;
+  color: var(--ink2);
+  overflow-wrap: anywhere;
+}
+
+.event p {
+  margin: 0;
+  font-size: 10.5px;
+  color: var(--mute);
+  overflow-wrap: anywhere;
+}
+
+.event.error b,
+.event.error p {
+  color: var(--danger);
+}
+
+.event.warning b {
+  color: var(--warn);
+}
+
+.event-list.raw .event b {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+}
+
+.event .action-hint {
+  color: var(--info);
+}
+
+.load-more {
+  padding: 6px 9px;
+}
+
+.params-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.params-table th,
+.params-table td {
+  padding: 4px 9px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.params-table th {
+  width: 42%;
+  font-weight: 400;
+  color: var(--mute);
+}
+
+.params-table td {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.params-preview {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--surface2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink2);
+  overflow-x: auto;
+}
+
+@media (max-width: 760px) {
+  .detail-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .answer-group-progress {
+    width: 120px;
+  }
+
+  .event {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+</style>

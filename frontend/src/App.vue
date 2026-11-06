@@ -42,7 +42,14 @@ const sections = groups.map((group) => ({
   caption: group.caption,
   items: nav.filter((item) => (group.keys as readonly string[]).includes(item.key)),
 }));
+// #/mini 是 Electron 迷你监控子窗的独立视图，不套用工作台外壳。
+const isMini = computed(() => route.name === "mini");
 const selected = ref<Task | null>(null);
+// 只接受带 id 的真实任务：某些 emit 在任务不存在时会传出 undefined/空值，
+// 一旦让 TaskDrawer 以空任务挂载，ModalShell 的 inert 锁会永久留在页面上。
+function pick(task?: Task | null) {
+  if (task && task.id) selected.value = task;
+}
 function openNewTask() {
   state.newTaskAccount = "";
   state.newTaskFeature = "course_all";
@@ -162,11 +169,14 @@ onUnmounted(() => {
 });
 </script>
 <template>
-  <div class="shell">
+  <!-- 迷你监控子窗（#/mini）只渲染监控面板本身：Electron 以 340×220 无框窗口
+       加载同一地址，若套上侧栏与顶栏会把 220px 高度挤成残片。 -->
+  <RouterView v-if="isMini" />
+  <div v-else class="shell">
     <aside class="sidebar">
       <a href="#overview" class="brand" @click="navigate('overview')"
-        ><span class="brand-mark"><GraduationCap :size="24" /></span
-        ><span>课舟<small>超星多账号学习台</small></span></a
+        ><span class="brand-mark"><GraduationCap :size="16" /></span
+        ><span>课舟<small>CourseArk</small></span></a
       >
       <nav aria-label="主要导航">
         <div v-for="section in sections" :key="section.caption" class="nav-group">
@@ -178,7 +188,7 @@ onUnmounted(() => {
             :aria-current="state.view === item.key ? 'page' : undefined"
             @click="navigate(item.key)"
           >
-            <component :is="item.icon" :size="18" /><span>{{ item.title }}</span>
+            <component :is="item.icon" :size="16" /><span>{{ item.title }}</span>
           </button>
         </div>
       </nav>
@@ -188,8 +198,7 @@ onUnmounted(() => {
           <div class="engine-copy">
             <b>{{ state.online ? "后台服务运行中" : "正在连接后台服务" }}</b>
             <small
-              >{{ engine.running }} 项运行中 · {{ engine.paused }} 项暂停 · 端口
-              {{ port }}</small
+              >{{ engine.running }} 运行 · {{ engine.paused }} 暂停 · :{{ port }}</small
             >
           </div>
         </div>
@@ -197,8 +206,18 @@ onUnmounted(() => {
     </aside>
     <main class="workspace">
       <header class="topbar">
-        <div class="breadcrumb">工作空间 <span>/</span> {{ page.title }}</div>
+        <div class="top-title">
+          <h1>{{ page.title }}</h1>
+          <p>{{ pageCopy }}</p>
+        </div>
         <div class="top-actions">
+          <button
+            v-if="['overview', 'tasks'].includes(state.view)"
+            class="primary"
+            @click="openNewTask"
+          >
+            <Plus :size="15" />新建学习任务
+          </button>
           <div class="top-stats">
             <div class="stat-item" title="已添加的账号数量">
               <b>{{ headCounts.accounts }}</b><span>账号</span>
@@ -210,69 +229,59 @@ onUnmounted(() => {
               <b>{{ engine.running }}</b><span>运行中</span>
             </div>
           </div>
+          <span class="top-sep"></span>
           <div class="window-switcher" role="group" aria-label="浮层小窗开关">
             <button
-              :class="{ chosen: windows.map.progress?.open }"
+              :class="{ on: windows.map.progress?.open }"
               aria-label="进度小窗开关"
               title="进度小窗"
               @click="toggleWindow('progress')"
             >
-              <GraduationCap :size="15" />
+              <GraduationCap :size="14" />
             </button>
             <button
-              :class="{ chosen: windows.map.answers?.open }"
+              :class="{ on: windows.map.answers?.open }"
               aria-label="逐题小窗开关"
               title="逐题作答小窗"
               @click="toggleWindow('answers')"
             >
-              <Layers :size="15" />
+              <Layers :size="14" />
             </button>
             <button
-              :class="{ chosen: windows.map.alerts?.open }"
+              :class="{ on: windows.map.alerts?.open }"
               aria-label="告警小窗开关"
               title="任务告警小窗"
               @click="toggleWindow('alerts')"
             >
-              <CheckCircle2 :size="15" />
+              <CheckCircle2 :size="14" />
             </button>
           </div>
-          <button class="icon-button" aria-label="刷新数据" @click="refresh">
-            <RefreshCw :size="17" />
+          <button class="icon-button" aria-label="刷新数据" title="刷新数据" @click="refresh">
+            <RefreshCw :size="15" />
           </button>
         </div>
       </header>
       <div class="page-content">
-        <div class="page-heading">
-          <div>
-            <h1>{{ page.title }}</h1>
-            <p>{{ pageCopy }}</p>
-          </div>
-          <button
-            v-if="['overview', 'tasks'].includes(state.view)"
-            class="primary"
-            @click="openNewTask"
-          >
-            <Plus :size="17" />新建学习任务
-          </button>
-        </div>
         <div v-if="state.error" class="alert error" role="alert">
           <span>{{ state.error }}</span
           ><button @click="state.error = ''">关闭</button>
         </div>
         <div v-if="state.loading" class="empty">正在读取工作空间…</div>
-        <!-- T13：页面主体交给 RouterView（routes 见 router.ts，锚点类名零改动）。
+        <!-- T13：页面主体交给 RouterView（routes 见 router.ts）。
              与旧模板一致，loading 期间不挂载页面——SettingsView 等组件在 setup
              时对 state.settings 做一次性快照，必须等 initialize 完成再挂载。 -->
-        <RouterView v-else @select="selected = $event" />
+        <RouterView v-else v-slot="{ Component }">
+          <component :is="Component" @select="pick" />
+        </RouterView>
         <footer>课舟 CourseArk <span>·</span> 数据保存在本机</footer>
       </div>
     </main>
     <TaskDrawer v-if="selected" :task="selected" @close="selected = null" />
     <NewTask v-if="state.newTask" @close="state.newTask = false" />
-    <ProgressWindow @select="selected = $event" />
+    <ProgressWindow @select="pick" />
     <AnswerFeedWindow
       v-if="windows.map.answers?.open"
-      @select="selected = $event"
+      @select="pick"
     />
     <AlertWindow v-if="windows.map.alerts?.open" />
     <div v-if="state.toast" class="toast" role="status">{{ state.toast }}</div>

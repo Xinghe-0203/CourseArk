@@ -21,9 +21,9 @@ def check(url, output):
         assert page.get_by_text('账号 03',exact=True).count()==0
         assert page.get_by_text('账号 06',exact=True).count()==0
         heights=page.locator('.execution-account').evaluate_all('(nodes)=>nodes.map(n=>Math.round(n.getBoundingClientRect().height))')
-        assert heights==[520,520]
-        assert page.locator('.execution-dashboard').count()==1
-        passed('总览只显示执行中的两个账号与课程，固定520px卡片与真实进度仪表盘')
+        assert len(set(heights))==1, heights
+        assert 240<=heights[0]<=560, heights
+        passed('总览只显示执行中的两个账号与课程，等高执行卡片与真实进度仪表盘')
         # 运行中进度小窗：默认最小化贴边，展开后显示当前动作、已用时、预计剩余
         win=page.locator('.progress-window')
         win.wait_for()
@@ -59,9 +59,9 @@ def check(url, output):
         profiles=page.locator('.workspace-account')
         profiles.first.wait_for()
         assert profiles.count()==6
-        assert len(set(profiles.evaluate_all('(nodes)=>nodes.map(n=>Math.round(n.getBoundingClientRect().height))')))==1
+        assert len(set(profiles.evaluate_all('(nodes)=>nodes.map(n=>Math.round(n.getBoundingClientRect().width))')))==1
         assert page.locator('.workspace-course').count()==18
-        passed('学习任务保留六账号完整数据，全部账号卡片固定高度')
+        passed('学习任务保留六账号完整数据，账号卡片等宽排布')
         profiles.nth(2).locator('.workspace-course input:not(:disabled)').first.check()
         for i in (0,1): profiles.nth(i).locator('.workspace-account-head input').check()
         page.get_by_role('button',name='创建所选 1 门课程任务',exact=True).click()

@@ -10,8 +10,96 @@
 
 ---
 
-## v2.4.0（最新）
+## 界面重做（未发布）
 
+> 本轮只改前端表现层：数据层（`store.ts` / `api.ts` / `types.ts` / `format.ts` / `overview.ts` /
+> `mission.ts` / `live.ts` / `windows/*`）与后端接口、数据库 Schema 全部未动，旧数据无需迁移。
+> 目标是让界面承担「多账号 + 多任务 + 长时间运行」的实际信息密度，而不是把每块内容都做成等大的卡片。
+
+### 一、视觉体系重建
+
+- **样式拆成四层**：`frontend/src/style.css` 从 4698 行（v2.3 之后又叠了 T9/T14 若干段）收缩为
+  四行 `@import`，实际样式落在 `frontend/src/styles/`：
+  - `tokens.css`：冷灰纸面 `--paper #edf0f3` + 仪器墨蓝 `--navy #123a5e` + 交通灯语义色
+    （`--ok #1a7a52` / `--warn #96620f` / `--danger #b23a2f` / `--info #2a5f9e`）；
+    字体三个角色（正文 Microsoft YaHei UI、数字 Bahnschrift、等宽 Consolas）；
+    并把 v2.3 的旧变量名（`--fg/--fg-muted/--bg/--card/--accent/--border` 等）映射到新 token，
+    模板里的内联 SVG 因此不需要改。
+  - `base.css`：按钮（28px 高、4px 圆角）、表单（30px 高、focus 环）、`.status/.pill/.tag` 胶囊
+    （12 种任务状态映射到绿/蓝/黄/红/灰）、进度条、`.tabs`、`.filterbar`、`.pagination`、
+    `.section-heading`、`.avatar`、`.metrics`、`.panel`、`.overlay/.modal`、`.toast`、`details.advanced`。
+  - `shell.css`：`.shell` 网格（侧栏 216px + 内容）、白底侧栏、52px 顶栏、`.page-content`；
+    断点 1080px（侧栏折成横向条）与 760px（隐藏计数、单列表单、全屏弹窗）。
+  - `windows.css`：进度 / 逐题 / 告警三个浮层小窗的固定定位、最小化条与列表行。
+- **顶栏承载页面身份**：删除「工作空间 / 页名」面包屑与 40px 巨标题，标题与一句说明移入顶栏
+  `.top-title`（h1 15px），右侧依次是新建学习任务、账号/课程/运行中三项计数、浮层开关、刷新。
+  页面层级改由「区块标题 + 行」承担，不再靠字号制造层级。
+
+### 二、六个页面
+
+- **工作总览**：删掉四张等大指标卡、环形仪表、三条阶段比例条与三段重复叙述（它们都在说同一件事），
+  改为「续跑提示条 → 单块执行摘要（本轮已确认 / 总数 + 进度条 + 三枚阶段 chip）→ 调度队列表格
+  （课程与任务 / 状态 / 说明 / 进度 / 创建，整行可点开任务）→ 正在执行的账号两卡（平台任务点缓存、
+  已确认进度、媒体行、暂停/停止）→ 最近完成四行」。
+- **学习任务**：六张账号卡两列（420px 起），卡内分四段：账号头（勾选 / 头像 / 名称 / 状态 / 同步）、
+  四格数字（课程 / 平台任务点 / 执行排队 / 需处理）、绿色实时卡（进度、答题与提交、媒体行）、
+  课程网格（勾选态整块变墨蓝淡底）与底部操作行（创建任务 / 暂停 / 继续 / 停止 / 学习通 / 缓存时间）。
+  `.compact` 模式改为左 268px 头部（两行 grid）+ 右侧内容的左右分栏。
+- **账号与课程**：从大卡片改为「账号 / 课程 / 登录 / 操作」四列行式表；同一事实只说一次
+  （课程列只说同步结果，登录列只说登录缓存）；「登录状态与缓存」从大胶囊折叠改成一行细链接。
+- **已完成**：五列表格（结果 / 课程与任务 / 逐题概要 / 耗时与时间 / 详情），逐题概要与考试信息
+  作为展开行挂在第二列下方；窄屏时改为上下堆叠。
+- **答题缓存**：三列统计（缓存题目 / 命中次数 / 命中率）+ 四列行（题型 / 题干 / 答案 / 删除）。
+  `lookups = 0` 时命中率显示「—」而不是 0%——后端 `hit_rate = hits / lookups`，0 次查询必然算出 0%，
+  显示 0% 会被误读成「缓存完全没用」。
+- **偏好设置**：168px 侧栏 6 个分组 + 面板（参数两列网格、布尔项走开关行）+ 底部保存栏 +
+  「配置备份与迁移」折叠。
+- **新建任务向导 / 任务详情抽屉 / 三个浮层小窗 / 迷你监控**：步骤条、课程与考试列表、逐题卡、
+  事件列表全部重排；逐题卡默认收起选项（`展开题干与选项`），避免一屏只看得到 4 题。
+
+### 三、修掉的真实缺陷
+
+- **`RouterView` 上的 `@select` 会透传**：`App.vue` 原来写 `<RouterView @select="selected = $event" />`，
+  监听器被透传到页面组件，`$event` 是原生 `Event` 而不是 `Task`，任务抽屉会以空任务挂载；
+  `ModalShell` 给 `.workspace/.sidebar` 加 `inert` 后子模板读 `task.course_name` 抛错，
+  渲染不出 DOM 又不卸载，整页点击被拦截。改为 `v-slot="{ Component }"` + `<component :is>` 显式绑定，
+  并加 `pick(task)` 守卫只接受带 `id` 的任务。
+- **`ModalShell` 的 inert / overflow 锁改为引用计数**（模块级 `locks`），多弹窗叠加或任一实例异常卸载
+  都不会把整页锁死；改用 `?.setAttribute` 避免 `.workspace` 缺失时抛错。
+- **迷你窗**：`#/mini` 路由不再套侧栏与顶栏（Electron 以 340×220 无框窗加载，套壳会挤成残片）；
+  已用时改用 `live.ts` 的 `elapsedSeconds`（会优先用 `task.live.elapsed_seconds`），
+  修掉此前显示的 `497823:05:24`。
+- **总览队列进度**：`/api/overview` 的 `stats.work` 只回传 `units` 与 `sealed`，不带汇总数字，
+  `overview.ts` 的 `summarizeWork` 改为按 `units` 的 status 现算 completed/total/failed/blocked，
+  队列不再显示 `0/—`。
+- 390px 宽下导航条从三行收到两行（只留品牌图标 + 更紧凑的导航项）；`select` 不再在工具条里撑满整行；
+  账号页/缓存页的图标按钮补齐描边，不再像空按钮。
+
+### 四、验证
+
+- `frontend`：`npm run build` 通过（`vue-tsc --noEmit` + `vite build`，产物约 236 kB JS / 70 kB CSS）；
+  `npm test` 7 files / 47 tests 通过（逻辑模块未改，测试未动）。
+- `tools/vue_check.py`：断言随新结构同步（`.execution-account` 由「固定 520px」改为「两卡等高且
+  240–560px」、`.workspace-account` 由「等高」改为「等宽」），共 54 项全部通过，
+  产物截图与报告写到 `docs/vue-validation/`（1920 / 1440 / 390 三视口 × 六页 + 向导、抽屉、
+  考试、续跑、浮窗、迷你窗）。
+
+### 改动文件（界面重做，摘要）
+
+| 领域 | 文件 |
+|---|---|
+| 样式 | `frontend/src/style.css`（改为 `@import` 入口）、`frontend/src/styles/{tokens,base,shell,windows}.css` **新增** |
+| 骨架 | `frontend/src/App.vue`（顶栏 / 迷你窗路由 / `pick` 守卫） |
+| 页面 | `frontend/src/components/{OverviewDashboard,AccountWorkspace,AccountsView,TaskList,CompletedView,BankView,SettingsView}.vue` |
+| 浮层与弹窗 | `frontend/src/components/{NewTask,TaskDrawer,ModalShell,ProgressWindow,AnswerFeedWindow,AlertWindow}.vue`、`frontend/src/views/MiniView.vue` |
+| 逻辑 | `frontend/src/overview.ts`（`summarizeWork` 按 units 现算） |
+| 验收 | `tools/vue_check.py`（两处断言按新布局改写，其余文案断言保持） |
+| 文档 | `docs/architecture.md`「界面分区与布局」章节重写 |
+
+---
+
+
+## v2.4.0
 > 本版是**工程质量版**：CLI 移植遗留清理（配置单源 / 状态机 / N+1 / 存储与日志通道）、
 > 页面按实际信息重排（总览真值 + 调度队列 + 服务端筛选）、日志系统完善（单通道结构化）、
 > Electron 桌面壳双端可用（多实例小窗注册表）。无破坏性 API 变更；数据库 Schema 不变，

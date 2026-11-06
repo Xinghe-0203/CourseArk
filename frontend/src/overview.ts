@@ -33,19 +33,30 @@ export function executionProfiles(workspaces: AccountWorkspace[]) {
   });
 }
 
-/** 汇总单个任务的 work 单元计数（stats.work 的 completed/total/failed/blocked）。 */
+/** 汇总单个任务的 work 单元计数。
+ *  v2.4.0 起 /api/overview 只回传 stats.work 的 units 与 sealed（不再带
+ *  completed/total/failed/blocked 汇总），所以这里以单元状态现算，旧字段存在时优先。 */
 export function summarizeWork(task: Pick<Task, "stats">) {
   const work = (task.stats?.work ?? {}) as {
     completed?: number;
     total?: number;
     failed?: number;
     blocked?: number;
+    units?: Record<string, { status?: string } | undefined>;
+  };
+  const units = work.units && typeof work.units === "object" ? Object.values(work.units) : [];
+  const counted = (status: string) => units.filter((unit) => unit?.status === status).length;
+  const derived = {
+    completed: counted("succeeded"),
+    total: units.length,
+    failed: counted("failed"),
+    blocked: counted("blocked"),
   };
   return {
-    completed: Number(work.completed) || 0,
-    total: Number(work.total) || 0,
-    failed: Number(work.failed) || 0,
-    blocked: Number(work.blocked) || 0,
+    completed: Number(work.completed) || derived.completed,
+    total: Number(work.total) || derived.total,
+    failed: Number(work.failed) || derived.failed,
+    blocked: Number(work.blocked) || derived.blocked,
   };
 }
 

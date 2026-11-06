@@ -159,7 +159,7 @@ Worker 通过 `runtime.emit` 写事件，`app/database.py` 落库，`app/narrati
   `login_failed` 等），由 `presentation.describe` 归类（`login/llm/antispider/network/media/...`）
   并给出处置建议，前端在任务详情「诊断日志」与总览指标里消费，不再有独立的站内问题中心。
 
-## 界面分区与布局（v2.3.0）
+## 界面分区与布局（界面重做 v3）
 
 前端按**单一职责**分区，导航分三组：
 
@@ -172,18 +172,29 @@ Worker 通过 `runtime.emit` 写事件，`app/database.py` 落库，`app/narrati
 | 档案 | 答题缓存 | 搜索、导入、导出、删除本机记住的答案 |
 | 系统 | 偏好设置 | 默认学习方式、并发、AI 服务、存储与备份 |
 
-- **统一口径**：`frontend/src/stats.ts` 的 `workspaceStats(workspaces, tasks)` 是唯一聚合来源，
-  顶栏 `.top-stats`（账号 / 课程 / 运行中）、总览指标卡、学习任务页共用它。`courses` 按
-  `sum(w.courses.length)` 计算，与学习任务页列出的课程条数一致，避免同一指标两页不同值。
-- **不再有卡内滚动**：学习任务页 `.account-workspaces` 用 `grid-auto-rows:1fr` 让同行等高，
-  `.workspace-account` 不设固定高度、`.workspace-courses` 不设 `max-height`；内容多则卡片自然变高。
-- **浮层让位**：`ProgressWindow` 默认 `minimized=true`，只留贴边标题栏；`.page-content` 底部预留
-  `132px`，展开时才临时占用空间。侧栏底部 `.engine` 常驻心跳（服务状态、运行中/暂停数、端口）。
-- **状态呈现**：`.status` 统一为胶囊（`--r-pill` + hairline），语义色只用于文字与边框，不做色块；
-  `.dot` / `.live-dot` 保留类名但不再渲染装饰圆点。
-- 验收锚点（`tools/vue_check.py` 断言）不可重命名：`.execution-account`（总览卡须等高 520px）、
+- **视觉基底**：`frontend/src/style.css` 只做四行 `@import`，实际样式在 `frontend/src/styles/`。
+  `tokens.css` 定义冷灰纸面（`--paper #edf0f3`）+ 仪器墨蓝（`--navy #123a5e`）+ 交通灯语义色
+  （`--ok/--warn/--danger/--info`）与字体角色（正文 Microsoft YaHei、数字 Bahnschrift、等宽 Consolas），
+  并把旧变量名（`--fg/--bg/--line/--accent` 等）映射到新 token，供模板内联 SVG 继续使用；
+  `base.css` 是按钮、表单、状态胶囊、进度条、标签页、筛选条、分页、面板、弹窗与空态的公共件；
+  `shell.css` 是侧栏 `--rail:216px` + 顶栏 `--topbar:52px` 的骨架与 1080 / 760 两档断点；
+  `windows.css` 是进度、逐题、告警三个浮层小窗。
+- **顶栏承载页面身份**：标题与一句说明放在 `.top-title`（h1 15px），不再有 40px 巨标题和
+  「工作空间 / 页名」面包屑；右侧依次是新建任务、账号/课程/运行中三项计数、浮层开关、刷新。
+- **统一口径**：`frontend/src/stats.ts` 的 `workspaceStats(workspaces, tasks)` 仍是唯一聚合来源，
+  顶栏 `.top-stats`（账号 / 课程 / 运行中）与总览共用它；`courses` 按 `sum(w.courses.length)` 计算。
+- **总览只讲一次**：续跑条 → 单块执行摘要（`.execution-dashboard`：本轮已确认 / 总数 + 进度条 +
+  三枚阶段 chip）→ 调度队列表格（课程与任务 / 状态 / 说明 / 进度 / 创建）→ 正在执行的账号卡 →
+  最近完成。原先四张等大指标卡、环形仪表与三条阶段比例条都在重复同一件事，已删除。
+- **列表用行式表格**：账号与课程、已完成、答题缓存、任务记录都是「28px 表头 + 行」，不再用大卡片；
+  行内多行信息用 `small` 与 `.num` 分层次，状态统一 `.status` 胶囊。
+- **学习任务保留卡片但不再卡内滚动**：`.account-workspaces` 两列 420px 起，`.workspace-account`
+  不设固定高度；`.compact` 模式左侧 268px 头部（两行 grid）承载勾选、头像、账号名与同步按钮。
+- **浮层让位**：`ProgressWindow` 默认 `minimized=true`，只留贴边标题栏；`.page-content` 不再预留
+  固定底部空间。侧栏底部 `.engine` 常驻心跳（服务状态、运行中/暂停数、端口）。
+- 验收锚点（`tools/vue_check.py` 断言）不可重命名：`.execution-account`（总览两卡等高，240–560px）、
   `.execution-course`、`.media-live li`、`.execution-dashboard`、`.progress-window`、
-  `.workspace-account`（同行等高）、`.workspace-course`、`.resume-banner`、`.task-row`、
+  `.workspace-account`（六卡等宽）、`.workspace-course`、`.resume-banner`、`.task-row`、
   `.completed-row`。
 
 ## Worker 公共基座与进程治理（v2.4.0）

@@ -1,0 +1,56 @@
+/* 课舟 CourseArk — 视觉基底：冷灰纸面 + 仪器墨蓝 + 交通灯状态色 */
+:root {
+  color-scheme: light;
+
+  /* 墨色与中性面 */
+  --ink: #15191f;
+  --ink2: #39424d;
+  --mute: #69737f;
+  --faint: #98a2ad;
+  --paper: #edf0f3;
+  --surface: #ffffff;
+  --surface2: #f7f8fa;
+  --surface3: #eff2f5;
+  --line: #dfe3e8;
+  --line2: #c9d0d8;
+
+  /* 结构色：只在选择、进度与品牌出现 */
+  --navy: #123a5e;
+  --navy2: #1c5586;
+  --navy-soft: #e7edf4;
+
+  /* 状态色：只表达状态，不做装饰 */
+  --ok: #1a7a52;
+  --ok-soft: #e8f2ec;
+  --warn: #96620f;
+  --warn-soft: #f7efdc;
+  --danger: #b23a2f;
+  --danger-soft: #f9eae8;
+  --info: #2a5f9e;
+  --info-soft: #e9f0f7;
+
+  /* 几何 */
+  --r1: 3px;
+  --r2: 4px;
+  --r3: 6px;
+  --rail: 216px;
+  --topbar: 52px;
+
+  /* 字体角色 */
+  --font-body: "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", system-ui, sans-serif;
+  --font-num: "Bahnschrift", "DIN Alternate", "Segoe UI", ui-monospace, monospace;
+  --font-mono: Consolas, "Cascadia Mono", ui-monospace, monospace;
+
+  /* 旧变量别名：模板内联 SVG 与历史样式继续可用 */
+  --fg: var(--ink);
+  --fg-muted: var(--mute);
+  --fg-subtle: var(--faint);
+  --bg: var(--surface);
+  --bg-subtle: var(--surface2);
+  --card: var(--surface);
+  --accent: var(--navy);
+  --accent-soft: var(--navy-soft);
+  --border: var(--line);
+  --muted: var(--mute);
+  --shadow: 0 1px 2px rgba(16, 24, 32, 0.06);
+}

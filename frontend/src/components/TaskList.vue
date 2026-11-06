@@ -102,178 +102,178 @@ function showResume(task: Task) {
 }
 </script>
 <template>
-  <div v-if="filters" class="filterbar">
-    <label class="search"
-      ><Search :size="17" /><input
-        v-model="query"
-        placeholder="搜索课程或账号"
-        aria-label="搜索任务" /></label
-    ><select v-model="account" aria-label="按账号筛选">
-      <option value="">所有账号</option>
-      <option v-for="a in state.accounts" :value="a.id">
-        {{ a.label || a.username }}
-      </option></select
-    ><select v-model="filter" aria-label="任务状态">
-      <option value="active">当前任务</option>
-      <option value="all">全部与历史</option>
-      <option value="succeeded">已完成</option>
-      <option value="failed">需处理</option>
-      <option value="paused">已暂停</option>
-      <option value="stopped">已停止</option>
-    </select>
-  </div>
-  <div class="task-groups">
-    <section v-for="group in groups" :key="group.id" class="account-group">
-      <div class="group-heading">
-        <span class="avatar">{{ group.label.slice(0, 1) }}</span>
-        <div>
+  <div class="task-list">
+    <div v-if="filters" class="filterbar">
+      <label class="search"
+        ><Search :size="15" /><input
+          v-model="query"
+          placeholder="搜索课程或账号"
+          aria-label="搜索任务" /></label
+      ><select v-model="account" aria-label="按账号筛选">
+        <option value="">所有账号</option>
+        <option v-for="a in state.accounts" :value="a.id">
+          {{ a.label || a.username }}
+        </option></select
+      ><select v-model="filter" aria-label="任务状态">
+        <option value="active">当前任务</option>
+        <option value="all">全部与历史</option>
+        <option value="succeeded">已完成</option>
+        <option value="failed">需处理</option>
+        <option value="paused">已暂停</option>
+        <option value="stopped">已停止</option>
+      </select>
+    </div>
+    <div class="task-groups">
+      <section v-for="group in groups" :key="group.id" class="account-group">
+        <div class="group-heading">
+          <span class="avatar">{{ group.label.slice(0, 1) }}</span>
           <h2>{{ group.label }}</h2>
           <small
             >{{ group.tasks.length }} 项任务 ·
             {{ group.tasks.filter(active).length }} 项进行中</small
           >
+          <span class="group-line" />
         </div>
-        <span class="group-line" />
-      </div>
-      <div class="task-table">
-        <div class="task-table-head">
-          <span>课程与任务</span><span>实际进度</span><span>状态</span
-          ><span>操作</span>
-        </div>
-        <article v-for="task in group.tasks" :key="task.id" class="task-row">
-          <button class="task-title" @click="$emit('select', task)">
-            <span class="course-icon"><Layers :size="18" /></span
-            ><span
-              ><b>{{ task.course_name || "未命名课程" }}</b
-              ><small
-                >{{ features[task.feature] }} ·
-                {{ date(task.created_at)
-                }}<template v-if="task.run_id">
-                  · 批次 {{ task.run_id.slice(0, 8) }}</template
-                ></small
-              ></span
-            >
-          </button>
-          <div class="task-progress">
-            <div class="progress-label">
-              <span v-if="task.progress?.total"
-                >已完成 {{ task.progress.completed }} /
-                {{ task.progress.total }} 项</span
-              ><span v-else>{{
-                task.status === "succeeded"
-                  ? "执行已结束"
-                  : task.status === "pending"
-                    ? "等待调度"
-                    : "正在读取任务范围"
-              }}</span
-              ><strong v-if="percent(task) !== null"
-                >{{ percent(task) }}%</strong
+        <div class="task-table">
+          <div class="task-table-head">
+            <span>课程与任务</span><span>实际进度</span><span>状态</span
+            ><span>操作</span>
+          </div>
+          <article v-for="task in group.tasks" :key="task.id" class="task-row">
+            <button class="task-title" @click="$emit('select', task)">
+              <span class="course-icon"><Layers :size="15" /></span
+              ><span
+                ><b>{{ task.course_name || "未命名课程" }}</b
+                ><small
+                  >{{ features[task.feature] }} ·
+                  {{ date(task.created_at)
+                  }}<template v-if="task.run_id">
+                    · 批次 {{ task.run_id.slice(0, 8) }}</template
+                  ></small
+                ></span
+              >
+            </button>
+            <div class="task-progress">
+              <div class="progress-label">
+                <span v-if="task.progress?.total"
+                  >已完成 {{ task.progress.completed }} /
+                  {{ task.progress.total }} 项</span
+                ><span v-else>{{
+                  task.status === "succeeded"
+                    ? "执行已结束"
+                    : task.status === "pending"
+                      ? "等待调度"
+                      : "正在读取任务范围"
+                }}</span
+                ><strong v-if="percent(task) !== null" class="num"
+                  >{{ percent(task) }}%</strong
+                >
+              </div>
+              <div
+                :class="[
+                  'progress-track',
+                  { indeterminate: percent(task) === null && active(task) },
+                ]"
+                role="progressbar"
+                :aria-valuenow="percent(task) ?? undefined"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                :aria-label="task.course_name + '完成进度'"
+              >
+                <i :style="{ width: (percent(task) ?? 0) + '%' }" />
+              </div>
+              <small v-if="liveLine(task)" class="task-live-summary">{{
+                liveLine(task)
+              }}</small>
+              <small
+                v-else-if="showResume(task) && unfinishedUnits(task)"
+                class="task-resume-note"
+                >还有 {{ unfinishedUnits(task) }} 项未完成，可继续执行</small
+              ><small v-else-if="task.progress?.active?.length">{{
+                task.progress.active[0]?.name || "处理中"
+              }}</small
+              ><small v-else-if="task.progress?.failed"
+                >{{ task.progress.failed }} 项未完成，请查看详情</small
+              >
+              <small
+                v-else-if="
+                  Number(task.stats?.questions) || Number(task.stats?.submit_ok)
+                "
+                class="task-stats-line"
+                >答题 {{ Number(task.stats?.questions) || 0 }} 题 ·
+                缓存命中 {{ Number(task.stats?.cache_hits) || 0 }} · AI
+                {{ Number(task.stats?.llm_calls) || 0 }} · 提交接受
+                {{ Number(task.stats?.submit_ok) || 0 }}</small
               >
             </div>
-            <div
-              :class="[
-                'progress-track',
-                { indeterminate: percent(task) === null && active(task) },
-              ]"
-              role="progressbar"
-              :aria-valuenow="percent(task) ?? undefined"
-              aria-valuemin="0"
-              aria-valuemax="100"
-              :aria-label="task.course_name + '完成进度'"
+            <span :class="['status', task.status]"
+              ><i />{{ statuses[task.status] || task.status }}</span
             >
-              <i :style="{ width: (percent(task) ?? 0) + '%' }" />
+            <div class="row-actions">
+              <button
+                v-if="
+                  [
+                    'running',
+                    'starting',
+                    'logging_in',
+                    'loading_courses',
+                  ].includes(task.status)
+                "
+                aria-label="暂停任务"
+                class="icon-button"
+                :disabled="state.busy.has(task.id)"
+                @click="command(task, 'pause')"
+              >
+                <Pause :size="14" /></button
+              ><button
+                v-if="task.status === 'paused'"
+                class="icon-button"
+                aria-label="继续任务"
+                :disabled="state.busy.has(task.id)"
+                @click="command(task, 'resume')"
+              >
+                <Play :size="14" /></button
+              ><button
+                v-if="!terminal(task)"
+                class="icon-button"
+                aria-label="停止任务"
+                :disabled="state.busy.has(task.id)"
+                @click="command(task, 'stop')"
+              >
+                <Square :size="13" /></button
+              ><button
+                v-if="showResume(task)"
+                class="text-link resume-action"
+                :disabled="state.busy.has('resume-' + task.id)"
+                aria-label="继续执行任务"
+                @click="resume(task)"
+              >
+                继续执行</button
+              ><button
+                v-if="showResume(task)"
+                class="text-link resume-dismiss"
+                :disabled="state.busy.has('dismiss-resume-' + task.id)"
+                aria-label="不再提醒此未完成任务"
+                @click="dismiss(task)"
+              >
+                不再提醒</button
+              ><button
+                class="icon-button"
+                aria-label="任务详情"
+                title="任务详情"
+                @click="$emit('select', task)"
+              >
+                <ChevronRight :size="15" />
+              </button>
             </div>
-            <small v-if="liveLine(task)" class="task-live-summary">{{
-              liveLine(task)
-            }}</small>
-            <small
-              v-else-if="showResume(task) && unfinishedUnits(task)"
-              class="task-resume-note"
-              >还有 {{ unfinishedUnits(task) }} 项未完成，可继续执行</small
-            ><small v-else-if="task.progress?.active?.length">{{
-              task.progress.active[0]?.name || "处理中"
-            }}</small
-            ><small v-else-if="task.progress?.failed"
-              >{{ task.progress.failed }} 项未完成，请查看详情</small
-            >
-            <!-- T7.8：逐题统计行（后端早已返回，列表此前未展示） -->
-            <small
-              v-else-if="
-                Number(task.stats?.questions) || Number(task.stats?.submit_ok)
-              "
-              class="task-stats-line"
-              >答题 {{ Number(task.stats?.questions) || 0 }} 题 ·
-              缓存命中 {{ Number(task.stats?.cache_hits) || 0 }} · AI
-              {{ Number(task.stats?.llm_calls) || 0 }} · 提交接受
-              {{ Number(task.stats?.submit_ok) || 0 }}</small
-            >
-          </div>
-          <span :class="['status', task.status]"
-            ><i />{{ statuses[task.status] || task.status }}</span
-          >
-          <div class="row-actions">
-            <button
-              v-if="
-                [
-                  'running',
-                  'starting',
-                  'logging_in',
-                  'loading_courses',
-                ].includes(task.status)
-              "
-              aria-label="暂停任务"
-              class="icon-button"
-              :disabled="state.busy.has(task.id)"
-              @click="command(task, 'pause')"
-            >
-              <Pause :size="16" /></button
-            ><button
-              v-if="task.status === 'paused'"
-              class="icon-button"
-              aria-label="继续任务"
-              :disabled="state.busy.has(task.id)"
-              @click="command(task, 'resume')"
-            >
-              <Play :size="16" /></button
-            ><button
-              v-if="!terminal(task)"
-              class="icon-button"
-              aria-label="停止任务"
-              :disabled="state.busy.has(task.id)"
-              @click="command(task, 'stop')"
-            >
-              <Square :size="15" /></button
-            ><button
-              v-if="showResume(task)"
-              class="text-link resume-action"
-              :disabled="state.busy.has('resume-' + task.id)"
-              aria-label="继续执行任务"
-              @click="resume(task)"
-            >
-              继续执行</button
-            ><button
-              v-if="showResume(task)"
-              class="text-link resume-dismiss"
-              :disabled="state.busy.has('dismiss-resume-' + task.id)"
-              aria-label="不再提醒此未完成任务"
-              @click="dismiss(task)"
-            >
-              不再提醒</button
-            ><button
-              class="icon-button"
-              aria-label="任务详情"
-              @click="$emit('select', task)"
-            >
-              <ChevronRight :size="17" />
-            </button>
-          </div>
-        </article>
+          </article>
+        </div>
+      </section>
+      <div v-if="!groups.length" class="empty">
+        <Layers :size="26" />
+        <h3>暂无{{ filters ? "符合条件的" : "进行中的" }}任务</h3>
+        <p>创建任务后，会按账号显示在这里。</p>
       </div>
-    </section>
-    <div v-if="!groups.length" class="empty">
-      <Layers :size="30" />
-      <h3>暂无{{ filters ? "符合条件的" : "进行中的" }}任务</h3>
-      <p>创建任务后，会按账号显示在这里。</p>
     </div>
     <div v-if="filters && count > 100" class="pagination">
       <button
@@ -282,7 +282,7 @@ function showResume(task: Task) {
       >
         上一页
       </button>
-      <span
+      <span class="num"
         >{{ offset + 1 }}—{{ Math.min(offset + 100, count) }} /
         {{ count }}</span
       >
@@ -292,3 +292,211 @@ function showResume(task: Task) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.task-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.account-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.group-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.group-heading h2 {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.group-heading small {
+  font-size: 11px;
+  color: var(--mute);
+}
+
+.group-line {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.task-table {
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.task-table-head,
+.task-row {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1.25fr) minmax(0, 1.6fr) 78px 132px;
+  gap: 12px;
+  align-items: center;
+  padding: 0 12px;
+}
+
+.task-table-head {
+  height: 28px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface2);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+}
+
+.task-row {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.task-row:last-child {
+  border-bottom: 0;
+}
+
+.task-row:hover {
+  background: var(--surface2);
+}
+
+.task-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  min-width: 0;
+}
+
+.task-title:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+}
+
+.task-title > span:last-child {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.course-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r2);
+  background: var(--surface3);
+  color: var(--navy);
+  flex: none;
+}
+
+.task-title b {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-title small {
+  font-size: 10.5px;
+  color: var(--mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-progress {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.progress-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--mute);
+}
+
+.progress-label strong {
+  margin-left: auto;
+  font-family: var(--font-num);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink2);
+}
+
+.task-progress > small {
+  font-size: 10.5px;
+  color: var(--mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-progress .task-stats-line {
+  color: var(--faint);
+}
+
+.task-progress .task-resume-note {
+  color: var(--warn);
+}
+
+.task-row > .status {
+  justify-self: start;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+}
+
+.row-actions .text-link {
+  font-size: 11px;
+}
+
+@media (max-width: 1080px) {
+  .task-table-head {
+    display: none;
+  }
+
+  .task-row {
+    grid-template-columns: minmax(0, 1fr) 78px;
+    gap: 6px 10px;
+  }
+
+  .task-progress {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .row-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+</style>

@@ -6,6 +6,23 @@ defineProps<{ title: string; wide?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 const panel = ref<HTMLElement>();
 let previous: Element | null;
+// 同时存在的弹窗可能不止一个（任务抽屉叠在列表页、向导里再开确认框）。
+// inert 与滚动锁必须引用计数：否则先卸载的那个会把锁清掉，
+// 或者某个实例异常卸载后把整页永久锁死（点击全部落到 shell 上）。
+let locks = 0;
+function lock() {
+  if (locks++ > 0) return;
+  document.querySelector<HTMLElement>(".workspace")?.setAttribute("inert", "");
+  document.querySelector<HTMLElement>(".sidebar")?.setAttribute("inert", "");
+  document.body.style.overflow = "hidden";
+}
+function unlock() {
+  if (locks > 0) locks -= 1;
+  if (locks > 0) return;
+  document.querySelector<HTMLElement>(".workspace")?.removeAttribute("inert");
+  document.querySelector<HTMLElement>(".sidebar")?.removeAttribute("inert");
+  document.body.style.overflow = "";
+}
 function key(event: KeyboardEvent) {
   if (event.key === "Escape") emit("close");
   if (event.key === "Tab") {
@@ -26,20 +43,17 @@ function key(event: KeyboardEvent) {
 }
 onMounted(() => {
   previous = document.activeElement;
-  document.querySelector<HTMLElement>(".workspace")!.inert = true;
-  document.querySelector<HTMLElement>(".sidebar")!.inert = true;
-  document.body.style.overflow = "hidden";
+  lock();
   panel.value?.focus();
   document.addEventListener("keydown", key);
 });
 onUnmounted(() => {
-  document.querySelector<HTMLElement>(".workspace")!.inert = false;
-  document.querySelector<HTMLElement>(".sidebar")!.inert = false;
-  document.body.style.overflow = "";
+  unlock();
   document.removeEventListener("keydown", key);
   if (previous instanceof HTMLElement) previous.focus();
 });
 </script>
+
 <template>
   <Teleport to="body"
     ><div class="overlay" @click.self="emit('close')">

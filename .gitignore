@@ -29,3 +29,7 @@ scratch/
 agent/
 .claude/
 skills-lock.json
+
+# 本机验收与构建用的临时工作目录
+.tmp-ui/
+.tmp-gate/
