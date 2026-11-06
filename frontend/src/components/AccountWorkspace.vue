@@ -522,14 +522,14 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 .account-workspace {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
 }
 
 .workspace-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .workspace-toolbar select {
@@ -543,8 +543,8 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 6px 12px;
-  padding: 5px 10px;
+  gap: 8px 14px;
+  padding: 8px 12px;
   border: 1px solid var(--line);
   border-radius: var(--r2);
   background: var(--surface2);
@@ -575,7 +575,7 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--surface2);
   font-size: 10.5px;
@@ -587,8 +587,8 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
   display: grid;
   grid-template-columns: 14px minmax(0, 1fr);
   align-items: center;
-  gap: 7px;
-  padding: 0 8px 0 10px;
+  gap: 9px;
+  padding: 0 10px 0 12px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -604,10 +604,10 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr) 8px;
   align-items: center;
-  gap: 7px;
+  gap: 9px;
   width: 100%;
   height: auto;
-  padding: 7px 0;
+  padding: 10px 0;
   border: 0;
   background: transparent;
   text-align: left;
@@ -619,7 +619,8 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 
 .pick-copy b {
   display: block;
-  font-size: 12.5px;
+  font-size: 13px;
+  line-height: 1.45;
   font-weight: 600;
   color: var(--ink);
   overflow: hidden;
@@ -629,7 +630,8 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 
 .pick-copy small {
   display: block;
-  font-size: 10.5px;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--mute);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -666,8 +668,8 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 4px 10px;
-  padding: 8px 12px;
+  gap: 6px 12px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--surface2);
 }
@@ -677,7 +679,8 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 }
 
 .account-name h2 {
-  font-size: 13px;
+  font-size: 13.5px;
+  line-height: 1.4;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -686,7 +689,9 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 
 .account-name small {
   display: block;
-  font-size: 10.5px;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--mute);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -702,9 +707,9 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 }
 
 .head-actions button {
-  height: 24px;
-  padding: 0 8px;
-  font-size: 11px;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
 }
 
 .account-numbers {
@@ -718,15 +723,15 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 .account-numbers > div {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 6px 10px;
+  gap: 3px;
+  padding: 9px 12px;
   background: var(--surface);
 }
 
 .account-numbers strong {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 .account-numbers strong small {
@@ -735,7 +740,8 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 }
 
 .account-numbers span {
-  font-size: 10px;
+  font-size: 10.5px;
+  line-height: 1.4;
   color: var(--faint);
 }
 
@@ -744,7 +750,7 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 }
 
 .account-live article {
-  padding: 8px 12px;
+  padding: 12px 14px;
   border-left: 2px solid var(--ok);
   border-bottom: 1px solid var(--line);
   background: var(--surface2);
@@ -771,32 +777,34 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 }
 
 .live-progress {
-  margin-top: 6px;
+  margin-top: 9px;
 }
 
 .live-details {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 12px;
-  margin-top: 5px;
-  font-size: 11px;
+  gap: 4px 14px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
   color: var(--mute);
 }
 
 .media-live {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-top: 6px;
+  gap: 4px;
+  margin-top: 9px;
 }
 
 .media-live li {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 2px 0;
-  font-size: 11px;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 11.5px;
+  line-height: 1.45;
 }
 
 .media-live li b {
@@ -816,9 +824,10 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 5px 9px;
-  padding: 8px 12px;
+  gap: 6px 12px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--line);
+  line-height: 1.5;
   background: var(--surface2);
   font-size: 11.5px;
 }
@@ -848,9 +857,9 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  height: 24px;
+  height: 30px;
   padding: 0 4px;
   border: 0;
   background: transparent;
@@ -872,8 +881,8 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 .account-course-heading {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px 6px;
+  gap: 12px;
+  padding: 13px 14px 9px;
 }
 
 .account-course-heading h3 {
@@ -889,14 +898,14 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 .course-row-head,
 .workspace-course {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) 132px minmax(0, 1.15fr) 168px;
+  grid-template-columns: minmax(0, 1.5fr) 136px minmax(0, 1.15fr) 188px;
   align-items: center;
-  gap: 12px;
-  padding: 0 12px;
+  gap: 16px;
+  padding: 0 14px;
 }
 
 .course-row-head {
-  height: 24px;
+  height: 30px;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   background: var(--surface2);
@@ -906,8 +915,8 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 }
 
 .workspace-course {
-  padding-top: 6px;
-  padding-bottom: 6px;
+  padding-top: 11px;
+  padding-bottom: 11px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -933,7 +942,8 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 
 .course-name b {
   display: block;
-  font-size: 12.5px;
+  font-size: 13px;
+  line-height: 1.45;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -942,7 +952,9 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 
 .course-name small {
   display: block;
-  font-size: 10.5px;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -950,13 +962,17 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 }
 
 .course-mission {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--ink2);
 }
 
 .course-mission b {
-  font-size: 13px;
+  font-size: 13.5px;
+  line-height: 1.3;
   font-weight: 500;
 }
 
@@ -967,7 +983,8 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 
 .course-mission > small {
   display: block;
-  font-size: 10.5px;
+  font-size: 11px;
+  line-height: 1.45;
   color: var(--mute);
 }
 
@@ -983,22 +1000,24 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 3px 7px;
+  gap: 4px 8px;
   min-width: 0;
-  font-size: 11px;
+  font-size: 11.5px;
+  line-height: 1.55;
 }
 
 .course-progress {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) 40px auto;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 
 .course-progress b {
   font-size: 12px;
   font-weight: 500;
   color: var(--ink2);
+  text-align: right;
 }
 
 .course-progress .text-link {
@@ -1033,7 +1052,7 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
   }
 
   .account-pick {
-    width: 168px;
+    width: 180px;
     grid-template-columns: 26px minmax(0, 1fr) 8px;
   }
 
@@ -1041,15 +1060,19 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .account-numbers > div:last-child {
+    grid-column: span 2;
+  }
+
   .course-row-head {
     display: none;
   }
 
   .workspace-course {
-    grid-template-columns: minmax(0, 1fr) 128px;
-    gap: 4px 12px;
-    padding-top: 8px;
-    padding-bottom: 8px;
+    grid-template-columns: minmax(0, 1fr) 140px;
+    gap: 8px 16px;
+    padding-top: 11px;
+    padding-bottom: 11px;
   }
 
   .course-pick {

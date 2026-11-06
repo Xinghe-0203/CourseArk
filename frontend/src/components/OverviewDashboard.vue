@@ -585,13 +585,13 @@ async function control(id: string, op: string) {
   display: grid;
   grid-template-columns:
     minmax(0, 1.5fr) 78px minmax(0, 1.4fr) 62px 78px;
-  gap: 12px;
+  gap: 14px;
   align-items: center;
-  padding: 0 12px;
+  padding: 0 14px;
 }
 
 .queue-head {
-  height: 28px;
+  height: 34px;
   border-bottom: 1px solid var(--line);
   background: var(--surface2);
   font-size: 10.5px;
@@ -602,8 +602,8 @@ async function control(id: string, op: string) {
 .queue-row {
   width: 100%;
   height: auto;
-  min-height: 40px;
-  padding: 7px 12px;
+  min-height: 46px;
+  padding: 11px 14px;
   border: 0;
   border-bottom: 1px solid var(--line);
   border-radius: 0;
@@ -622,7 +622,7 @@ async function control(id: string, op: string) {
 
 .queue-main {
   display: grid;
-  gap: 1px;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -675,7 +675,7 @@ async function control(id: string, op: string) {
 .execution-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-  gap: 12px;
+  gap: 16px;
   align-items: start;
 }
 
@@ -691,8 +691,8 @@ async function control(id: string, op: string) {
 .execution-account-head {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 9px 12px;
+  gap: 11px;
+  padding: 13px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--surface2);
 }
@@ -722,9 +722,9 @@ async function control(id: string, op: string) {
 
 .execution-scroll {
   display: grid;
-  gap: 10px;
-  max-height: 300px;
-  padding: 11px 12px;
+  gap: 14px;
+  max-height: 320px;
+  padding: 14px 14px;
   overflow-y: auto;
 }
 
@@ -744,8 +744,8 @@ async function control(id: string, op: string) {
 
 .execution-task {
   display: grid;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: 9px;
+  padding: 12px 12px;
   border: 1px solid var(--line);
   border-radius: var(--r2);
   background: var(--surface2);
@@ -779,15 +779,16 @@ async function control(id: string, op: string) {
 
 .media-live {
   display: grid;
-  gap: 3px;
+  gap: 5px;
 }
 
 .media-live li {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) auto;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
-  font-size: 11px;
+  font-size: 11.5px;
+  line-height: 1.45;
 }
 
 .media-kind {
@@ -819,8 +820,8 @@ async function control(id: string, op: string) {
 .account-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 11px 14px;
   border-top: 1px solid var(--line);
 }
 
@@ -850,8 +851,8 @@ async function control(id: string, op: string) {
   align-items: center;
   width: 100%;
   height: auto;
-  min-height: 36px;
-  padding: 7px 12px;
+  min-height: 42px;
+  padding: 10px 14px;
   border: 0;
   border-bottom: 1px solid var(--line);
   border-radius: 0;
@@ -870,7 +871,7 @@ async function control(id: string, op: string) {
 
 .recent-main {
   display: grid;
-  gap: 1px;
+  gap: 3px;
   min-width: 0;
 }
 

@@ -400,7 +400,7 @@ function clearBank() {
 .bank {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
 }
 
 .section-heading {
@@ -431,8 +431,8 @@ function clearBank() {
   display: grid;
   grid-template-columns: auto auto;
   align-items: baseline;
-  gap: 2px 8px;
-  padding: 8px 11px;
+  gap: 6px 10px;
+  padding: 13px 14px;
   background: var(--surface);
 }
 
@@ -483,8 +483,8 @@ function clearBank() {
   display: grid;
   grid-template-columns: 62px minmax(0, 1fr) minmax(0, 190px) 28px;
   align-items: start;
-  gap: 10px;
-  padding: 8px 11px;
+  gap: 14px;
+  padding: 13px 14px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -503,19 +503,19 @@ function clearBank() {
 
 .bank-main {
   display: grid;
-  gap: 3px;
+  gap: 6px;
   min-width: 0;
 }
 
 .bank-question {
   margin: 0;
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.5;
   color: var(--ink);
 }
 
 .bank-main details {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--mute);
 }
 
@@ -527,7 +527,7 @@ function clearBank() {
   justify-self: start;
   max-width: 100%;
   margin: 0;
-  padding: 2px 7px;
+  padding: 3px 8px;
   border-radius: var(--r1);
   background: var(--ok-soft);
   font-family: var(--font-body);

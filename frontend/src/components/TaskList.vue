@@ -297,19 +297,19 @@ function showResume(task: Task) {
 .task-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .task-groups {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 22px;
 }
 
 .account-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
 }
 
 .group-heading {
@@ -352,7 +352,7 @@ function showResume(task: Task) {
 }
 
 .task-table-head {
-  height: 28px;
+  height: 34px;
   border-bottom: 1px solid var(--line);
   background: var(--surface2);
   font-size: 10.5px;
@@ -361,7 +361,7 @@ function showResume(task: Task) {
 }
 
 .task-row {
-  padding: 8px 12px;
+  padding: 13px 14px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -392,7 +392,7 @@ function showResume(task: Task) {
 
 .task-title > span:last-child {
   display: grid;
-  gap: 0;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -409,7 +409,7 @@ function showResume(task: Task) {
 }
 
 .task-title b {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ink);
   overflow: hidden;
@@ -418,7 +418,7 @@ function showResume(task: Task) {
 }
 
 .task-title small {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--mute);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -427,15 +427,15 @@ function showResume(task: Task) {
 
 .task-progress {
   display: grid;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
 }
 
 .progress-label {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  font-size: 11px;
+  gap: 9px;
+  font-size: 11.5px;
   color: var(--mute);
 }
 
@@ -448,7 +448,7 @@ function showResume(task: Task) {
 }
 
 .task-progress > small {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--mute);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -472,7 +472,7 @@ function showResume(task: Task) {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 3px;
+  gap: 5px;
 }
 
 .row-actions .text-link {
@@ -486,7 +486,7 @@ function showResume(task: Task) {
 
   .task-row {
     grid-template-columns: minmax(0, 1fr) 78px;
-    gap: 6px 10px;
+    gap: 10px 14px;
   }
 
   .task-progress {

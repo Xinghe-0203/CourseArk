@@ -5,8 +5,8 @@
   z-index: 45;
   display: flex;
   flex-direction: column;
-  width: 320px;
-  max-height: 340px;
+  width: 340px;
+  max-height: 380px;
   border: 1px solid var(--line2);
   border-radius: var(--r3);
   background: var(--surface);
@@ -27,14 +27,14 @@
 
 .float-window.minimized {
   max-height: none;
-  width: 208px;
+  width: 220px;
 }
 
 .float-window-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 8px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--surface2);
 }
@@ -45,7 +45,8 @@
 
 .float-window-head strong {
   flex: 1;
-  font-size: 11.5px;
+  font-size: 12.5px;
+  line-height: 1.35;
   font-weight: 600;
   color: var(--ink);
   white-space: nowrap;
@@ -53,10 +54,10 @@
 
 .float-window-head .icon-button {
   width: auto;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 5px;
-  font-size: 10.5px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  font-size: 11px;
 }
 
 .float-window-head .live-dot.warn {
@@ -71,9 +72,9 @@
 
 .float-empty {
   margin: 0;
-  padding: 14px 11px;
-  font-size: 11px;
-  line-height: 1.6;
+  padding: 18px 14px;
+  font-size: 11.5px;
+  line-height: 1.7;
   color: var(--faint);
 }
 
@@ -100,10 +101,10 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 2px 6px;
+  gap: 4px 8px;
   width: 100%;
   height: auto;
-  padding: 6px 9px;
+  padding: 10px 12px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -116,7 +117,8 @@
 }
 
 .feed-row b {
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.4;
   font-weight: 600;
   color: var(--ink2);
   overflow: hidden;
@@ -126,7 +128,8 @@
 
 .feed-question {
   grid-column: 1 / -1;
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--mute);
   overflow: hidden;
   display: -webkit-box;
@@ -136,7 +139,8 @@
 
 .feed-answer {
   grid-column: 1 / -1;
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--ok);
   overflow-wrap: anywhere;
 }
@@ -144,39 +148,40 @@
 .feed-row time {
   grid-column: 3;
   grid-row: 1;
-  font-size: 9.5px;
+  font-size: 10.5px;
   color: var(--faint);
 }
 
 .alert-list > li {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 7px 9px;
+  gap: 6px;
+  padding: 11px 12px;
 }
 
 .alert-head {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 10px;
 }
 
 .alert-head b {
   flex: 1;
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.4;
   font-weight: 600;
   color: var(--ink2);
 }
 
 .alert-head time {
-  font-size: 9.5px;
+  font-size: 10.5px;
   color: var(--faint);
 }
 
 .alert-message {
   margin: 0;
-  font-size: 10.5px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.6;
   color: var(--mute);
   overflow-wrap: anywhere;
 }
@@ -184,17 +189,17 @@
 .alert-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 1px;
+  gap: 10px;
+  margin-top: 3px;
 }
 
 .alert-actions .button.small {
-  height: 22px;
-  font-size: 10.5px;
+  height: 26px;
+  font-size: 11px;
 }
 
 .alert-actions .text-link {
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 @media (max-width: 1080px) {

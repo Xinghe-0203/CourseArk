@@ -202,6 +202,16 @@ Worker 通过 `runtime.emit` 写事件，`app/database.py` 落库，`app/narrati
   每段四列课程行；数据全部来自 `state.workspaces`，不发额外请求。
 - **浮层让位**：`ProgressWindow` 默认 `minimized=true`，只留贴边标题栏；`.page-content` 不再预留
   固定底部空间。侧栏底部 `.engine` 常驻心跳（服务状态、运行中/暂停数、端口）。
+- **留白与行高**：按钮基类 `button, .button` 带 `line-height: 1`（28px 定高单行文字居中），
+  会被按钮内部的多行文本继承，导致 `.account-pick`（`height:auto`）里 13px 标题与 11px 说明
+  共用 1em 行盒而字身相撞。`base.css` 因此补一条全局兜底
+  `button b, button strong, button small { line-height: 1.45 }`，各页多行文本块再显式写
+  标题 `line-height:1.45` / 说明 `line-height:1.5` 并加 `margin-top:2px`。
+  留白基线：行式表格表头 34px、行 padding 11~15px；账号竖列每项约 52px；卡片块内边距 12~14px；
+  浮窗宽 340px（进度小窗 300px、最小化 220px）。
+- **弹窗高度链**：`.modal` 是 `flex` 列 + `max-height:min(88vh,900px)`，`.modal-body` 必须有
+  `flex:1 1 auto; min-height:0` 才能拿到剩余高度，否则子级的 `position:sticky; bottom:0` 底栏
+  （如 `NewTask.vue` 的 `.wizard-foot`）会被 `overflow:hidden` 裁掉下半。
 - 验收锚点（`tools/vue_check.py` 断言）不可重命名：`.execution-account`（总览两卡等高，240–560px）、
   `.execution-course`、`.media-live li`、`.execution-dashboard`、`.progress-window`、
   `.account-menu-item`（左侧账号竖列）、`.workspace-account`（右侧单账号详情）、`.workspace-course`、

@@ -138,6 +138,14 @@ button,
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
+/* 按钮内的多行文本（标题 + 说明）自带行高，
+   否则会继承上面的 line-height: 1 而互相挤压重叠。 */
+button b,
+button strong,
+button small {
+  line-height: 1.45;
+}
+
 button:hover:not(:disabled),
 .button:hover {
   background: var(--surface2);
@@ -993,6 +1001,8 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 
 .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 14px 16px 16px;
   overflow: auto;
 }

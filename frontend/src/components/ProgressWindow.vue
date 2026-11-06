@@ -173,7 +173,7 @@ onUnmounted(() => clearTimeout(timer));
   right: 16px;
   bottom: 16px;
   z-index: 40;
-  width: 268px;
+  width: 300px;
   border: 1px solid var(--line2);
   border-radius: var(--r3);
   background: var(--surface);
@@ -184,8 +184,8 @@ onUnmounted(() => clearTimeout(timer));
 .progress-window-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 8px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--surface2);
 }
@@ -196,13 +196,14 @@ onUnmounted(() => clearTimeout(timer));
 
 .progress-window-title {
   display: grid;
-  gap: 0;
+  gap: 2px;
   flex: 1;
   min-width: 0;
 }
 
 .progress-window-title strong {
-  font-size: 11.5px;
+  font-size: 12.5px;
+  line-height: 1.35;
   font-weight: 600;
   color: var(--ink);
   overflow: hidden;
@@ -211,7 +212,8 @@ onUnmounted(() => clearTimeout(timer));
 }
 
 .progress-window-title small {
-  font-size: 9.5px;
+  font-size: 10.5px;
+  line-height: 1.4;
   color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -219,8 +221,8 @@ onUnmounted(() => clearTimeout(timer));
 }
 
 .progress-window-head .icon-button {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
 }
 
 .progress-window-head .icon-button.up :deep(svg) {
@@ -233,18 +235,18 @@ onUnmounted(() => clearTimeout(timer));
 
 .progress-window-body {
   display: grid;
-  gap: 7px;
-  padding: 8px;
+  gap: 12px;
+  padding: 12px;
 }
 
 .progress-window-activity {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   margin: 0;
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--ink2);
-  line-height: 1.45;
+  line-height: 1.55;
 }
 
 .progress-window-activity span {
@@ -256,16 +258,16 @@ onUnmounted(() => clearTimeout(timer));
 
 .progress-window-unit {
   display: grid;
-  gap: 3px;
+  gap: 6px;
 }
 
 .progress-window-unit .progress-pair {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--mute);
 }
 
 .progress-window-unit .progress-pair b {
-  font-size: 11.5px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--ink);
 }
@@ -273,7 +275,7 @@ onUnmounted(() => clearTimeout(timer));
 .progress-window-meta {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
+  gap: 3px;
   margin: 0;
   border: 1px solid var(--line);
   border-radius: var(--r2);
@@ -282,18 +284,22 @@ onUnmounted(() => clearTimeout(timer));
 }
 
 .progress-window-meta > div {
-  padding: 4px 7px;
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px;
   background: var(--surface);
 }
 
 .progress-window-meta dt {
-  font-size: 9.5px;
+  font-size: 10.5px;
+  line-height: 1.4;
   color: var(--faint);
 }
 
 .progress-window-meta dd {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.3;
   color: var(--ink);
 }
 
@@ -301,12 +307,12 @@ onUnmounted(() => clearTimeout(timer));
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--faint);
 }
 
 .progress-window-foot .text-link {
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 @media (max-width: 760px) {

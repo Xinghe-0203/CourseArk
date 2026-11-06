@@ -605,19 +605,20 @@ watch(
 .drawer {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 14px;
 }
 
 .detail-summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 6px 9px;
+  gap: 10px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: var(--r2);
   background: var(--surface2);
-  font-size: 11px;
+  font-size: 11.5px;
+  line-height: 1.5;
   color: var(--mute);
 }
 
@@ -627,7 +628,7 @@ watch(
 
 .detail-when {
   font-family: var(--font-num);
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 .live-badge {
@@ -635,11 +636,12 @@ watch(
   align-items: center;
   gap: 4px;
   margin-left: auto;
-  padding: 1px 7px;
+  padding: 3px 9px;
   border: 1px solid var(--line);
   border-radius: var(--r-pill);
   background: var(--surface);
-  font-size: 10px;
+  font-size: 10.5px;
+  line-height: 1.4;
   color: var(--ok);
 }
 
@@ -647,12 +649,13 @@ watch(
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  font-size: 10.5px;
+  gap: 10px;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .resume-chip {
-  padding: 1px 7px;
+  padding: 3px 9px;
   border: 1px solid var(--line);
   border-radius: var(--r-pill);
   background: var(--surface2);
@@ -662,12 +665,13 @@ watch(
 .detail-live-line {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin: 0;
-  padding: 5px 9px;
+  padding: 9px 12px;
   border-left: 2px solid var(--info);
   background: var(--info-soft);
-  font-size: 11px;
+  font-size: 11.5px;
+  line-height: 1.5;
   color: var(--navy);
 }
 
@@ -677,15 +681,16 @@ watch(
 
 .detail-verify-hint small {
   display: block;
-  margin-top: 2px;
-  font-size: 10px;
+  margin-top: 4px;
+  font-size: 10.5px;
+  line-height: 1.45;
   color: var(--faint);
 }
 
 .detail-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1px;
+  gap: 3px;
   border: 1px solid var(--line);
   border-radius: var(--r2);
   background: var(--line);
@@ -694,19 +699,20 @@ watch(
 
 .detail-metrics > div {
   display: grid;
-  gap: 0;
-  padding: 6px 9px;
+  gap: 3px;
+  padding: 10px 12px;
   background: var(--surface);
 }
 
 .detail-metrics strong {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 500;
-  line-height: 1.15;
+  line-height: 1.25;
 }
 
 .detail-metrics small {
-  font-size: 10px;
+  font-size: 10.5px;
+  line-height: 1.4;
   color: var(--faint);
 }
 
@@ -715,29 +721,30 @@ watch(
 }
 
 .answer-filter-count {
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 .answer-refresh {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 .answer-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
 }
 
 .answer-chip {
-  padding: 1px 7px;
+  padding: 3px 9px;
   border: 1px solid var(--line);
   border-radius: var(--r-pill);
   background: var(--surface2);
-  font-size: 10px;
+  font-size: 10.5px;
+  line-height: 1.4;
   color: var(--mute);
 }
 
@@ -782,38 +789,39 @@ watch(
 .answer-live {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   margin: 0;
-  font-size: 10.5px;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .answer-groups {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
 }
 
 .answer-group {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 8px;
 }
 
 .answer-group-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding-bottom: 4px;
+  gap: 12px;
+  padding-bottom: 7px;
   border-bottom: 1px solid var(--line);
 }
 
 .answer-group-head h3 {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
 }
 
 .answer-group-head small {
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--faint);
 }
 
@@ -838,8 +846,8 @@ watch(
 
 .answer-card {
   display: grid;
-  gap: 4px;
-  padding: 7px 9px;
+  gap: 7px;
+  padding: 11px 12px;
   border: 1px solid var(--line);
   border-radius: var(--r2);
   background: var(--surface);
@@ -853,8 +861,8 @@ watch(
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  font-size: 10px;
+  gap: 8px;
+  font-size: 10.5px;
   color: var(--faint);
 }
 
@@ -905,22 +913,23 @@ watch(
 
 .answer-question {
   margin: 0;
-  font-size: 11.5px;
-  line-height: 1.55;
+  font-size: 12px;
+  line-height: 1.65;
   color: var(--ink);
 }
 
 .answer-expand {
   justify-self: start;
-  font-size: 10px;
+  font-size: 10.5px;
 }
 
 .answer-options {
   display: grid;
-  gap: 1px;
+  gap: 3px;
   margin: 0;
   padding-left: 16px;
-  font-size: 10.5px;
+  font-size: 11px;
+  line-height: 1.55;
   color: var(--mute);
 }
 
@@ -928,14 +937,15 @@ watch(
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px;
-  padding-top: 4px;
+  gap: 8px;
+  padding-top: 7px;
   border-top: 1px dashed var(--line);
-  font-size: 11px;
+  font-size: 11.5px;
+  line-height: 1.5;
 }
 
 .answer-label {
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--faint);
 }
 
@@ -946,14 +956,14 @@ watch(
 }
 
 .answer-note {
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--faint);
 }
 
 .answer-empty {
   border: 1px dashed var(--line2);
   border-radius: var(--r2);
-  padding: 24px 16px;
+  padding: 30px 18px;
 }
 
 .answer-empty .empty-illustration {
@@ -974,10 +984,10 @@ watch(
 .event {
   display: grid;
   grid-template-columns: 92px minmax(0, 1fr);
-  gap: 8px;
-  padding: 5px 9px;
+  gap: 10px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--line);
-  font-size: 11px;
+  font-size: 11.5px;
 }
 
 .event:last-child {
@@ -986,13 +996,13 @@ watch(
 
 .event time {
   font-family: var(--font-num);
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--faint);
 }
 
 .event div {
   display: grid;
-  gap: 1px;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -1011,7 +1021,8 @@ watch(
 
 .event p {
   margin: 0;
-  font-size: 10.5px;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--mute);
   overflow-wrap: anywhere;
 }
@@ -1036,7 +1047,7 @@ watch(
 }
 
 .load-more {
-  padding: 6px 9px;
+  padding: 9px 12px;
 }
 
 .params-table {
@@ -1047,11 +1058,11 @@ watch(
 
 .params-table th,
 .params-table td {
-  padding: 4px 9px;
+  padding: 7px 12px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 .params-table th {
@@ -1067,12 +1078,13 @@ watch(
 
 .params-preview {
   margin: 0;
-  padding: 9px 11px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: var(--r2);
   background: var(--surface2);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
+  line-height: 1.55;
   color: var(--ink2);
   overflow-x: auto;
 }

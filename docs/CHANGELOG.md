@@ -10,6 +10,102 @@
 
 ---
 
+## 留白与行高修正（未发布）
+
+> 承接「课程进度页与学习任务二级菜单（未发布）」。上一轮把信息压得太紧，实机截图（1919×913、
+> 5 个真实账号 / 150 门课程）里左列账号菜单的「刘畅」与下一行「23 门 · 1071 / 1206 任务点」
+> 字面直接压在一起，课程行的「待完成 19」也与「5 / 24」相撞。本轮只改 CSS：组件结构、类名、
+> `aria-label`、`data` 与全部逻辑零改动，`tools/vue_check.py` 57 项断言一条未改。
+
+### 一、重叠的总根因
+
+- `frontend/src/styles/base.css` 的 `button, .button` 规则带 `line-height: 1`（为让 28px 定高按钮里的
+  单行文字垂直居中）。这个行高会被按钮内部的多行文本继承：`.account-pick`（`height:auto`）里的
+  `.pick-copy b`（13px 标题）+ `.pick-copy small`（11px 说明）都是 `display:block`，却共用 1em 行盒，
+  而汉字字面高度约 1.15em ⇒ 两行的字身互相侵入。`.course-name b/small`、`.course-mission b/small`、
+  `.account-name h2/small` 同理。
+- 修法两层：
+  1. 全局兜底 —— `button b, button strong, button small { line-height: 1.45; }`（插在
+     `button:hover:not(:disabled), .button:hover` 之前，附注释说明原因）；
+  2. 每处多行文本块显式行高 —— 标题 `line-height: 1.45`、说明 `line-height: 1.5`，
+     上下再补 `margin-top: 2px` 与 `gap: 3~4px`。
+
+### 二、留白与字号（按页面）
+
+- **学习任务页**（`frontend/src/components/AccountWorkspace.vue`，35 处）：`.account-workspace` gap 10→14、
+  `.workspace-toolbar` gap 6→8、`.workspace-scope` `gap:6px 12px`→`8px 14px` / padding `5px 10px`→`8px 12px`；
+  账号竖列 `.account-menu-head` padding `6px 10px`→`9px 12px`、`.account-menu-item` gap 7→9 /
+  padding `0 8px 0 10px`→`0 10px 0 12px`、`.account-pick` gap 7→9 / padding `7px 0`→`10px 0`
+  （单行高度约 40→52px）；账号头 padding `8px 12px`→`12px 14px`、`.account-name h2` 13→13.5px、
+  `.account-name small` 10.5→11px；五格数字 `.account-numbers > div` `gap:1px`→`3px` /
+  padding `6px 10px`→`9px 12px`、`strong` 15→16px、`span` 10→10.5px；
+  实时卡与最近结果 padding `8px 12px`→`12px 14px`；`.account-course-heading` padding
+  `8px 12px 6px`→`13px 14px 9px`；课程表 `.course-row-head` 高 24→30px、`.workspace-course`
+  上下 padding 6→11px、列 gap 12→16。
+- **课程进度页**（`frontend/src/views/ProgressView.vue`，28 处）：`.progress-view` gap 12→16、
+  `.progress-summary` `gap:8px 24px`→`14px 28px` / padding `12px 16px`→`16px 20px`、大号数字 24→26px、
+  三格事实条 `gap:1px`→`4px` / padding `6px 9px`→`10px 12px`；`.progress-account-head` padding
+  `8px 12px`→`12px 14px`；`.progress-course-head` 高 26→32px、`.progress-course` padding 7→12px。
+- **其余五个行式表格页**（`TaskList.vue` 13 处 / `CompletedView.vue` 13 处 / `BankView.vue` 7 处 /
+  `AccountsView.vue` 10 处 / `OverviewDashboard.vue` 13 处）：表头统一 28→34px；行内 padding
+  由 7~11px 提到 11~15px；`.queue-row` min-height 40→46px、`.recent-row` 36→42px；
+  `.execution-scroll` max-height 300→320px、padding 11→14px；`.bank-stats > div` 与 `.bank-item`
+  padding `8px 11px`→`13px 14px`；`.account-row` padding `11px 12px`→`15px 14px`；
+  `.completed-body` margin-top 2→7px。
+- **设置页与新建任务弹窗**（`SettingsView.vue` 15 处 / `NewTask.vue` 35 处）：`.settings-layout`
+  侧栏 168→180px、gap 12→16；`.settings-nav` button 高 28→32px；`.panel-head` padding
+  `11px 14px`→`14px 16px`、`.panel-body` `12px 14px 14px`→`16px 16px 18px`、`.panel-foot`
+  `9px 14px`→`12px 16px`。向导弹窗 `.wizard` gap 10→16、步骤条 padding `6px 10px`→`10px 12px`、
+  序号圆 17→20px、`.wizard-accounts` 卡最小宽 210→220px、`.wizard-account` padding `7px 9px`→`11px 12px`、
+  `.course-option` 与 `.catalog-item` padding `5px 8px`→`9px 10px`、`.feature-grid` button 高 30→32px。
+- **任务详情抽屉与三个浮窗**（`TaskDrawer.vue` 41 处 / `ProgressWindow.vue` 17 处 /
+  `styles/windows.css` 19 处）：抽屉 `.drawer` gap 9→14、四格指标 padding `6px 9px`→`10px 12px`、
+  逐题卡 padding `7px 9px`→`11px 12px`、`.answer-question` 行高 1.55→1.65、事件行 padding
+  `5px 9px`→`9px 12px`。进度小窗 268→**300px** 宽、body padding 8→12、已用时/预计剩余两格改
+  `display:grid; gap:2px`。逐题与告警浮窗 320→**340px** 宽、max-height 340→380px、最小化态
+  208→**220px**、`.feed-row` padding `6px 9px`→`10px 12px`、`.alert-list > li` `7px 9px`→`11px 12px`。
+
+### 三、顺带修掉的两处排版缺陷
+
+- **完成度末列贴边**：`.course-progress` 里 `progress-track` 用 `minmax(0,1fr)` 撑满，导致
+  「21%」与「查看」被挤到右缘。改成 `grid-template-columns: minmax(0,1fr) 40px auto` + gap 12px、
+  百分比 `text-align: right`；列宽 168→188px（进度页 128→152px）。
+- **390px 下五格数字折成 3+2 留一格空白**：1080px 断点里 `.account-numbers > div:last-child
+  { grid-column: span 2 }`，让末格跨两列铺满。
+
+### 四、弹窗底部按钮被裁（真实缺陷）
+
+- 现象：新建学习任务弹窗（`ModalShell` + `.modal.wide`）底部「取消 / 上一步 / 创建 N 项任务」
+  被弹窗下边缘切掉下半，按钮行下方还露出滚动内容的残影。
+- 根因：`.modal` 是 `display:flex; flex-direction:column; max-height:min(88vh,900px); overflow:hidden`，
+  但中间层 `.modal-body` 只有 `padding` + `overflow:auto`，没有 `flex:1 1 auto` 与 `min-height:0`，
+  拿不到剩余高度；而 `.wizard-foot` 用 `position:sticky; bottom:0` 贴滚动视口底，正好落在
+  `.modal-body` 的 16px padding-bottom 里被裁。
+- 修法两步：`.modal-body` 补 `flex:1 1 auto; min-height:0`；`.wizard-foot` 改
+  `margin-bottom:-16px; padding-bottom:16px; position:sticky; bottom:-16px`，让底栏自身铺满那段
+  padding。未改 `ModalShell` 结构（它仍只有默认 slot），账号页、答题缓存页、任务抽屉五处调用不受影响。
+
+### 五、验证
+
+- `npx vue-tsc --noEmit` 无输出；`npm run build` 通过：`index.html` 0.49 kB、
+  `index-*.css` 77.54 kB（gzip 12.30）、`index-*.js` 245.31 kB（gzip 86.45）、`MiniView-*.js` 1.71 kB。
+- `python tools/vue_check.py` **57 项全过 / errors []**（断言与选择器一条未改）；`npm test` 7 files / 47 tests。
+- 截图全部重跑（`docs/vue-validation/` 38 张）：左列账号菜单两行分离、课程行「5 / 24」与
+  「待完成 19」分行、完成度列三元素不贴边、弹窗底部按钮完整且无残影。
+
+### 改动文件（留白与行高修正，摘要）
+
+| 领域 | 文件 |
+|---|---|
+| 根因兜底 | `frontend/src/styles/base.css`（按钮内多行文本行高 + `.modal-body` 弹性高度） |
+| 学习任务页 | `frontend/src/components/AccountWorkspace.vue` |
+| 课程进度页 | `frontend/src/views/ProgressView.vue` |
+| 其余表格页 | `frontend/src/components/TaskList.vue`、`CompletedView.vue`、`BankView.vue`、`AccountsView.vue`、`OverviewDashboard.vue` |
+| 设置与向导 | `frontend/src/components/SettingsView.vue`、`NewTask.vue` |
+| 抽屉与浮窗 | `frontend/src/components/TaskDrawer.vue`、`frontend/src/components/ProgressWindow.vue`、`frontend/src/styles/windows.css` |
+
+---
+
 ## 课程进度页与学习任务二级菜单（未发布）
 
 > 承接上一轮「界面重做（未发布）」。本轮仍只动前端表现层与导航：后端接口、数据库 Schema、

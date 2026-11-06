@@ -325,21 +325,21 @@ function importSource() {
 .settings {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
 }
 
 .settings-layout {
   display: grid;
-  grid-template-columns: 168px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 16px;
   align-items: start;
 }
 
 .settings-nav {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 4px;
+  gap: 2px;
+  padding: 6px;
   border: 1px solid var(--line);
   border-radius: var(--r3);
   background: var(--surface);
@@ -349,12 +349,12 @@ function importSource() {
 
 .settings-nav button {
   justify-content: flex-start;
-  height: 28px;
-  padding: 0 9px;
+  height: 32px;
+  padding: 0 11px;
   border: 0;
   border-radius: var(--r1);
   background: transparent;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--ink2);
 }
 
@@ -378,7 +378,7 @@ function importSource() {
 }
 
 .panel-head {
-  padding: 11px 14px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--line);
   background: var(--surface2);
 }
@@ -389,21 +389,21 @@ function importSource() {
 }
 
 .panel-head p {
-  margin-top: 2px;
-  font-size: 11px;
+  margin-top: 4px;
+  font-size: 11.5px;
   color: var(--mute);
   line-height: 1.55;
 }
 
 .panel-body {
-  padding: 12px 14px 14px;
+  padding: 16px 16px 18px;
 }
 
 .panel-body h3 {
-  margin-bottom: 8px;
-  padding-bottom: 5px;
+  margin-bottom: 12px;
+  padding-bottom: 7px;
   border-bottom: 1px solid var(--line);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--ink2);
 }
@@ -411,14 +411,14 @@ function importSource() {
 .panel-body.form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 18px;
+  gap: 16px 20px;
 }
 
 .panel-foot {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
+  gap: 12px;
+  padding: 12px 16px;
   border-top: 1px solid var(--line);
   background: var(--surface2);
   position: sticky;
@@ -428,7 +428,7 @@ function importSource() {
 .settings-switch {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 5px;
   min-width: 0;
 }
 
@@ -440,7 +440,7 @@ function importSource() {
 }
 
 .settings-hint {
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.55;
   color: var(--faint);
 }
@@ -455,7 +455,7 @@ function importSource() {
 }
 
 .settings-backup {
-  padding: 8px 11px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: var(--r3);
   background: var(--surface);

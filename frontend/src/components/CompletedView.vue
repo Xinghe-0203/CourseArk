@@ -360,7 +360,7 @@ const rowNoteFallback = "状态筛选结果不含逐题汇总，点「查看详�
 .completed {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
 }
 
 .completed-filterbar {
@@ -401,12 +401,12 @@ const rowNoteFallback = "状态筛选结果不含逐题汇总，点「查看详�
   grid-template-columns:
     74px minmax(0, 1.5fr) minmax(0, 1.7fr) minmax(0, 200px) 30px;
   align-items: center;
-  gap: 10px;
-  padding: 0 11px;
+  gap: 14px;
+  padding: 0 14px;
 }
 
 .completed-head-row {
-  height: 28px;
+  height: 34px;
   border-bottom: 1px solid var(--line);
   background: var(--surface2);
   font-size: 10px;
@@ -417,8 +417,8 @@ const rowNoteFallback = "状态筛选结果不含逐题汇总，点「查看详�
 
 .completed-row {
   align-items: start;
-  padding-top: 8px;
-  padding-bottom: 8px;
+  padding-top: 13px;
+  padding-bottom: 13px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -437,7 +437,7 @@ const rowNoteFallback = "状态筛选结果不含逐题汇总，点「查看详�
 
 .completed-title {
   display: grid;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
   padding: 0;
   border: 0;
@@ -452,7 +452,7 @@ const rowNoteFallback = "状态筛选结果不含逐题汇总，点「查看详�
 }
 
 .completed-title b {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ink);
   overflow: hidden;
@@ -461,7 +461,7 @@ const rowNoteFallback = "状态筛选结果不含逐题汇总，点「查看详�
 }
 
 .completed-title small {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -470,7 +470,7 @@ const rowNoteFallback = "状态筛选结果不含逐题汇总，点「查看详�
 
 .completed-answers {
   margin: 0;
-  font-size: 11px;
+  font-size: 11.5px;
   line-height: 1.5;
   color: var(--mute);
   overflow-wrap: anywhere;
@@ -482,7 +482,7 @@ const rowNoteFallback = "状态筛选结果不含逐题汇总，点「查看详�
 
 .completed-when {
   display: grid;
-  gap: 2px;
+  gap: 3px;
   font-size: 10.5px;
 }
 
@@ -496,7 +496,7 @@ const rowNoteFallback = "状态筛选结果不含逐题汇总，点「查看详�
 }
 
 .completed-when small {
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--faint);
 }
 
@@ -511,13 +511,13 @@ const rowNoteFallback = "状态筛选结果不含逐题汇总，点「查看详�
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 5px 12px;
-  margin-top: 2px;
+  gap: 8px 14px;
+  margin-top: 7px;
 }
 
 .completed-note {
   margin: 0;
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--warn);
 }
 
@@ -525,9 +525,9 @@ const rowNoteFallback = "状态筛选结果不含逐题汇总，点「查看详�
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   margin: 0;
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--mute);
 }
 

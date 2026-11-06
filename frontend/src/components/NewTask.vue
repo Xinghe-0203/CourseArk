@@ -773,7 +773,7 @@ function back() {
 .wizard {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
 }
 
 .task-wizard-steps {
@@ -792,18 +792,18 @@ function back() {
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 7px;
-  padding: 6px 10px;
+  gap: 9px;
+  padding: 10px 12px;
   background: var(--surface);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--faint);
 }
 
 .task-wizard-steps li span {
   display: inline-grid;
   place-items: center;
-  width: 17px;
-  height: 17px;
+  width: 20px;
+  height: 20px;
   border: 1px solid var(--line2);
   border-radius: 50%;
   font-family: var(--font-num);
@@ -835,15 +835,15 @@ function back() {
 .wizard-body {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 12px;
 }
 
 .picker-heading {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  margin-top: 3px;
-  padding-top: 8px;
+  gap: 10px;
+  margin-top: 6px;
+  padding-top: 12px;
   border-top: 1px solid var(--line);
 }
 
@@ -854,7 +854,7 @@ function back() {
 }
 
 .picker-heading h3 {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--ink);
 }
@@ -868,20 +868,20 @@ function back() {
 .picker-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 8px;
 }
 
 .wizard-accounts {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 5px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
 }
 
 .wizard-account {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 9px;
+  gap: 10px;
+  padding: 11px 12px;
   border: 1px solid var(--line);
   border-radius: var(--r2);
   background: var(--surface);
@@ -900,12 +900,13 @@ function back() {
 
 .wizard-account > span {
   display: grid;
-  gap: 0;
+  gap: 2px;
   min-width: 0;
 }
 
 .wizard-account b {
-  font-size: 11.5px;
+  font-size: 12.5px;
+  line-height: 1.4;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -913,7 +914,8 @@ function back() {
 }
 
 .wizard-account small {
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--mute);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -923,13 +925,13 @@ function back() {
 .course-picker {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .course-picker section {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
-  gap: 4px 8px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px 10px;
   align-items: start;
 }
 
@@ -941,8 +943,8 @@ function back() {
 .course-picker h4 {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  font-size: 11.5px;
+  gap: 10px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--ink2);
 }
@@ -955,8 +957,8 @@ function back() {
 .course-option {
   display: flex;
   align-items: flex-start;
-  gap: 7px;
-  padding: 5px 8px;
+  gap: 9px;
+  padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: var(--r2);
   background: var(--surface);
@@ -980,12 +982,13 @@ function back() {
 
 .course-option > span {
   display: grid;
-  gap: 1px;
+  gap: 3px;
   min-width: 0;
 }
 
 .course-option b {
-  font-size: 11.5px;
+  font-size: 12px;
+  line-height: 1.4;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -996,8 +999,9 @@ function back() {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px;
-  font-size: 10px;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--mute);
 }
 
@@ -1012,15 +1016,15 @@ function back() {
 .feature-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
+  gap: 8px;
 }
 
 .feature-grid button {
-  height: 30px;
+  height: 32px;
   justify-content: center;
   border-color: var(--line);
   background: var(--surface);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--ink2);
 }
 
@@ -1038,8 +1042,8 @@ function back() {
 .exam-url-block {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: 7px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
   border-left: 2px solid var(--info);
   border-radius: var(--r2);
@@ -1060,14 +1064,14 @@ function back() {
 .catalog-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .catalog-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: 7px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: var(--r2);
   background: var(--surface2);
@@ -1076,13 +1080,13 @@ function back() {
 .catalog-group h4 {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  font-size: 11.5px;
+  gap: 10px;
+  font-size: 12px;
   font-weight: 600;
 }
 
 .catalog-group h4 small {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 400;
   color: var(--faint);
 }
@@ -1090,8 +1094,8 @@ function back() {
 .catalog-item {
   display: flex;
   align-items: flex-start;
-  gap: 7px;
-  padding: 5px 8px;
+  gap: 9px;
+  padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: var(--r1);
   background: var(--surface);
@@ -1109,12 +1113,13 @@ function back() {
 
 .catalog-item-body {
   display: grid;
-  gap: 1px;
+  gap: 3px;
   min-width: 0;
 }
 
 .catalog-item-body b {
-  font-size: 11.5px;
+  font-size: 12px;
+  line-height: 1.4;
   font-weight: 500;
   color: var(--ink);
   overflow: hidden;
@@ -1126,8 +1131,9 @@ function back() {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px;
-  font-size: 10px;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--mute);
 }
 
@@ -1150,8 +1156,8 @@ function back() {
 .catalog-note {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 10px;
+  gap: 10px;
+  font-size: 11px;
   color: var(--warn);
 }
 
@@ -1162,18 +1168,18 @@ function back() {
 .preset-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
 }
 
 .preset-list button {
-  height: 24px;
-  padding: 0 9px;
-  font-size: 11px;
+  height: 28px;
+  padding: 0 11px;
+  font-size: 11.5px;
   border-radius: var(--r-pill);
 }
 
 .param-block {
-  padding: 8px 10px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: var(--r2);
   background: var(--surface2);
@@ -1186,12 +1192,14 @@ function back() {
 .wizard-foot {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 2px;
-  padding-top: 9px;
+  gap: 10px;
+  margin-top: 6px;
+  margin-bottom: -16px;
+  padding-top: 12px;
+  padding-bottom: 16px;
   border-top: 1px solid var(--line);
   position: sticky;
-  bottom: 0;
+  bottom: -16px;
   background: var(--surface);
 }
 

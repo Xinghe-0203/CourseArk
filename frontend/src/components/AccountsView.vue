@@ -311,7 +311,7 @@ function save() {
 .accounts {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
 }
 
 .accounts-list {
@@ -332,7 +332,7 @@ function save() {
 }
 
 .accounts-head {
-  height: 28px;
+  height: 34px;
   align-items: center;
   border-bottom: 1px solid var(--line);
   background: var(--surface2);
@@ -342,7 +342,7 @@ function save() {
 }
 
 .account-row {
-  padding: 11px 12px;
+  padding: 15px 14px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -353,18 +353,18 @@ function save() {
 .account-id {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 2px 9px;
+  gap: 4px 10px;
   align-items: center;
 }
 
 .account-id > div {
   display: grid;
-  gap: 0;
+  gap: 3px;
   min-width: 0;
 }
 
 .account-id b {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ink);
   overflow: hidden;
@@ -373,7 +373,7 @@ function save() {
 }
 
 .account-id small {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--mute);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -390,7 +390,7 @@ function save() {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 2px 6px;
+  gap: 4px 8px;
   min-width: 0;
 }
 
@@ -412,13 +412,13 @@ function save() {
 
 .account-sync-line {
   width: 100%;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--faint);
 }
 
 .account-session {
   display: grid;
-  gap: 5px;
+  gap: 7px;
   min-width: 0;
 }
 

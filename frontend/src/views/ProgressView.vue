@@ -239,15 +239,15 @@ const groups = computed(() => {
 .progress-view {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .progress-summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 0.85fr);
   align-items: center;
-  gap: 8px 24px;
-  padding: 12px 16px;
+  gap: 14px 28px;
+  padding: 16px 20px;
   border: 1px solid var(--line);
   border-radius: var(--r3);
   background: var(--surface);
@@ -255,14 +255,14 @@ const groups = computed(() => {
 
 .summary-lead .eyebrow {
   display: block;
-  margin-bottom: 3px;
+  margin-bottom: 6px;
 }
 
 .summary-lead strong {
   display: block;
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 500;
-  line-height: 1.1;
+  line-height: 1.2;
   color: var(--ink);
 }
 
@@ -272,8 +272,9 @@ const groups = computed(() => {
 }
 
 .summary-lead p {
-  margin-top: 4px;
-  font-size: 11.5px;
+  margin-top: 7px;
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .summary-bar {
@@ -281,7 +282,7 @@ const groups = computed(() => {
 }
 
 .summary-bar .progress-pair {
-  margin-top: 5px;
+  margin-top: 9px;
 }
 
 .summary-facts {
@@ -295,8 +296,8 @@ const groups = computed(() => {
 .summary-facts > div {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 6px 9px;
+  gap: 4px;
+  padding: 10px 12px;
   border-right: 1px solid var(--line);
   background: var(--surface2);
 }
@@ -306,12 +307,14 @@ const groups = computed(() => {
 }
 
 .summary-facts strong {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
+  line-height: 1.25;
 }
 
 .summary-facts span {
-  font-size: 10.5px;
+  font-size: 11px;
+  line-height: 1.4;
   color: var(--faint);
 }
 
@@ -324,7 +327,7 @@ const groups = computed(() => {
 .progress-groups {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .progress-account {
@@ -338,8 +341,8 @@ const groups = computed(() => {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 4px 10px;
-  padding: 8px 12px;
+  gap: 6px 12px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--surface2);
 }
@@ -350,7 +353,8 @@ const groups = computed(() => {
 
 .account-name b {
   display: block;
-  font-size: 12.5px;
+  font-size: 13.5px;
+  line-height: 1.4;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -359,7 +363,9 @@ const groups = computed(() => {
 
 .account-name small {
   display: block;
-  font-size: 10.5px;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--mute);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -369,14 +375,15 @@ const groups = computed(() => {
 .account-total {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  padding-left: 12px;
+  gap: 9px;
+  padding-left: 14px;
   border-left: 1px solid var(--line);
 }
 
 .account-total b {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
+  line-height: 1.25;
 }
 
 .account-total b small {
@@ -385,21 +392,21 @@ const groups = computed(() => {
 }
 
 .account-total > span {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--navy);
 }
 
 .progress-course-head,
 .progress-course {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.25fr) minmax(0, 1.15fr) 118px;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.25fr) minmax(0, 1.15fr) 152px;
   align-items: center;
-  gap: 12px;
-  padding: 0 12px;
+  gap: 16px;
+  padding: 0 14px;
 }
 
 .progress-course-head {
-  height: 26px;
+  height: 32px;
   border-bottom: 1px solid var(--line);
   font-size: 10.5px;
   letter-spacing: 0.06em;
@@ -411,8 +418,8 @@ const groups = computed(() => {
 }
 
 .progress-course {
-  padding-top: 7px;
-  padding-bottom: 7px;
+  padding-top: 12px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -430,7 +437,8 @@ const groups = computed(() => {
 
 .course-name b {
   display: block;
-  font-size: 12.5px;
+  font-size: 13px;
+  line-height: 1.45;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -439,7 +447,9 @@ const groups = computed(() => {
 
 .course-name small {
   display: block;
-  font-size: 10.5px;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -450,8 +460,8 @@ const groups = computed(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  font-size: 11.5px;
+  gap: 4px;
+  font-size: 12px;
 }
 
 .mission-count {
@@ -462,17 +472,20 @@ const groups = computed(() => {
 }
 
 .mission-count b {
-  font-size: 12.5px;
+  font-size: 13.5px;
+  line-height: 1.3;
   font-weight: 600;
 }
 
 .mission-count small {
-  font-size: 11px;
+  font-size: 11.5px;
+  line-height: 1.3;
   color: var(--faint);
 }
 
 .mission-note {
-  font-size: 10.5px;
+  font-size: 11px;
+  line-height: 1.45;
   color: var(--mute);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -487,9 +500,10 @@ const groups = computed(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 7px;
+  gap: 5px 8px;
   min-width: 0;
-  font-size: 11px;
+  font-size: 11.5px;
+  line-height: 1.55;
 }
 
 .course-task .text-link {
@@ -501,15 +515,16 @@ const groups = computed(() => {
 
 .course-progress {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 40px;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 
 .course-progress b {
   font-size: 12px;
   font-weight: 500;
   color: var(--ink2);
+  text-align: right;
 }
 
 @media (max-width: 1080px) {
@@ -523,9 +538,9 @@ const groups = computed(() => {
 
   .progress-course {
     grid-template-columns: minmax(0, 1fr) 108px;
-    gap: 4px 12px;
-    padding-top: 9px;
-    padding-bottom: 9px;
+    gap: 8px 14px;
+    padding-top: 14px;
+    padding-bottom: 14px;
   }
 
   .course-name {
