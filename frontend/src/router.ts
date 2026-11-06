@@ -1,8 +1,9 @@
 // T13：vue-router hash 模式路由表。
-// 6 条主路由 name/path 与旧手写 hash 的 View key 完全一致（迁移零语义变化）；
+// 7 条主路由 name/path 与旧手写 hash 的 View key 完全一致（迁移零语义变化）；
 // /mini 是 T14 Electron 迷你监控子窗的占位路由。
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from "vue-router";
 import OverviewDashboard from "./components/OverviewDashboard.vue";
+import ProgressView from "./views/ProgressView.vue";
 import TasksView from "./views/TasksView.vue";
 import AccountsView from "./components/AccountsView.vue";
 import CompletedView from "./components/CompletedView.vue";
@@ -16,6 +17,12 @@ const routes: RouteRecordRaw[] = [
     name: "overview",
     component: OverviewDashboard,
     meta: { title: "工作总览" },
+  },
+  {
+    path: "/progress",
+    name: "progress",
+    component: ProgressView,
+    meta: { title: "课程进度" },
   },
   {
     path: "/tasks",

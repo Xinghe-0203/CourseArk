@@ -10,6 +10,88 @@
 
 ---
 
+## 课程进度页与学习任务二级菜单（未发布）
+
+> 承接上一轮「界面重做（未发布）」。本轮仍只动前端表现层与导航：后端接口、数据库 Schema、
+> `store.ts` / `api.ts` / `types.ts` / `format.ts` / `mission.ts` / `live.ts` 的既有导出全部沿用，
+> 旧数据无需迁移。改动动机来自实机截图：学习任务页把「5 格数字 + 实时任务 + 最近结果 + 课程网格」
+> 塞进同一张 420px 宽的卡片，同一行里「已完成」既是任务状态又是任务点进度的开头，读起来是一团。
+
+### 一、新增「课程进度」主页面
+
+- **为什么单独成页**：用户关心的是「哪门课还有多少任务点没学」，这件事跨账号、跨课程、按任务点
+  计数，和「这一轮任务跑得怎么样」是两个问题。混在任务卡里时只能看到当前展开的账号，
+  需要滚动六个卡片逐个数。新页把「账号 × 课程 × 平台任务点」一次性摊平。
+- 路由 `#/progress`（`frontend/src/views/ProgressView.vue` **新增**），导航放在「工作台」组
+  「工作总览」与「学习任务」之间，图标 `ChartColumn`。
+- **页头摘要**（`.progress-summary`）：左侧 `平台任务点进度` + 大号 `已完成 / 总数`
+  （`94 / 432`）+ 一句 `N 个账号 · N 门课程 · N 个任务点待完成 · N 门正在执行`；
+  中间整体完成度进度条 + 百分比；右侧三格事实条（正在执行 / 有未完成 / 剩余任务点）。
+- **筛选**：关键词匹配账号标签、手机号、课程名；范围下拉「全部课程 / 执行中 / 有未完成 / 已完成」，
+  右侧显示命中课程数。
+- **按账号分组**：每个账号一段（`.progress-account`），段头是头像 + 账号名 + `手机号 · N 门课程`
+  + 状态徽标（正在执行 / 已暂停 / 就绪 / 已停用 / 正在同步）+ 该账号的 `已完成 / 总数 百分比`；
+  段内是四列表格「课程 / 平台任务点 / 本轮任务 / 完成度」，每门课一行。
+- **课程行四列语义**（这是本轮修掉的核心问题）：
+  - 第一列课程名 + `作者 · 缓存 MM/DD HH:mm`；
+  - 第二列只放数字 `已完成 / 总数` 与一行 `待完成 N`，不再输出「已完成 5 / 24，待完成 19」整句——
+    因为第三列状态徽标本身就写着「已完成」「进行中」，两句「已完成」并排必然误读；
+  - 第三列本轮任务：状态徽标 + 功能名（课程任务点 / 独立作业 / 独立考试）+ `X / Y 项` + 「详情」，
+    点击复用既有任务详情抽屉；没有任务时按课程开放状态说「还没有执行过」或「课程已关闭」；
+  - 第四列任务点进度条 + 百分比。
+- 新增 `frontend/src/course.ts`（**新增**，被进度页与学习任务页共用）：
+  `courseKey(accountId, course)`（`[accountId, course_id, class_id, cpi].join(":")`，与 `store.ts`
+  里 `selectedCourses` 的 key 口径一致）、`taskForCourse(workspace, course)`（先找执行中的任务，
+  再找任意历史任务，最后回落到 `recent`，同 `course_id` + `class_id`）、
+  `courseRows(workspaces)` 把工作区展平成 `CourseRow[]`。此前 `AccountWorkspace.vue` 里有一份
+  同样的三级回退实现，两处口径容易分叉，现在只有一份。
+
+### 二、学习任务页改为竖向二级菜单
+
+- **左侧账号竖列**（`nav.account-menu`，`aria-label="账号列表"`）：每行是「勾选框 + 头像 + 账号名
+  + `N 门 · fn / all 任务点` + 执行状态小圆点」，选中行 `.chosen` 加墨蓝底与左侧 2px 竖条；
+  列宽 238px 并 `position: sticky` 跟随滚动。标题即各账号，用户不必再从卡片标题里找账号。
+- **右侧只渲染选中账号的详情**：账号头（头像 / 账号名 / 手机号与登录状态 / 状态徽标 /
+  创建任务·暂停·继续·停止·学习通·同步）+ 五格数字 + 实时任务卡 + 最近结果 + 课程表。
+  一次只展开一个账号，纵向信息密度反而更高。
+- **课程表从卡片网格改成行式表格**：`.course-row-head` 四列「课程 / 平台任务点 / 本轮任务 / 完成度」
+  + `article.workspace-course` 四列 `minmax(0,1.5fr) 132px minmax(0,1.15fr) 168px`。
+  同一门课以前是一小块卡片，里面并列「课程名 / 作者 / 状态 / 功能 / 本轮 X / Y 项 / 查看」六段，
+  现在是四个对齐的列位。
+- **「已完成」撞词修法**：新增 `missionNumbers(course)` 只返回 `{all, fn, pending, percent}`，
+  模板里第二列显示 `fn / all` 与 `待完成 N`，状态文字只出现在第三列的状态徽标里。
+- **删掉「紧凑展开 / 卡片展开」**：二级菜单已经固定为「竖列 + 单账号详情」，
+  原来的 268px 紧凑布局没有对应形态，`compact` ref、`toggleLayout()` 与 localStorage 键
+  `account-layout` 一并删除（旧键残留不会报错，只是不再读取）。
+- 1080px 以下：`.account-workspaces` 转单列、`.account-menu` 变横向可滚动条、
+  课程表隐藏表头并折成两行（课程名 + 完成度在上，任务点与任务在下）。
+
+### 三、验证
+
+- `npm run build` 通过：`index.html` 0.49 kB、`index-*.css` 76 kB（gzip 12 kB）、
+  `index-*.js` 245 kB（gzip 86 kB）。`npm test` 7 files / 47 tests 通过（逻辑模块未改）。
+- `tools/vue_check.py` 从 54 项扩到 **57 项全部通过**：
+  - 三视口页面清单加「课程进度」（1920 / 1440 / 390 各一张截图 + 无横向溢出断言）；
+  - 学习任务段落改写为二级菜单断言：`.account-menu-item` 6 个、`.workspace-account` 只 1 个、
+    `.workspace-course` 随选中账号变 2 → 4 条、选中行 `.chosen .pick-copy b` 文本为「账号 03」、
+    搜索「账号 02」后菜单只剩 1 项、切页往返后勾选数与选中行都保留；
+  - 删掉旧的「紧凑展开」与 `.account-workspaces.compact` 断言，改断言 `.account-menu-item.chosen`
+    只有 1 个，截图改名 `desktop-account-menu.png`。
+- 截图产物：`docs/vue-validation/{wide,desktop,mobile}-课程进度.png`、`desktop-account-menu.png`。
+
+### 改动文件（课程进度页与二级菜单，摘要）
+
+| 领域 | 文件 |
+|---|---|
+| 新增页面 | `frontend/src/views/ProgressView.vue` **新增** |
+| 共用口径 | `frontend/src/course.ts` **新增** |
+| 学习任务页 | `frontend/src/components/AccountWorkspace.vue`（二级菜单重写） |
+| 导航与骨架 | `frontend/src/router.ts`、`frontend/src/App.vue`、`frontend/src/types.ts`（`View` 加 `progress`） |
+| 验收 | `tools/vue_check.py`（页面清单 + 学习任务段落断言改写） |
+
+---
+
+
 ## 界面重做（未发布）
 
 > 本轮只改前端表现层：数据层（`store.ts` / `api.ts` / `types.ts` / `format.ts` / `overview.ts` /

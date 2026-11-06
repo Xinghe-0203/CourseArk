@@ -166,7 +166,8 @@ Worker 通过 `runtime.emit` 写事件，`app/database.py` 落库，`app/narrati
 | 组 | 页面 | 职责 |
 |---|---|---|
 | 工作台 | 工作总览 | 只讲状态摘要与正在运行的任务；不提供课程/任务的增删改 |
-| 工作台 | 学习任务 | 唯一管理课程与任务的地方：选课、创建任务、暂停/继续/停止、看逐题明细 |
+| 工作台 | 课程进度 | 只看平台任务点进度：按账号分组，逐门课列「已完成 / 总数」与待完成，跨账号比较 |
+| 工作台 | 学习任务 | 左侧账号竖列 + 右侧选中账号详情：选课、创建任务、暂停/继续/停止、看逐题明细 |
 | 档案 | 账号与课程 | 只管账号身份、登录缓存与课程同步；课程详情走弹窗，不重复列任务 |
 | 档案 | 已完成 | 汇总每次跑完的任务：课程、起止时间、耗时、逐题概要、结果说明 |
 | 档案 | 答题缓存 | 搜索、导入、导出、删除本机记住的答案 |
@@ -188,14 +189,23 @@ Worker 通过 `runtime.emit` 写事件，`app/database.py` 落库，`app/narrati
   最近完成。原先四张等大指标卡、环形仪表与三条阶段比例条都在重复同一件事，已删除。
 - **列表用行式表格**：账号与课程、已完成、答题缓存、任务记录都是「28px 表头 + 行」，不再用大卡片；
   行内多行信息用 `small` 与 `.num` 分层次，状态统一 `.status` 胶囊。
-- **学习任务保留卡片但不再卡内滚动**：`.account-workspaces` 两列 420px 起，`.workspace-account`
-  不设固定高度；`.compact` 模式左侧 268px 头部（两行 grid）承载勾选、头像、账号名与同步按钮。
+- **学习任务用竖向二级菜单**：`.account-workspaces` 是 `238px + minmax(0,1fr)` 的两列网格，
+  左列 `nav.account-menu` 每个账号一行（勾选框、头像、账号名、`N 门 · fn / all 任务点`、执行状态点），
+  `position: sticky` 跟随滚动；右列只渲染选中账号（`.workspace-account`），一次一个。
+  课程区从卡片网格改为四列表格 `.course-row-head`（课程 / 平台任务点 / 本轮任务 / 完成度），
+  行高由内容决定，不再有卡内滚动。1080px 以下左列转横向可滚动条、课程表折成两行。
+- **进度口径只出现一次**：`frontend/src/course.ts` 提供 `courseKey` / `taskForCourse` / `courseRows`，
+  进度页与学习任务页共用同一份「账号 × 课程 × 本轮任务」映射；任务点进度在表格里只显示数字
+  （`fn / all` + `待完成 N`），不输出「已完成 x / y，待完成 z」整句——状态徽标已经写着「已完成」。
+- **课程进度页**（`#/progress`）：页头 `.progress-summary` 三段（总任务点 + 整体完成度条 + 三格事实条），
+  下面是 `.filterbar`（搜索 + 范围下拉 + 命中课程数）与按账号分组的 `.progress-account` 段，
+  每段四列课程行；数据全部来自 `state.workspaces`，不发额外请求。
 - **浮层让位**：`ProgressWindow` 默认 `minimized=true`，只留贴边标题栏；`.page-content` 不再预留
   固定底部空间。侧栏底部 `.engine` 常驻心跳（服务状态、运行中/暂停数、端口）。
 - 验收锚点（`tools/vue_check.py` 断言）不可重命名：`.execution-account`（总览两卡等高，240–560px）、
   `.execution-course`、`.media-live li`、`.execution-dashboard`、`.progress-window`、
-  `.workspace-account`（六卡等宽）、`.workspace-course`、`.resume-banner`、`.task-row`、
-  `.completed-row`。
+  `.account-menu-item`（左侧账号竖列）、`.workspace-account`（右侧单账号详情）、`.workspace-course`、
+  `.progress-account`、`.progress-course`、`.completed-row`。
 
 ## Worker 公共基座与进程治理（v2.4.0）
 

@@ -1,5 +1,6 @@
 export type View =
   | "overview"
+  | "progress"
   | "accounts"
   | "tasks"
   | "completed"

@@ -11,6 +11,7 @@ import {
   RefreshCw,
   GraduationCap,
   CheckCircle2,
+  ChartColumn,
 } from "lucide-vue-next";
 import { state, initialize, refresh, navigate } from "./store";
 import { engineTotals, overviewCounts } from "./overview";
@@ -26,6 +27,7 @@ import AlertWindow from "./components/AlertWindow.vue";
 const route = useRoute();
 const nav = [
   { key: "overview", title: "工作总览", icon: LayoutDashboard },
+  { key: "progress", title: "课程进度", icon: ChartColumn },
   { key: "tasks", title: "学习任务", icon: Layers },
   { key: "accounts", title: "账号与课程", icon: Users },
   { key: "completed", title: "已完成", icon: CheckCircle2 },
@@ -34,7 +36,7 @@ const nav = [
 ] as const;
 // 侧栏按职责分组：工作台只看当前状态，档案放历史与资产，系统放配置。
 const groups = [
-  { caption: "工作台", keys: ["overview", "tasks"] },
+  { caption: "工作台", keys: ["overview", "progress", "tasks"] },
   { caption: "档案", keys: ["accounts", "completed", "bank"] },
   { caption: "系统", keys: ["settings"] },
 ] as const;
@@ -73,7 +75,8 @@ const pageCopy = computed(
   () =>
     ({
       overview: "当前状态摘要与正在运行的任务；账号、课程与任务分别在专页管理。",
-      tasks: "按账号管理课程与任务，随时暂停、继续或查看执行结果。",
+      progress: "逐个账号看每门课程的平台任务点与本轮执行进度，找出还没学完的部分。",
+      tasks: "左侧选账号，右侧看该账号的课程与任务，随时暂停、继续或查看执行结果。",
       accounts: "管理账号与登录状态、同步课程；课程详情在弹窗中查看。",
       completed: "汇总每次跑完的任务：课程、时间、耗时、逐题明细与结果说明。",
       bank: "查看、导入与清理本机记住的答案，减少重复调用 AI。",
@@ -212,7 +215,7 @@ onUnmounted(() => {
         </div>
         <div class="top-actions">
           <button
-            v-if="['overview', 'tasks'].includes(state.view)"
+            v-if="['overview', 'progress', 'tasks'].includes(state.view)"
             class="primary"
             @click="openNewTask"
           >

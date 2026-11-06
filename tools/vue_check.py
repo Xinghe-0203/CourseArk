@@ -45,7 +45,7 @@ def check(url, output):
         passed('运行进度小窗默认最小化，展开后显示当前动作/已用时/预计剩余')
         for width,height,name in [(1920,1080,'wide'),(1440,1000,'desktop'),(390,844,'mobile')]:
             page.set_viewport_size({'width':width,'height':height})
-            for title in ['工作总览','学习任务','账号与课程','已完成','答题缓存','偏好设置']:
+            for title in ['工作总览','课程进度','学习任务','账号与课程','已完成','答题缓存','偏好设置']:
                 page.get_by_role('navigation',name='主要导航').get_by_role('button',name=title).click()
                 page.get_by_role('heading',name=title,exact=True).wait_for()
                 page.wait_for_timeout(180)
@@ -56,14 +56,17 @@ def check(url, output):
         page.set_viewport_size({'width':1440,'height':1000})
         nav=page.get_by_role('navigation',name='主要导航')
         nav.get_by_role('button',name='学习任务').click()
-        profiles=page.locator('.workspace-account')
-        profiles.first.wait_for()
-        assert profiles.count()==6
-        assert len(set(profiles.evaluate_all('(nodes)=>nodes.map(n=>Math.round(n.getBoundingClientRect().width))')))==1
-        assert page.locator('.workspace-course').count()==18
-        passed('学习任务保留六账号完整数据，账号卡片等宽排布')
-        profiles.nth(2).locator('.workspace-course input:not(:disabled)').first.check()
-        for i in (0,1): profiles.nth(i).locator('.workspace-account-head input').check()
+        menu=page.locator('.account-menu-item')
+        menu.first.wait_for()
+        assert menu.count()==6
+        assert page.locator('.workspace-account').count()==1
+        assert page.locator('.workspace-course').count()==2
+        passed('学习任务左侧竖列六个账号，右侧只展开所选账号的课程详情')
+        menu.nth(2).get_by_role('button',name='查看账号 账号 03',exact=True).click()
+        page.wait_for_function('document.querySelectorAll(".workspace-course").length===4')
+        assert page.locator('.account-menu-item.chosen .pick-copy b').inner_text()=='账号 03'
+        page.locator('.workspace-course input:not(:disabled)').first.check()
+        for i in (0,1): menu.nth(i).locator('input').check()
         page.get_by_role('button',name='创建所选 1 门课程任务',exact=True).click()
         cross=page.get_by_role('dialog');cross.wait_for()
         assert cross.locator('.wizard-account input:checked').count()==1
@@ -75,20 +78,20 @@ def check(url, output):
         passed('所选课程创建以课程所属账号为范围，不被无关账号勾选覆盖')
         selected_ids={p['account']['id'] for p in page.request.get(url+'/api/workspace/accounts').json()['items'][:2]}
         page.get_by_label('搜索账号工作台').fill('账号 02')
-        assert profiles.count()==1
+        assert menu.count()==1
         page.get_by_role('button',name='批量暂停',exact=True).click()
         page.get_by_text('已接受 2 项暂停操作',exact=True).wait_for()
         values=page.request.get(url+'/api/workspace/accounts').json()['items']
         assert all(p['tasks'][0]['status']=='pausing' for p in values[:2])
         passed('搜索隐藏的已选账号仍参与批量暂停，服务端接受数准确')
         page.get_by_label('搜索账号工作台').fill('')
-        page.get_by_role('button',name='紧凑展开',exact=True).click()
         nav.get_by_role('button',name='账号与课程').click()
         nav.get_by_role('button',name='学习任务').click()
-        assert profiles.locator('.workspace-account-head input:checked').count()==2
-        assert page.locator('.account-workspaces.compact').count()==1
-        passed('账号选择与紧凑布局跨页面保留')
-        page.screenshot(path=str(output/'desktop-compact.png'),full_page=True)
+        menu.first.wait_for()
+        assert menu.locator('input:checked').count()==2
+        assert page.locator('.account-menu-item.chosen').count()==1
+        passed('账号勾选与右侧详情在页面切换后保留')
+        page.screenshot(path=str(output/'desktop-account-menu.png'),full_page=True)
         page.get_by_role('button',name='所选账号开始',exact=True).click()
         dialog=page.get_by_role('dialog');dialog.wait_for()
         assert dialog.locator('.wizard-account input:checked').count()==2
@@ -124,7 +127,8 @@ def check(url, output):
         assert len({(t['account_id'],t['course_id'],t['class_id']) for t in payload['targets']})==4
         page.wait_for_selector('.modal',state='detached')
         passed('仅两个模块，所选账号开始排除残留课程，同名课程账号隔离')
-        profiles.first.get_by_role('button',name='创建任务',exact=True).click()
+        menu.first.locator('.account-pick').click()
+        page.locator('.workspace-account').first.get_by_role('button',name='创建任务',exact=True).click()
         dialog.wait_for()
         assert dialog.locator('.wizard-account input:checked').count()==1
         dialog.get_by_role('button',name='下一步：选择课程',exact=True).click()
