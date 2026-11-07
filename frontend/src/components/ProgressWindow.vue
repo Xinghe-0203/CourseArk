@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { ChevronDown, LoaderCircle, PictureInPicture2, X } from "lucide-vue-next";
 import { request } from "../api";
 import { active } from "../format";
+import ProgressBar from "./ProgressBar.vue";
 import {
   activityOf,
   elapsedSeconds,
@@ -14,12 +15,13 @@ import {
 } from "../live";
 import { setTaskLive, state } from "../store";
 import { isDesktop, openDesktopMini } from "../desktop";
+import { closeWindow, ensureWindow, toggleMinimized } from "../windows/manager";
 import type { Task } from "../types";
 defineEmits<{ select: [task: Task] }>();
 const POLL_MS = 2000;
-const closed = ref(false);
-// 默认最小化：只留一条标题栏贴在右下角，避免长期压住页面卡片。
-const minimized = ref(true);
+// 开合与最小化统一走 WindowManager：顶栏的浮层开关与这里必须操作同一份状态，
+// 否则按钮的 .on 会亮而小窗不动（历史缺陷）。
+const win = ensureWindow("progress");
 const taskId = ref("");
 const detail = ref<Task | null>(null);
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -30,7 +32,8 @@ const task = computed<Task | undefined>(() => {
   if (taskId.value && detail.value?.id === taskId.value) return detail.value;
   return state.tasks.find((item) => item.id === taskId.value);
 });
-const visible = computed(() => !closed.value && candidates.value.length > 0);
+const visible = computed(() => win.open && candidates.value.length > 0);
+const minimized = computed(() => win.minimized);
 const percent = computed(() => {
   const live = task.value?.live;
   const unit = unitPercent(live?.unit);
@@ -52,7 +55,7 @@ function schedule() {
 }
 async function load() {
   const id = taskId.value;
-  if (!id || closed.value) return;
+  if (!id || !win.open) return;
   try {
     const data = await request<Task>(`/tasks/${id}`);
     if (id !== taskId.value) return;
@@ -73,8 +76,8 @@ watch(
       detail.value = null;
       clearTimeout(timer);
       // 这一轮任务结束后，下一轮运行重新显示小窗（默认仍是最小化的贴边状态）。
-      closed.value = false;
-      minimized.value = true;
+      win.open = true;
+      win.minimized = true;
       return;
     }
     if (next.id !== taskId.value) {
@@ -119,7 +122,7 @@ onUnmounted(() => clearTimeout(timer));
         class="icon-button"
         :aria-label="minimized ? '展开进度小窗' : '最小化进度小窗'"
         :title="minimized ? '展开进度小窗' : '最小化进度小窗'"
-        @click="minimized = !minimized"
+        @click="toggleMinimized('progress')"
       >
         <ChevronDown :size="13" :class="{ up: minimized }" />
       </button>
@@ -127,7 +130,7 @@ onUnmounted(() => clearTimeout(timer));
         class="icon-button"
         aria-label="关闭进度小窗"
         title="关闭进度小窗"
-        @click="closed = true"
+        @click="closeWindow('progress')"
       >
         <X :size="13" />
       </button>
@@ -143,9 +146,7 @@ onUnmounted(() => clearTimeout(timer));
           <span>{{ unitLabel || "任务进度" }}</span
           ><b class="num">{{ percent }}%</b>
         </div>
-        <div class="progress-track small">
-          <i :style="{ width: percent + '%' }" />
-        </div>
+        <ProgressBar small :value="percent" label="任务进度" />
       </div>
       <dl class="progress-window-meta">
         <div>
@@ -172,12 +173,12 @@ onUnmounted(() => clearTimeout(timer));
   position: fixed;
   right: 16px;
   bottom: 16px;
-  z-index: 40;
+  z-index: var(--z-float);
   width: 300px;
   border: 1px solid var(--line2);
   border-radius: var(--r3);
   background: var(--surface);
-  box-shadow: 0 6px 20px rgba(21, 25, 31, 0.14);
+  box-shadow: var(--shadow-2);
   overflow: hidden;
 }
 
@@ -223,10 +224,6 @@ onUnmounted(() => clearTimeout(timer));
 .progress-window-head .icon-button {
   width: 24px;
   height: 24px;
-}
-
-.progress-window-head .icon-button.up :deep(svg) {
-  transform: rotate(180deg);
 }
 
 .progress-window-head .icon-button svg.up {

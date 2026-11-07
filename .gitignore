@@ -1,8 +1,6 @@
+# 运行数据：账号、设置、任务、日志、答题缓存（网页版在项目 data/，桌面版在 %APPDATA%）
 data/
 cli_copy/config.yml
-.env
-.env.*
-!.env.example
 *.db
 *.db-shm
 *.db-wal
@@ -10,26 +8,39 @@ cli_copy/config.yml
 *.sqlite3
 *.log
 logs/
+
+# 本地环境与缓存
+.venv/
+.env
+.env.*
+!.env.example
 __pycache__/
-node_modules/
-frontend/*.tsbuildinfo
 *.py[cod]
 .pytest_cache/
-.venv/
-.superpowers/
-docs/vue-validation/
-desktop/node_modules/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+frontend/*.tsbuildinfo
+node_modules/
+
+# 构建产物
 desktop/build/
 desktop/dist/
 desktop/.cache/
+
+# 界面验收截图（tools/vue_check.py 与 tools/ui_check.py 生成）
+docs/vue-validation/
+
+# 本机临时工作目录（验收、调试脚本、一次性输出）
+.tmp-*/
 scratch/
-
-# 本地安装的 UI 设计技能包（v2.2.3 界面重做时临时装到工作区的工具，不属于产品）
-.agents/
-agent/
 .claude/
-skills-lock.json
+.superpowers/
 
-# 本机验收与构建用的临时工作目录
-.tmp-ui/
-.tmp-gate/
+# 编辑器与系统杂项
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.db-journal

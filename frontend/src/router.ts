@@ -2,13 +2,14 @@
 // 7 条主路由 name/path 与旧手写 hash 的 View key 完全一致（迁移零语义变化）；
 // /mini 是 T14 Electron 迷你监控子窗的占位路由。
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from "vue-router";
-import OverviewDashboard from "./components/OverviewDashboard.vue";
+// 页面级组件统一放 views/，components/ 只放可复用部件。
+import OverviewDashboard from "./views/OverviewDashboard.vue";
 import ProgressView from "./views/ProgressView.vue";
 import TasksView from "./views/TasksView.vue";
-import AccountsView from "./components/AccountsView.vue";
-import CompletedView from "./components/CompletedView.vue";
-import BankView from "./components/BankView.vue";
-import SettingsView from "./components/SettingsView.vue";
+import AccountsView from "./views/AccountsView.vue";
+import CompletedView from "./views/CompletedView.vue";
+import BankView from "./views/BankView.vue";
+import SettingsView from "./views/SettingsView.vue";
 
 const routes: RouteRecordRaw[] = [
   { path: "/", redirect: "/overview" },

@@ -18,6 +18,7 @@ import time
 
 from . import accounts, paths, settings
 from .store import SettingsStore
+from .subprocess_runner import iter_lines, parse_record, spawn, wait_exit, worker_env, write_json_atomic
 
 SESSION_KEY = "chaoxing_sessions"
 
@@ -125,13 +126,9 @@ class SessionService:
 
     @staticmethod
     def _stop_process(process, grace: float) -> None:
-        # v2.4.0 T1：统一走 worker/common 优雅终止阶梯（taskkill 无 /F → 等待 → 强杀）
-        from worker import common
+        from .subprocess_runner import stop_process
 
-        try:
-            common.terminate_gracefully(process, max(0.5, grace))
-        except Exception:
-            pass
+        stop_process(process, grace)
 
     # --------------------------------------------------------
     # 获取会话（子进程登录）
@@ -161,21 +158,11 @@ class SessionService:
         }
         try:
             job_path = os.path.join(paths.TASK_DIR, f"session-{account['id']}.json")
-            os.makedirs(os.path.dirname(job_path), exist_ok=True)
-            tmp = job_path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(job, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, job_path)
+            write_json_atomic(job_path, job)
 
-            env = dict(os.environ)
-            env["PYTHONIOENCODING"] = "utf-8"
-            env["PYTHONUNBUFFERED"] = "1"
-            env["AUTOCXWEBUI_DATA_DIR"] = paths.DATA_DIR
-
-            process = subprocess.Popen(
-                [sys.executable, os.path.join(paths.ROOT_DIR, "worker", "session_runner.py"), job_path],
-                cwd=paths.ROOT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+            process = spawn(
+                os.path.join(paths.ROOT_DIR, "worker", "session_runner.py"), job_path,
+                worker_env(),
             )
         except Exception as exc:
             with _lock:
@@ -196,15 +183,11 @@ class SessionService:
             result = None
             code = -1
             try:
-                for raw in iter(process.stdout.readline, b""):
-                    text = raw.decode("utf-8", errors="replace").strip()
+                for text in iter_lines(process):
                     if not text:
                         continue
-                    try:
-                        record = json.loads(text)
-                    except ValueError:
-                        continue
-                    if not isinstance(record, dict):
+                    record = parse_record(text)
+                    if record is None:
                         continue
                     event = record.get("event", "")
                     payload = record.get("payload") or {}
@@ -217,18 +200,7 @@ class SessionService:
             except Exception:
                 failure = "读取会话结果失败，请重试"
             finally:
-                try:
-                    process.stdout.close()
-                except Exception:
-                    pass
-                try:
-                    code = process.wait(timeout=10)
-                except Exception:
-                    try:
-                        process.kill()
-                        process.wait(timeout=5)
-                    except Exception:
-                        pass
+                code = wait_exit(process, kill_on_timeout=True)
                 try:
                     cookies = self._browser_cookies((result or {}).get("cookies") or [])
                     if not failure and (code != 0 or not cookies):

@@ -12,4 +12,10 @@ contextBridge.exposeInMainWorld("coursearkDesktop", {
   openWindow: (route, preset) => ipcRenderer.invoke("windows:open", route, preset),
   /** T15：按 route 关闭（隐藏）通用小窗。 */
   closeWindow: (route) => ipcRenderer.invoke("windows:close", route),
+  /** T16：打开应用内安全验证窗（注入登录态 → 用户手动验证 → 捕获答题页地址）。 */
+  openVerify: (payload) => ipcRenderer.invoke("verify:open", payload),
+  /** T16：订阅验证窗捕获的答题页地址（含窗口 Cookie，渲染端负责回写）。 */
+  onVerifyCaptured: (handler) => {
+    ipcRenderer.on("verify:captured", (_event, data) => handler(data));
+  },
 });

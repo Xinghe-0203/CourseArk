@@ -1,28 +1,39 @@
 /* 页面内浮层小窗：逐题作答 / 任务告警（进度小窗自带 scoped 样式）。 */
 
-.float-window {
+/* 右上角浮窗列：容器负责定位与纵向堆叠，单个小窗只描述自身尺寸。
+   此前两个小窗各自 fixed 到同一坐标，同时打开时会完全重叠。 */
+.float-stack {
   position: fixed;
-  z-index: 45;
+  top: calc(var(--topbar) + 10px);
+  right: 16px;
+  z-index: var(--z-float);
   display: flex;
   flex-direction: column;
+  gap: 10px;
   width: 340px;
+  max-height: calc(100vh - var(--topbar) - 26px);
+  pointer-events: none;
+}
+
+.float-stack > * {
+  pointer-events: auto;
+}
+
+.float-window {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
   max-height: 380px;
   border: 1px solid var(--line2);
   border-radius: var(--r3);
   background: var(--surface);
-  box-shadow: 0 6px 20px rgba(21, 25, 31, 0.14);
+  box-shadow: var(--shadow-2);
   overflow: hidden;
 }
 
-.answer-feed-window {
-  right: 16px;
-  top: calc(var(--topbar) + 10px);
-}
-
 .alert-window {
-  right: 16px;
-  top: calc(var(--topbar) + 10px);
   width: 300px;
+  align-self: flex-end;
 }
 
 .float-window.minimized {
@@ -203,10 +214,13 @@
 }
 
 @media (max-width: 1080px) {
-  .answer-feed-window,
-  .alert-window {
+  .float-stack {
     right: 8px;
     width: calc(100vw - 16px);
     max-width: 320px;
+  }
+
+  .alert-window {
+    width: 100%;
   }
 }

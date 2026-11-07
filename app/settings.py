@@ -1,7 +1,7 @@
 """
 WebUI 全局设置
 
-- data/settings.json 保存全局默认值、Worker 上限、LLM/通知和存储位置
+- SQLite（键 global）保存全局默认值、Worker 上限、LLM 与存储位置
 - 首次启动时可以从源 CLI 的 config.yml 只读导入一次（源文件永不写回）
 - 对外 API 只返回敏感值的“是否已配置”，不返回明文
 """
@@ -316,7 +316,7 @@ def source_config_info() -> dict:
 
 def import_from_source_config(only_empty: bool = True) -> dict:
     """
-    从源 CLI 的 config.yml 导入 LLM / 通知 / 请求参数并持久化到本地数据库
+    从源 CLI 的 config.yml 导入 LLM / 请求参数并持久化到本地数据库
 
     only_empty=True（默认）只填充本地未自定义的字段，不覆盖用户在 WebUI 里保存的设置。
     """

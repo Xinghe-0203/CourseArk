@@ -13,6 +13,9 @@ import { state, act, resumeTask, dismissResumeTask } from "../store";
 import { request } from "../api";
 import { runningSummary } from "../live";
 import { canResume, isResumeDismissed, unfinishedUnits } from "../mission";
+import ProgressBar from "./ProgressBar.vue";
+import EmptyState from "./EmptyState.vue";
+import Pagination from "./Pagination.vue";
 import {
   groupTasks,
   statuses,
@@ -22,14 +25,19 @@ import {
   percent,
   date,
 } from "../format";
-const props = defineProps<{ tasks: Task[]; filters?: boolean }>();
+const props = defineProps<{
+  tasks: Task[];
+  filters?: boolean;
+  initialFilter?: string;
+}>();
 defineEmits<{ select: [task: Task] }>();
 const query = ref(""),
-  filter = ref("active"),
+  filter = ref(props.initialFilter || "active"),
   account = ref("");
 const fetched = ref<Task[] | null>(null),
   count = ref(0),
-  offset = ref(0);
+  offset = ref(0),
+  loadError = ref("");
 let generation = 0,
   debounce: ReturnType<typeof setTimeout>;
 async function load() {
@@ -56,9 +64,11 @@ async function load() {
           : task,
       );
       count.value = data.total;
+      loadError.value = "";
     }
   } catch (e) {
-    state.error = (e as Error).message;
+    // 读取失败在本列表内呈现：写全局 error 会和宿主页面的错误条互相覆盖。
+    if (current === generation) loadError.value = (e as Error).message;
   }
 }
 watch([query, filter, account], () => {
@@ -83,6 +93,11 @@ function liveLine(task: Task) {
   if (!summary) return "";
   return `${summary.activity} · 预计剩余 ${summary.eta}`;
 }
+function resetFilters() {
+  query.value = "";
+  account.value = "";
+  filter.value = props.initialFilter || "active";
+}
 function command(task: Task, op: string) {
   act(
     task.id,
@@ -100,6 +115,17 @@ function dismiss(task: Task) {
 function showResume(task: Task) {
   return canResume(task) && !isResumeDismissed(task, state.settings);
 }
+const filteredUp = computed(
+  () => props.filters && Boolean(query.value || account.value || filter.value !== "active"),
+);
+const emptyTitle = computed(() =>
+  filteredUp.value ? "没有符合当前条件的任务" : "还没有进行中的任务",
+);
+const emptyDesc = computed(() =>
+  filteredUp.value
+    ? "换个关键词、账号或状态，或清空筛选后查看全部任务。"
+    : "创建学习任务后，会按账号显示在这里；跑完的任务在「已完成」页。",
+);
 </script>
 <template>
   <div class="task-list">
@@ -111,7 +137,7 @@ function showResume(task: Task) {
           aria-label="搜索任务" /></label
       ><select v-model="account" aria-label="按账号筛选">
         <option value="">所有账号</option>
-        <option v-for="a in state.accounts" :value="a.id">
+        <option v-for="a in state.accounts" :key="a.id" :value="a.id">
           {{ a.label || a.username }}
         </option></select
       ><select v-model="filter" aria-label="任务状态">
@@ -122,6 +148,10 @@ function showResume(task: Task) {
         <option value="paused">已暂停</option>
         <option value="stopped">已停止</option>
       </select>
+    </div>
+    <div v-if="filters && loadError" class="alert error" role="alert">
+      <span>读取任务列表失败：{{ loadError }}</span>
+      <button @click="load">重试</button>
     </div>
     <div class="task-groups">
       <section v-for="group in groups" :key="group.id" class="account-group">
@@ -169,19 +199,11 @@ function showResume(task: Task) {
                   >{{ percent(task) }}%</strong
                 >
               </div>
-              <div
-                :class="[
-                  'progress-track',
-                  { indeterminate: percent(task) === null && active(task) },
-                ]"
-                role="progressbar"
-                :aria-valuenow="percent(task) ?? undefined"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                :aria-label="task.course_name + '完成进度'"
-              >
-                <i :style="{ width: (percent(task) ?? 0) + '%' }" />
-              </div>
+              <ProgressBar
+                :value="percent(task)"
+                :indeterminate="percent(task) === null && active(task)"
+                :label="(task.course_name || '任务') + '完成进度'"
+              />
               <small v-if="liveLine(task)" class="task-live-summary">{{
                 liveLine(task)
               }}</small>
@@ -220,6 +242,7 @@ function showResume(task: Task) {
                   ].includes(task.status)
                 "
                 aria-label="暂停任务"
+                title="暂停任务"
                 class="icon-button"
                 :disabled="state.busy.has(task.id)"
                 @click="command(task, 'pause')"
@@ -229,6 +252,7 @@ function showResume(task: Task) {
                 v-if="task.status === 'paused'"
                 class="icon-button"
                 aria-label="继续任务"
+                title="继续任务"
                 :disabled="state.busy.has(task.id)"
                 @click="command(task, 'resume')"
               >
@@ -237,6 +261,7 @@ function showResume(task: Task) {
                 v-if="!terminal(task)"
                 class="icon-button"
                 aria-label="停止任务"
+                title="停止任务"
                 :disabled="state.busy.has(task.id)"
                 @click="command(task, 'stop')"
               >
@@ -269,27 +294,24 @@ function showResume(task: Task) {
           </article>
         </div>
       </section>
-      <div v-if="!groups.length" class="empty">
-        <Layers :size="26" />
-        <h3>暂无{{ filters ? "符合条件的" : "进行中的" }}任务</h3>
-        <p>创建任务后，会按账号显示在这里。</p>
-      </div>
-    </div>
-    <div v-if="filters && count > 100" class="pagination">
-      <button
-        :disabled="offset === 0"
-        @click="offset = Math.max(0, offset - 100)"
+      <EmptyState
+        v-if="!groups.length"
+        :title="emptyTitle"
+        :description="emptyDesc"
       >
-        上一页
-      </button>
-      <span class="num"
-        >{{ offset + 1 }}—{{ Math.min(offset + 100, count) }} /
-        {{ count }}</span
-      >
-      <button :disabled="offset + 100 >= count" @click="offset += 100">
-        下一页
-      </button>
+        <template #icon><Layers :size="20" /></template>
+        <template v-if="filteredUp" #actions>
+          <button class="primary" @click="resetFilters">清空筛选条件</button>
+        </template>
+      </EmptyState>
     </div>
+    <Pagination
+      v-if="filters && count > 100"
+      :offset="offset"
+      :page-size="100"
+      :total="count"
+      @update:offset="offset = $event"
+    />
   </div>
 </template>
 

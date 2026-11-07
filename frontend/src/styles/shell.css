@@ -1,5 +1,6 @@
 /* ============================================================
-   骨架：左侧固定导航轨 + 顶栏 + 全宽内容区
+   骨架：左侧固定导航轨 + 顶栏 + 内容区
+   导航是安静的轨道，内容才是主角。
    ============================================================ */
 .shell {
   display: grid;
@@ -24,9 +25,9 @@
 .brand {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   height: var(--topbar);
-  padding: 0 14px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--line);
   color: var(--ink);
   text-decoration: none;
@@ -41,12 +42,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   flex: 0 0 auto;
   border-radius: var(--r2);
   background: var(--navy);
-  color: #eef4f9;
+  color: var(--primary-contrast);
+  box-shadow: var(--shadow-1);
 }
 
 .brand-mark svg {
@@ -57,47 +59,52 @@
 .brand > span:last-child {
   display: grid;
   gap: 1px;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  line-height: 1.2;
+  letter-spacing: 0.03em;
+  line-height: 1.25;
 }
 
 .brand small {
-  font-size: 10px;
+  font-family: var(--font-num);
+  font-size: 9.5px;
   font-weight: 400;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
   color: var(--faint);
+  text-transform: uppercase;
 }
 
 .sidebar nav {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 14px 0;
+  gap: 20px;
+  padding: 18px 0 12px;
   overflow-y: auto;
 }
 
 .nav-group {
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 
 .nav-caption {
-  padding: 0 14px 5px;
+  padding: 0 18px 6px;
   font-size: 10px;
-  letter-spacing: 0.1em;
+  font-weight: 500;
+  letter-spacing: 0.12em;
   color: var(--faint);
 }
 
 .sidebar nav button {
   position: relative;
   justify-content: flex-start;
-  gap: 9px;
-  height: 31px;
-  padding: 0 12px 0 13px;
+  gap: 10px;
+  height: 34px;
+  margin: 0 10px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--r2);
   background: transparent;
   color: var(--ink2);
   font-size: 12.5px;
@@ -107,12 +114,14 @@
 .sidebar nav button svg {
   color: var(--faint);
   flex: 0 0 auto;
+  transition: color 120ms ease;
 }
 
 .sidebar nav button:hover:not(:disabled) {
   background: var(--surface2);
   color: var(--ink);
   border-color: transparent;
+  box-shadow: none;
 }
 
 .sidebar nav button:hover svg {
@@ -123,33 +132,24 @@
   background: var(--navy-soft);
   color: var(--navy);
   font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--navy);
 }
 
 .sidebar nav button.chosen svg {
   color: var(--navy);
 }
 
-.sidebar nav button.chosen::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--navy);
-}
-
 .sidebar-bottom {
   margin-top: auto;
-  padding: 10px 12px 0;
+  padding: var(--sp-3) var(--sp-3) 0;
   border-top: 1px solid var(--line);
 }
 
 .engine {
   display: flex;
   align-items: flex-start;
-  gap: 7px;
-  padding: 8px 9px;
+  gap: var(--sp-2);
+  padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: var(--r2);
   background: var(--surface2);
@@ -166,26 +166,29 @@
 
 .engine.is-ok .engine-dot {
   background: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-glow-soft);
 }
 
 .engine.is-warn .engine-dot {
   background: var(--warn);
+  box-shadow: 0 0 0 3px var(--warn-glow-soft);
 }
 
 .engine-copy {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
 .engine-copy b {
   font-size: 11.5px;
   font-weight: 600;
+  line-height: 1.4;
   color: var(--ink2);
 }
 
 .engine.is-warn .engine-copy b {
-  color: #7a4f08;
+  color: var(--warn-ink);
 }
 
 .engine-copy small {
@@ -209,31 +212,27 @@
 .topbar {
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: var(--z-sticky);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   min-height: var(--topbar);
-  padding: 0 18px;
+  padding: 0 24px;
   border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(6px);
-}
-
-.breadcrumb {
-  display: none;
+  background: var(--topbar-bg);
+  backdrop-filter: blur(10px) saturate(1.15);
 }
 
 .top-title {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
 
 .top-title h1 {
-  font-size: 15px;
+  font-size: var(--fs-title);
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--ink);
@@ -241,7 +240,7 @@
 }
 
 .top-title p {
-  font-size: 11.5px;
+  font-size: var(--fs-meta);
   color: var(--mute);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -257,7 +256,7 @@
 
 .top-stats {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 0;
   border: 1px solid var(--line);
   border-radius: var(--r2);
@@ -268,10 +267,10 @@
 .stat-item {
   display: flex;
   align-items: baseline;
-  gap: 4px;
-  padding: 4px 9px;
+  gap: 5px;
+  padding: 4px 10px;
   border-right: 1px solid var(--line);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   color: var(--mute);
   white-space: nowrap;
 }
@@ -282,16 +281,17 @@
 
 .stat-item b {
   font-family: var(--font-num);
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 500;
   color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
 .window-switcher {
   display: flex;
   align-items: center;
   gap: 1px;
-  padding: 1px;
+  padding: 2px;
   border: 1px solid var(--line);
   border-radius: var(--r2);
   background: var(--surface);
@@ -310,6 +310,7 @@
 .window-switcher button:hover:not(:disabled) {
   background: var(--surface2);
   border-color: transparent;
+  box-shadow: none;
 }
 
 .window-switcher button.on {
@@ -325,19 +326,21 @@
 
 .page-content {
   flex: 1;
-  min-width: 0;
-  padding: 16px 18px 28px;
+  width: 100%;
+  max-width: 1680px;
+  margin: 0 auto;
+  padding: var(--sp-5) var(--sp-6) 36px;
 }
 
 .page-content > * + * {
-  margin-top: 14px;
+  margin-top: var(--sp-4);
 }
 
 .footer {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 18px 18px;
+  padding: 14px 2px 4px;
   color: var(--faint);
   font-size: 10.5px;
   letter-spacing: 0.03em;
@@ -361,13 +364,13 @@
     flex-direction: row;
     align-items: center;
     gap: 8px;
-    padding: 0 8px;
+    padding: 0 10px;
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }
 
   .brand {
-    height: 44px;
+    height: 46px;
     padding: 0 6px;
     border-bottom: 0;
   }
@@ -396,13 +399,14 @@
   }
 
   .sidebar nav button {
-    height: 28px;
-    padding: 0 9px;
+    height: 30px;
+    margin: 0;
+    padding: 0 10px;
     font-size: 12px;
   }
 
-  .sidebar nav button.chosen::before {
-    display: none;
+  .sidebar nav button.chosen {
+    box-shadow: none;
   }
 
   .sidebar-bottom {
@@ -412,11 +416,15 @@
   .topbar {
     position: static;
   }
+
+  .page-content {
+    padding: 16px 18px 28px;
+  }
 }
 
 @media (max-width: 760px) {
   .topbar {
-    padding: 8px 12px;
+    padding: 10px 14px;
     gap: 8px;
   }
 
@@ -441,8 +449,8 @@
 
   .sidebar nav button {
     gap: 6px;
-    height: 26px;
-    padding: 0 7px;
+    height: 28px;
+    padding: 0 8px;
     font-size: 11.5px;
   }
 
@@ -452,7 +460,7 @@
   }
 
   .page-content {
-    padding: 12px 12px 24px;
+    padding: 14px 14px 24px;
   }
 
   .metrics {

@@ -309,3 +309,85 @@
 3. `workAnswerId` 是否必须每次从答题页刷新（列表页值是否过期）。
 4. `/mooc-ans/api/work` 对「独立作业」列表项是否同样返回表单（当前抓包来自作业任务页；章节测验已证实）。
 5. 字体解码表是否覆盖本课程用字（需用真实页面 TTF 跑一次哈希表校验）。
+
+---
+
+## 3. 2026-11 调研增量（同类项目对照与应用内验证窗方案）
+
+> 补充第一轮调研（2026-10-18）：本轮经 GitHub API 核对 star / 最近推送并深入 5 个活跃项目
+> 的协议实现，重点是课程任务点上报端点、作业手机协议备路，以及「Electron 复用登录态 +
+> 人机验证 + 被动捕获答题页地址」的落地方案（T16 已按此实现）。
+
+### 3.1 项目清单（2026-11 实测）
+
+| 项目 | Stars | 最近推送 | 架构 |
+|---|---|---|---|
+| [ocsjs/ocsjs](https://github.com/ocsjs/ocsjs) | 4192 | 2026-11-06 | 油猴用户脚本，DOM 驱动答题 + 脚本市场题库，最活跃 |
+| [Samueli924/chaoxing](https://github.com/Samueli924/chaoxing) | 3806 | 2026-09-28 | Python requests 纯协议 CLI，视频/文档/阅读/测验全覆盖 |
+| [aquamarine5/ChaoxingSignFaker](https://github.com/aquamarine5/ChaoxingSignFaker) | 1020 | 2026-11-06 | Kotlin 安卓端签到伪造（观察风控的窗口） |
+| [Dainoar/SuperAutoStudy](https://github.com/Dainoar/SuperAutoStudy) | 794 | 2026-07-14 | SpringBoot + Redis，Java 协议模拟 |
+| [yatori-dev/yatori-go-console](https://github.com/yatori-dev/yatori-go-console) | 587 | 2026-10/11 | Go 多平台统一 Client（api→internal 分层） |
+| [unraous/uxuescript](https://github.com/unraous/uxuescript) | 361 | 2026-11-05 | Tauri2 + 系统 WebView 注入 core.js，真实页面操作 |
+| SocialSisterYi/CxKitty | 原 404 | — | 原 DMCA/删除，仅 fork 流存（协议参考仍有价值） |
+
+### 3.2 章节任务点上报端点（三项目互证，可直接对拍）
+
+- **视频**：`GET mooc1(.chaoxing|-api.chaoxing).com/mooc-ans/multimedia/log/a/{cpi}/{dtoken}`，
+  参数 `clazzId, playingTime, duration, clipTime=0_{duration}, objectId, otherInfo, courseId,
+  jobid, userid, isdrag, view=pc, enc, rt, dtype=Video, _t`；
+  **enc 公式**：`md5("[clazzId][userid][jobid][objectId][playingTime*1000][d_yHJ!$pdA~5][duration*1000][0_duration]")`（固定盐）。
+  坑：query 要 `urlencode(..., safe="&=")`；`isdrag` 0 正常/2 暂停/3 开始/4 音频结束；
+  403/验证码时刷新 dtoken 后重试（上限 2 次）；dtoken 来自 `ananas/status/{objectId}?k=fid&flag=normal`。
+- **音频**：同端点 `dtype=Audio` + 不同 Referer。**文档**：`ananas/job/document?jobid&knowledgeid&…`
+  一次 GET 即完成，`knowledgeid` 从 otherinfo 正则 `nodeId_(\d+)-` 提取。**阅读**：`ananas/job/readv2`。
+- 卡片循环：`mooc-ans/knowledge/cards` 的 `num` 从 "0" 循环到 "6"（任务卡片数不固定），
+  版本参数 `v="2025-0424-1038-3"` 会漂移。公开实现都固定 `isdrag=0` 按心跳推进——
+  纯协议路线**不存在**「拖拽校验」，那是 DOM 层行为。
+
+### 3.3 独立作业：手机协议备路（比解析 2026 Vue3 页面更稳，未落地）
+
+yatori 已实现手机端作业协议（[XueXiTongWorkApi.go](https://github.com/yatori-dev/yatori-go-core/blob/main/internal/api/xuexitong/XueXiTongWorkApi.go)）：
+列表 `mooc1-api.chaoxing.com/work/task-list?courseId&classId&cpi`；取卷
+`mooc-ans/work/phone/doHomeWork?...&checkIntegrity=true&enc`（逐题加 `&index=N`）；
+提交 `POST mooc-ans/work/phone/doNormalHomeWorkSubmit?tempSave=true|false`，
+结构化表单字段（`answer{qid}/answers{qid}/answerEditor{qid}{n}+blankNum{qid}`），
+**courseId/classId/workRelationId 三个字段要重复添加两次（数组语义）**。
+建议后续做「PC 表单回放（主）+ 手机协议（备）」双路探测，与考试 v2.2.2 思路对称。
+
+### 3.4 独立考试增量
+
+- 提交 host 不一致：yatori 用 `mooc1-api.chaoxing.com`，CxKitty 用 `mooc1.chaoxing.com`
+  ——提交域要**运行时探测两个域**。
+- 2026 版提交 URL 新增签名占位参数 `&_csign=1&_signcode=3&_signc=0&_signe=3-1&_signk&_cxcid&_cxtime&_signt`。
+- 滑块验证码：`captchavalidate` 的 `validate_...` token 由人机完成，程序只透传（与本项目边界一致）。
+- UA 风控：响应含「请升级学习通APP最新版本」时换 iPhone UA 重试 → 需要可切换 UA 池。
+- 保守派先例：uxuescript 考试只采集二遍填写、**一律不自动交卷**；本项目 `auto_submit=false` 默认正确。
+
+### 3.5 应用内验证窗方案（T16 实现依据）
+
+同类实践：uxuescript（Tauri WebView 内用户自己登录，注入 core.js 操作真实页面）、
+[LangHY/chaoxing-exam](https://github.com/LangHY/chaoxing-exam)（Playwright 持久化上下文；
+**答题页 URL 不可直接构造，缺 enc 直接 403**，要在页面 frames 里找 `doHomeWorkNew`/
+`selectWorkQuestion`）、OCS「软件版内置 Chrome」。没有现成 Electron 方案。
+
+落地的六个要点（已全部实现，见 architecture.md「应用内安全验证窗」）：
+1. 每账号独立 `session.fromPartition('persist:cx-<uid>')`，防多账号 Cookie 串号；
+2. Cookie 注入必带白名单：`fid, _uid, UID, vc3, uf, route, k8s, cx_p_token, p_auth_token,
+   xxtenc, DSSTASH_LOG`；`vc3` 有时效，过期重新登录；
+3. 验证窗只挂只读 preload（本项目干脆不挂），**不在考试页做任何程序化 DOM 操作**；
+4. `webRequest.onBeforeRedirect/onCompleted` 被动捕获 302 与带 `enc=` 的答题页请求
+   ——比「用户复制粘贴」稳，绕开「直接构造 URL 会 403」；
+5. 回传 Worker 用同 UA、同机同 IP 重建会话（指纹一致，避免验证码复验）；
+6. 验证窗期间不同账号端并发请求（考试 `enc` 是滚动令牌，双端并发互相作废）。
+
+### 3.6 平台更新导致失效的教训（维护清单）
+
+1. **DMCA 风险**：CxKitty 原仓库已删——对外文档避免「代考/过监考」表述。
+2. **频率风控**：提交过快触发验证码；高倍速后台可查、可能清进度；凌晨挂机易被检测。
+3. **签名持续加码**：视频 enc 盐多年未变但参数集在加（`attDuration/attDurationEnc/videoFaceCaptureEnc`）；
+   考试提交 2026 新增 `_csign` 系列——**端点与参数必须页面/响应驱动获取，不能写死**。
+4. **版本参数**：`knowledge/cards` 的 `v=`、考试 UA 门槛——UA 池 + 版本参数配置化是常态维护成本。
+5. **域名漂移**：`mooc1/mooc1-api/mooc2-ans/mooc1-1` 分工不同（取题/提交 host 都可能不同），OCS 把「域名不匹配」列为失效首因。
+6. **字体反爬**：`font-cxsecret` 每页随机映射，字形哈希离线反查是唯一稳解（已收录）。
+7. **URL 不可凭空构造**：缺 `enc` 直接 403；作业 `totalQuestionNum` 是 32-hex 令牌不是题数（见 §1/§2）。
+8. **闯关/强制模式**：闯关章节必须顺序完成，调度器应识别并明确提示而非静默重试。

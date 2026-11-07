@@ -1,8 +1,7 @@
 // T9.4 逐题作答小窗：SSE answer_result 事件流（最近优先），点击行打开任务详情。
-import { computed, ref } from "vue";
+import { ref } from "vue";
 import { state } from "../store";
 import type { Task } from "../types";
-import { ensureWindow } from "./manager";
 
 export interface AnswerFeedItem {
   key: string;
@@ -41,13 +40,6 @@ export function pushAnswerEvent(taskId: string, payload: Record<string, unknown>
 export function answerFeed() {
   return feed;
 }
-
-/** 窗口标题（运行中的课程名或「逐题作答」）。 */
-export const answerFeedTitle = computed(() => {
-  const win = ensureWindow("answers");
-  void win;
-  return "逐题作答";
-});
 
 export function openAnswerTask(item: AnswerFeedItem): Task | undefined {
   return state.tasks.find((task) => task.id === item.taskId);

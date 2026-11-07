@@ -11,10 +11,10 @@
 import json
 import os
 import subprocess
-import sys
 import time
 
 from . import accounts, paths
+from .subprocess_runner import parse_record, spawn, stop_process, worker_env, write_json_atomic
 
 CATALOG_TTL = 600
 CATALOG_TIMEOUT = 180
@@ -90,24 +90,11 @@ def _job_path(job: dict) -> str:
 def _run_catalog_job(job: dict) -> list:
     """启动 catalog_runner 子进程并解析 stdout；失败抛 RuntimeError（中文原因）"""
     job_path = _job_path(job)
-    tmp = job_path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as handle:
-        json.dump(job, handle, ensure_ascii=False, indent=2)
-    os.replace(tmp, job_path)
-
-    env = dict(os.environ)
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONUNBUFFERED"] = "1"
-    env["AUTOCXWEBUI_DATA_DIR"] = paths.DATA_DIR
+    write_json_atomic(job_path, job)
 
     runner = os.path.join(paths.ROOT_DIR, "worker", "catalog_runner.py")
     try:
-        process = subprocess.Popen(
-            [sys.executable, runner, job_path],
-            cwd=paths.ROOT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
-            bufsize=0,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
-        )
+        process = spawn(runner, job_path, worker_env())
     except OSError as exc:
         raise RuntimeError("无法启动作业列表读取进程，请重试") from exc
 
@@ -115,20 +102,10 @@ def _run_catalog_job(job: dict) -> list:
         stdout, _ = process.communicate(timeout=CATALOG_TIMEOUT)
     except subprocess.TimeoutExpired:
         # v2.4.0 T1：超时终止走 worker/common 优雅终止阶梯
-        from worker import common
-
-        try:
-            common.terminate_gracefully(process, 5.0)
-        except Exception:
-            pass
+        stop_process(process, 5.0)
         raise RuntimeError("读取作业列表超时，请稍后重试")
     except Exception as exc:
-        from worker import common
-
-        try:
-            common.terminate_gracefully(process, 5.0)
-        except Exception:
-            pass
+        stop_process(process, 5.0)
         raise RuntimeError("读取作业列表失败，请重试") from exc
 
     items, failure = None, ""
@@ -136,11 +113,8 @@ def _run_catalog_job(job: dict) -> list:
         line = line.strip()
         if not line:
             continue
-        try:
-            record = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(record, dict):
+        record = parse_record(line)
+        if record is None:
             continue
         event = record.get("event") or "log"
         payload = record.get("payload") or {}

@@ -14,6 +14,7 @@ import threading
 import time
 
 from . import accounts, events, paths, settings, narrative
+from .subprocess_runner import iter_lines, parse_record, spawn, stop_process, wait_exit, worker_env, write_json_atomic
 
 _lock = threading.RLock()
 _running = {}  # account_id -> {"started_at": float, "process": Popen}
@@ -44,13 +45,7 @@ def shutdown(grace: float = 3.0) -> None:
 
 
 def _stop_process(process, grace: float) -> None:
-    # v2.4.0 T1：统一走 worker/common 优雅终止阶梯（taskkill 无 /F → 等待 → 强杀）
-    from worker import common
-
-    try:
-        common.terminate_gracefully(process, max(0.5, grace))
-    except Exception:
-        pass
+    stop_process(process, grace)
 
 
 def sync_account(db, hub: events.EventHub, account_id: str, blocking: bool = False) -> dict:
@@ -80,21 +75,11 @@ def sync_account(db, hub: events.EventHub, account_id: str, blocking: bool = Fal
     }
     try:
         job_path = os.path.join(paths.TASK_DIR, f"sync-{account['id']}.json")
-        os.makedirs(os.path.dirname(job_path), exist_ok=True)
-        tmp = job_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(job, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, job_path)
+        write_json_atomic(job_path, job)
 
-        env = dict(os.environ)
-        env["PYTHONIOENCODING"] = "utf-8"
-        env["PYTHONUNBUFFERED"] = "1"
-        env["AUTOCXWEBUI_DATA_DIR"] = paths.DATA_DIR
-
-        process = subprocess.Popen(
-            [sys.executable, os.path.join(paths.ROOT_DIR, "worker", "sync_runner.py"), job_path],
-            cwd=paths.ROOT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, bufsize=0,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+        process = spawn(
+            os.path.join(paths.ROOT_DIR, "worker", "sync_runner.py"), job_path,
+            worker_env(),
         )
     except Exception as exc:
         with _lock:
@@ -107,16 +92,12 @@ def sync_account(db, hub: events.EventHub, account_id: str, blocking: bool = Fal
         result = None
         failure = None
         try:
-            for raw in iter(process.stdout.readline, b""):
-                text = raw.decode("utf-8", errors="replace").strip()
+            for text in iter_lines(process):
                 if not text:
                     continue
-                try:
-                    record = json.loads(text)
-                except ValueError:
+                record = parse_record(text)
+                if record is None:
                     _publish(db, hub, account_id, "log", text[:1000], level="info")
-                    continue
-                if not isinstance(record, dict):
                     continue
                 event = record.get("event", "log")
                 message = record.get("message", "")
@@ -132,16 +113,7 @@ def sync_account(db, hub: events.EventHub, account_id: str, blocking: bool = Fal
         except Exception:
             failure = "读取课程同步结果失败，请重试"
         finally:
-            try:
-                process.stdout.close()
-            except Exception:
-                pass
-            code = process.poll()
-            if code is None:
-                try:
-                    code = process.wait(timeout=10)
-                except Exception:
-                    code = -1
+            code = wait_exit(process)
             try:
                 _finalize(db, hub, account_id, result, failure, code)
             finally:

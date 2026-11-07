@@ -6,48 +6,74 @@ defineProps<{ title: string; wide?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 const panel = ref<HTMLElement>();
 let previous: Element | null;
+
 // 同时存在的弹窗可能不止一个（任务抽屉叠在列表页、向导里再开确认框）。
-// inert 与滚动锁必须引用计数：否则先卸载的那个会把锁清掉，
-// 或者某个实例异常卸载后把整页永久锁死（点击全部落到 shell 上）。
+// 三条规则必须按「栈」处理，否则叠层会互相干扰：
+// 1. inert 与滚动锁用引用计数——先卸载的那个不能把锁清掉；
+// 2. 只有最顶层的弹窗响应 Escape，否则一次按键会关掉两层；
+// 3. 焦点陷阱同理，只由最顶层接管 Tab。
+const stack: symbol[] = [];
+const id = Symbol("modal");
 let locks = 0;
+
 function lock() {
   if (locks++ > 0) return;
-  document.querySelector<HTMLElement>(".workspace")?.setAttribute("inert", "");
-  document.querySelector<HTMLElement>(".sidebar")?.setAttribute("inert", "");
+  // 整个应用外壳（侧栏 + 主区 + 浮层）都不可聚焦，弹窗 Teleport 到 body 不受影响。
+  document.querySelector<HTMLElement>(".shell")?.setAttribute("inert", "");
   document.body.style.overflow = "hidden";
 }
 function unlock() {
   if (locks > 0) locks -= 1;
   if (locks > 0) return;
-  document.querySelector<HTMLElement>(".workspace")?.removeAttribute("inert");
-  document.querySelector<HTMLElement>(".sidebar")?.removeAttribute("inert");
+  document.querySelector<HTMLElement>(".shell")?.removeAttribute("inert");
   document.body.style.overflow = "";
 }
+function isTop() {
+  return stack[stack.length - 1] === id;
+}
+function focusables() {
+  return Array.from(
+    panel.value?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]',
+    ) || [],
+  ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+}
 function key(event: KeyboardEvent) {
-  if (event.key === "Escape") emit("close");
-  if (event.key === "Tab") {
-    const els = panel.value?.querySelectorAll<HTMLElement>(
-      'button:not(:disabled),a,input,select,textarea,[tabindex="0"]',
-    );
-    if (!els?.length) return;
-    const first = els[0]!,
-      last = els[els.length - 1]!;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
+  if (!isTop()) return;
+  if (event.key === "Escape") {
+    event.stopPropagation();
+    emit("close");
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const els = focusables();
+  if (!els.length) {
+    event.preventDefault();
+    panel.value?.focus();
+    return;
+  }
+  const first = els[0]!,
+    last = els[els.length - 1]!;
+  if (event.shiftKey && (document.activeElement === first || document.activeElement === panel.value)) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
   }
 }
 onMounted(() => {
   previous = document.activeElement;
+  stack.push(id);
   lock();
-  panel.value?.focus();
+  // 落在第一个可操作控件上；没有控件时退回容器本身。
+  const first = focusables()[0];
+  (first || panel.value)?.focus();
   document.addEventListener("keydown", key);
 });
 onUnmounted(() => {
+  const index = stack.indexOf(id);
+  if (index >= 0) stack.splice(index, 1);
   unlock();
   document.removeEventListener("keydown", key);
   if (previous instanceof HTMLElement) previous.focus();
@@ -70,9 +96,10 @@ onUnmounted(() => {
           <button
             class="icon-button"
             aria-label="关闭面板"
+            title="关闭面板"
             @click="emit('close')"
           >
-            <X :size="20" />
+            <X :size="18" />
           </button>
         </div>
         <div class="modal-body">

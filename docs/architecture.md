@@ -16,6 +16,11 @@ Electron ── Python runtime ── FastAPI ── Vue 页面
 - `frontend/`：Vue 组件、类型、请求和状态管理。
 - `webui_static/vue/`：由前端生产构建生成，随服务提供。
 - `app/`：FastAPI 路由、持久化、任务调度、会话、课程同步。
+  路由按域拆在 `app/routes/`（`system` / `overview` / `accounts` / `workspace` /
+  `tasks` / `settings` / `bank`），`app/main.py` 保留惰性资源单例、请求模型、
+  视图序列化辅助与鉴权守卫；路由模块经 `from .. import main` 在调用时动态取
+  `db/hub/manager/sessions`（测试会整体替换这些单例，禁止 import 时绑定）。
+  四处 Worker 子进程的启动/读取/终止样板在 `app/subprocess_runner.py`。
 - `worker/`：任务、同步与会话子进程入口。
 - `cli_copy/`：复用的 AutoChaoxingCLI 业务代码及 WebUI 适配；资源来源与许可见其 `resource/`。
 - `desktop/`：Electron 桌面壳、Windows 构建和打包冒烟检查。
@@ -178,16 +183,16 @@ Worker 通过 `runtime.emit` 写事件，`app/database.py` 落库，`app/narrati
   （`--ok/--warn/--danger/--info`）与字体角色（正文 Microsoft YaHei、数字 Bahnschrift、等宽 Consolas），
   并把旧变量名（`--fg/--bg/--line/--accent` 等）映射到新 token，供模板内联 SVG 继续使用；
   `base.css` 是按钮、表单、状态胶囊、进度条、标签页、筛选条、分页、面板、弹窗与空态的公共件；
-  `shell.css` 是侧栏 `--rail:216px` + 顶栏 `--topbar:52px` 的骨架与 1080 / 760 两档断点；
+  `shell.css` 是侧栏 `--rail:208px` + 顶栏 `--topbar:54px` 的骨架与 1080 / 760 两档断点；
   `windows.css` 是进度、逐题、告警三个浮层小窗。
 - **顶栏承载页面身份**：标题与一句说明放在 `.top-title`（h1 15px），不再有 40px 巨标题和
   「工作空间 / 页名」面包屑；右侧依次是新建任务、账号/课程/运行中三项计数、浮层开关、刷新。
-- **统一口径**：`frontend/src/stats.ts` 的 `workspaceStats(workspaces, tasks)` 仍是唯一聚合来源，
+- **统一口径**：`frontend/src/overview.ts` 的 `overviewCounts()` / `engineTotals()` 是唯一聚合来源，
   顶栏 `.top-stats`（账号 / 课程 / 运行中）与总览共用它；`courses` 按 `sum(w.courses.length)` 计算。
 - **总览只讲一次**：续跑条 → 单块执行摘要（`.execution-dashboard`：本轮已确认 / 总数 + 进度条 +
   三枚阶段 chip）→ 调度队列表格（课程与任务 / 状态 / 说明 / 进度 / 创建）→ 正在执行的账号卡 →
   最近完成。原先四张等大指标卡、环形仪表与三条阶段比例条都在重复同一件事，已删除。
-- **列表用行式表格**：账号与课程、已完成、答题缓存、任务记录都是「28px 表头 + 行」，不再用大卡片；
+- **列表用行式表格**：账号与课程、已完成、答题缓存、任务记录都是「34px 表头 + 行」，不再用大卡片；
   行内多行信息用 `small` 与 `.num` 分层次，状态统一 `.status` 胶囊。
 - **学习任务用竖向二级菜单**：`.account-workspaces` 是 `238px + minmax(0,1fr)` 的两列网格，
   左列 `nav.account-menu` 每个账号一行（勾选框、头像、账号名、`N 门 · fn / all 任务点`、执行状态点），
@@ -217,6 +222,30 @@ Worker 通过 `runtime.emit` 写事件，`app/database.py` 落库，`app/narrati
   `.account-menu-item`（左侧账号竖列）、`.workspace-account`（右侧单账号详情）、`.workspace-course`、
   `.progress-account`、`.progress-course`、`.completed-row`。
 
+## 浮层与弹窗的层叠规则（v2.5）
+
+三类浮层各自只负责自己的一层，定位与叠放交给容器：
+
+- **右上角浮窗列**：`App.vue` 用一个 `.float-stack`（`position: fixed`，纵向 flex）承载
+  逐题小窗与告警小窗。此前两个小窗各自 fixed 到同一坐标，同时打开时完全重叠。
+- **进度小窗**：开合、最小化统一由 `windows/manager.ts` 的 `ensureWindow/openWindow/closeWindow/
+  toggleMinimized` 管理。顶栏开关、小窗标题栏与关闭按钮操作同一份状态——此前顶栏切换的是
+  `windows.map.progress`，而组件用自己的局部 `closed/minimized`，按钮亮了小窗却不动。
+- **弹窗栈**：`ModalShell` 维护一个模块级栈，只有最顶层响应 Escape 与 Tab 焦点陷阱
+  （否则任务抽屉上再开确认框时，一次 Esc 会把两层都关掉）；`inert` 作用于整个 `.shell`，
+  浮窗在弹窗后面也不可聚焦；焦点落在第一个可操作控件上。
+- 层级统一用 `tokens.css` 的 `--z-sticky / --z-overlay / --z-float / --z-toast`，不再写字面量。
+
+## 「已完成」筛选（v2.5）
+
+`GET /api/completed` 新增 `status` 参数（`succeeded,failed,stopped,interrupted`，逗号分隔），
+筛选在 SQL 侧完成，返回的仍是带 `answers_summary` / `outcome` / `duration_seconds` / `exam`
+的完整视图，`total` 与 `offset` 分页语义同时成立。
+
+此前前端在状态筛选时改打 `/api/history` 取前 200 条本地过滤：分页被隐藏、逐题汇总与结果说明
+也不在该接口的返回结构里，筛选后的行只能提示「点详情补齐」。`/api/history` 仍保留给
+`tools/smoke_test.py` 与测试使用，职责是轻量列表。
+
 ## Worker 公共基座与进程治理（v2.4.0）
 
 `worker/common.py` 是四类 runner（视频 / 会话同步 / 目录 / 课程）的公共基座：
@@ -239,7 +268,8 @@ CLI 配置单源（`cli_copy/core/config.py`）：纯内存 schema，`_normalize
 `_ModuleLogger`，以 `emit("log", …, stage="log")` 落为任务事件；前端任务详情「诊断日志」
 按级别 / 关键词检索、游标分页。事件呈现由 `app/presentation.py` 集中分类：
 `LOG_CATEGORIES`（关键词→分类）→ `EVENT_CATEGORIES`（事件映射兜底），
-`HIDDEN_EVENTS`（`log` / `task_progress` / `media_progress` / `worker_exit`）不进活动流。
+`HIDDEN_EVENTS`（`log` / `task_progress` / `media_progress`）不进活动流；`worker_exit` /
+`worker_crash` 自 v2.4.0 T10 起可见。
 
 存储侧配套：`add_event` 缓冲（8 条或 2 秒）+ `executemany` 批量落库；超长 payload 截断；
 SSE 游标预分配 `_next_event_id()`（表 MAX 与缓冲尾取大 +1），断线用 `Last-Event-ID`
@@ -263,6 +293,25 @@ SSE 游标预分配 `_next_event_id()`（表 MAX 与缓冲尾取大 +1），断�
 - 生命周期：`window-all-closed` 仅主窗销毁才退出（子窗隐藏不算退出信号）；`before-quit`
   连带销毁注册表全部子窗并 `stopBackend`；`second-instance` 聚焦主窗与全部可见子窗。
 - 推迟 v2.4.1：dev 模式接 Vite dev server、托盘图标、崩溃自动恢复。
+
+## 应用内安全验证窗（T16）
+
+学习通对进入考试/作业有平台侧人机验证（滑块、考试码、人脸）。程序不绕过这些校验；
+桌面端提供一条「验证在应用内完成、地址自动带回」的流程，替代 v2.2.2 的纯手动粘贴：
+
+1. **导出登录态**：`GET /api/accounts/{id}/session/cookies` 返回已保存会话的 Cookie
+   （无会话 409）。服务只监听回环，Cookie 不出本机。
+2. **验证窗**：桌面壳新 IPC `verify:open`——按账号开 `persist:cx-<id>` 持久分区
+   `BrowserWindow`，`session.setCookie` 注入登录态，UA 与 Worker 对齐；窗口不挂
+   preload、不注脚本（验证由用户手动完成）；学习通域名留在窗内，其余链接交系统浏览器。
+3. **被动捕获**：`webRequest.onBeforeRedirect/onCompleted`（filter `*://*.chaoxing.com/*`）
+   监听带 `enc=` 的 `reVersionTestStartNew` / `doHomeWorkNew` / `selectWorkQuestion`
+   与考试 start 跳转；命中后把地址 + 窗口 Cookie 经 `verify:captured` 发给主窗。
+4. **回写与预填**：主窗渲染端 `POST /api/accounts/{id}/session/cookies` 把窗口会话
+   Cookie 写回会话缓存（白名单字段 name/value/domain/path/expires/secure/httpOnly/
+   sameSite），并把地址预填进新建考试任务的「考试答题页地址」（一次性消费）。
+5. **防串扰**：验证窗期间不要对同账号并发创建任务——考试 `enc` 是滚动令牌，
+   双端并发会互相作废（同类项目踩过的坑，见 research-github 调研增量）。
 
 ## 本机数据
 

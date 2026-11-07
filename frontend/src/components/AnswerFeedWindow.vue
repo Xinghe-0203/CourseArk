@@ -3,6 +3,7 @@
 import { computed } from "vue";
 import { X } from "lucide-vue-next";
 import { answerFeed, openAnswerTask } from "../windows/answers";
+import { answerStatuses } from "../answers";
 import {
   closeWindow,
   focusWindow,
@@ -14,17 +15,14 @@ import type { Task } from "../types";
 const emit = defineEmits<{ select: [task: Task] }>();
 const win = computed(() => windows.map.answers);
 const items = answerFeed();
-const statusLabel: Record<string, string> = {
-  answered: "已作答",
-  skipped: "已跳过",
-  unreadable: "未识别",
-};
+/** 状态 → 胶囊色调。类名必须与 base.css 的 .pill.ok/.warn/.danger 对齐，
+    否则胶囊会渲染成中性灰（历史缺陷：这里曾用 is-ok/is-warn/is-err）。 */
 function rowClass(status: string) {
   return status === "answered"
-    ? "is-ok"
+    ? "ok"
     : status === "skipped"
-      ? "is-warn"
-      : "is-err";
+      ? "warn"
+      : "danger";
 }
 function pick(item: (typeof items.value)[number]) {
   const task = openAnswerTask(item);
@@ -36,7 +34,7 @@ function pick(item: (typeof items.value)[number]) {
     v-if="win?.open"
     class="float-window answer-feed-window"
     :class="{ minimized: win.minimized }"
-    role="status"
+    role="region"
     aria-label="逐题作答小窗"
     @mousedown="focusWindow('answers')"
   >
@@ -68,7 +66,7 @@ function pick(item: (typeof items.value)[number]) {
         <li v-for="item in items" :key="item.key">
           <button class="feed-row" @click="pick(item)">
             <span :class="['pill', rowClass(item.status)]">{{
-              statusLabel[item.status] || item.status
+              answerStatuses[item.status] || item.status
             }}</span>
             <b>{{ item.courseName }}</b>
             <small class="feed-question">{{ item.question || "（无题干）" }}</small>

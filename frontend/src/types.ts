@@ -199,11 +199,28 @@ export interface DesktopWindowPreset {
   alwaysOnTop?: boolean;
   skipTaskbar?: boolean;
 }
+/** T16：应用内验证窗的入参与捕获结果。 */
+export interface DesktopVerifyPayload {
+  accountId: string;
+  /** 学习通页面地址（考试说明页 / 课程页均可），验证窗从这里开始 */
+  url?: string;
+  /** 已保存会话的 Cookie（GET /accounts/{id}/session/cookies） */
+  cookies?: Record<string, unknown>[];
+}
+export interface DesktopVerifyCaptured {
+  accountId: string;
+  /** 捕获到的答题页地址（带 enc=），可直接填进新建考试任务 */
+  url: string;
+  /** 验证窗会话的 Cookie，需要回写会话缓存让 Worker 复用登录态 */
+  cookies: Record<string, unknown>[];
+}
 export interface CoursearkDesktop {
   openMini: () => Promise<boolean>;
   closeMini: () => Promise<boolean>;
   openWindow: (route: string, preset?: DesktopWindowPreset) => Promise<boolean>;
   closeWindow: (route: string) => Promise<boolean>;
+  openVerify: (payload: DesktopVerifyPayload) => Promise<boolean>;
+  onVerifyCaptured: (handler: (data: DesktopVerifyCaptured) => void) => void;
 }
 declare global {
   interface Window {

@@ -21,8 +21,12 @@
   「一页一题」的考试会被识别并安全中止（不会提交半份答案）。若平台要求在进入考试前完成
   人机校验（验证码）或输入考试码，程序会明确提示并**不会启动考试、也不会尝试绕过**；
   可在考试列表点「在浏览器中打开」手动完成验证。
-  **v2.2.2 起推荐「粘贴答题页地址」**：在浏览器里进入考试后，把地址栏里带 `enc=` 的答题页
-  地址粘贴到新建考试任务里，程序即可逐题 AI 作答、自动下一题并交卷（真实考试验证可用）。
+  **桌面版应用内验证窗（未发布）**：考试条目的「打开考试页」会在应用内打开一个
+  带本机登录态的 Chromium 窗口，你手动完成平台安全验证后，程序自动捕获答题页地址
+  （带 `enc=`）并填进新建考试任务，无需再手动复制；验证后的会话同时回写，
+  保证后续逐题作答与验证在同一登录态上进行。
+  **粘贴答题页地址（v2.2.2 起，真实考试已验证）**：在浏览器里进入考试后，把地址栏里带
+  `enc=` 的答题页地址粘贴到新建考试任务里，程序即可逐题 AI 作答、自动下一题并交卷。
   说明见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)。
 - AI 做题：只保留 AI 作答链路，逐题实时展示题干、选项、答案与来源（AI / 答题缓存 / 随机 / 未识别），
   答案先过题型校验（判断题归一为 true/false，选择题必须落在选项字母内）；无法可靠作答时按策略跳过。
@@ -55,6 +59,13 @@
   同时修掉三处真实缺陷：`RouterView` 上的 `@select` 把原生 Event 当任务传给抽屉导致整页被 `inert` 锁死、
   迷你窗被套上侧栏与顶栏、迷你窗已用时算出 `497823:05:24`。详见
   [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 的「界面重做（未发布）」一节。
+- 检查、清理与界面打磨（未发布）：删除 `.tmp-gate/`、`.tmp-ui/`、重复技能包等约 26 MB 本地垃圾，
+  并修掉 `tests/test_nplus1.py` 把临时目录写到**仓库外**的缺陷；清除 v2.3.0 遗留的最后几处通知痕迹；
+  修一批真实交互缺陷——进度小窗开关是死按钮、两个浮窗完全重叠、Esc 一次关掉两层弹窗、
+  「已完成」页筛选时不能翻页且丢字段、停止类操作无确认、搜索无结果误报「暂无账号」、
+  空状态是死胡同、新建任务主按钮灰着不说原因；`tokens.css` 补齐 `--r-pill` 等被引用却未定义
+  的令牌并真正用到按钮/输入/弹窗/状态胶囊上。详见
+  [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 的「检查、清理与界面打磨（未发布）」一节。
 - v2.4.0 工程质量版：CLI 移植遗留清理（配置单源、任务状态机、N+1 查询消灭、存储与日志通道
   加固——120 任务下列表页 SQL 142→4 条）；页面按实际信息重排（总览接 `/api/overview` 真值、
   调度队列可见、已完成页服务端筛选、题库统计接真值、任务详情日志检索分页与续跑链）；
@@ -142,14 +153,18 @@ python tools/check_work_page.py --exam-url "<答题页地址>"            # 只�
 必须先通过人机验证（或考试码）才会跳到答题页。这类校验与账号绑定，程序**不会**尝试绕过，
 遇到时只会记录原因并安全中止（不启动考试计时、不提交任何答案）。
 
-**推荐做法（v2.2.2，真实考试已验证）**：
+**推荐做法（桌面版应用内验证窗，未发布）**：
 
-1. 在浏览器里打开该考试，完成平台验证并进入答题页；
-2. 复制地址栏里的完整地址（形如
-   `https://mooc1.chaoxing.com/exam-ans/exam/test/reVersionTestStartNew?...&enc=...`，
-   必须带 `reVersionTestStartNew` 与 `enc` 参数）；
-3. 在 CourseArk 新建「独立考试」任务，把地址粘贴到「考试答题页地址（推荐）」后执行：
+1. 在 CourseArk 新建「独立考试」任务，点考试条目的「打开考试页」；
+2. 应用内验证窗会用本机已保存的登录态打开考试说明页（提示先「获取会话」则先在
+   「账号与课程」里获取一次），你手动完成平台安全验证并进入答题页；
+3. 程序自动捕获地址栏里带 `enc=` 的答题页地址并填进「考试答题页地址」，确认后执行：
    程序逐题 AI 作答、保存、自动进入下一题，最后一题后交卷；任务详情「AI 做题」可见每题答案。
+
+网页版仍走复制粘贴：在浏览器里打开该考试，完成验证并进入答题页后，复制地址栏里
+形如 `https://mooc1.chaoxing.com/exam-ans/exam/test/reVersionTestStartNew?...&enc=...`
+的完整地址（必须带 `reVersionTestStartNew` 与 `enc` 参数），粘贴到
+「考试答题页地址（推荐）」后执行。
 
 地址里的 `enc` 有时效，过期后重新进入考试再复制一次即可。若提示「答题页没有前进」，
 刷新考试页并重新复制地址。
@@ -226,12 +241,16 @@ npm --prefix frontend run build
 npm --prefix desktop ci
 npm --prefix desktop test
 npm --prefix desktop run smoke:packaged
+python -m pip install -r requirements-dev.txt
 python -m pytest tests -q
 python -m pytest cli_copy/tests -q
 python tools/smoke_test.py --mock
 python tools/vue_check.py
 python tools/ui_check.py --serve --port 8899
 ```
+
+> 运行依赖在 `requirements.txt`；`pytest` / `httpx` / `playwright` 属开发测试依赖，
+> 已拆到 `requirements-dev.txt`，终端用户无需安装。
 
 `smoke:packaged` 会启动 `desktop/dist` 里的打包应用，需要先构建安装包（`npm --prefix desktop run dist:win`）。
 若你在 Electron 相关的终端里运行它，先清掉 `ELECTRON_RUN_AS_NODE` 环境变量
@@ -250,8 +269,8 @@ python tools/ui_check.py --serve --port 8899
 
 | 文档 | 内容 |
 | --- | --- |
-| [`docs/architecture.md`](docs/architecture.md) | 组件划分、作业/考试/同步链路、事件与前端结构 |
-| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | v2.1 起完整变更历史（最新 v2.4.0） |
+| [`docs/architecture.md`](docs/architecture.md) | 组件划分、作业/考试/同步链路、事件、前端结构与浮层规则 |
+| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | v2.1 起完整变更历史（最新 v2.4.0 + 未发布章节） |
 | [`docs/research-exam.md`](docs/research-exam.md) | 考试协议调研（手机端 / PC 端端点、逐题提交、风控） |
 | [`docs/research-github.md`](docs/research-github.md) | 同类开源项目调研与作业协议结论 |
 

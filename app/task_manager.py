@@ -22,6 +22,7 @@ import time
 from . import control, events, narrative, paths, settings
 from .database import Database
 from .log_redaction import redact, redact_data
+from .subprocess_runner import spawn, worker_env, write_json_atomic
 from .task_model import TERMINAL_STATES, can_transition, is_terminal
 
 # 事件到状态/阶段的映射
@@ -312,36 +313,17 @@ class TaskManager:
 
         task_payload = self._build_task_file(row, account)
         path = paths.task_file_path(task_id)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(task_payload, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
+        write_json_atomic(path, task_payload)
 
         control.ensure_run(task_id)
         self.db.set_task_status(task_id, "starting")
         self.db.add_event(task_id, row["account_id"], "worker_starting",
                           "正在启动 Worker 进程", level="info", stage="boot")
 
-        env = dict(os.environ)
-        env["PYTHONIOENCODING"] = "utf-8"
-        env["PYTHONUNBUFFERED"] = "1"
-        env["WEBUI_TASK_ID"] = task_id
-        # 副本内的默认用户数据路径重定向到 WebUI 数据目录，
-        # 避免 Worker 在 cli_copy 里生成 config.yml / logs 等文件
-        env["AUTOCXWEBUI_DATA_DIR"] = paths.DATA_DIR
+        env = worker_env({"WEBUI_TASK_ID": task_id})
 
         try:
-            process = subprocess.Popen(
-                [sys.executable, paths.WORKER_RUNNER, path],
-                cwd=paths.ROOT_DIR,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                env=env,
-                bufsize=0,
-                universal_newlines=False,
-                creationflags=_creationflags(),
-            )
+            process = spawn(paths.WORKER_RUNNER, path, env)
         except Exception as exc:
             self.db.set_task_status(task_id, "failed", error=f"Worker 启动失败: {exc}", finished=True)
             self.db.add_event(task_id, row["account_id"], "task_failed",
@@ -851,12 +833,6 @@ class TaskManager:
 # ============================================================
 # 平台工具
 # ============================================================
-
-def _creationflags() -> int:
-    if os.name == "nt":
-        return getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    return 0
-
 
 def _pid_alive(pid) -> bool:
     try:

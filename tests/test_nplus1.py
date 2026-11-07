@@ -11,9 +11,9 @@
 import os
 import shutil
 import sys
-import uuid
+import tempfile
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 import pytest  # noqa: E402
@@ -27,9 +27,8 @@ from app.task_manager import TaskManager  # noqa: E402
 
 @pytest.fixture()
 def app_client(monkeypatch):
-    tmp = os.path.join(ROOT, ".tmp-gate", f"test-nplus1-{uuid.uuid4().hex[:8]}")
-    shutil.rmtree(tmp, ignore_errors=True)
-    os.makedirs(tmp, exist_ok=True)
+    # 临时目录放到系统 temp：此前用 ROOT/.tmp-gate 会在仓库（甚至父目录）里留垃圾。
+    tmp = tempfile.mkdtemp(prefix="autocxwebui-nplus1-")
     monkeypatch.setenv("AUTOCXWEBUI_DATA_DIR", tmp)
     from app import paths
     paths.DATA_DIR = tmp

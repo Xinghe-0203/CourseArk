@@ -10,6 +10,210 @@
 
 ---
 
+## 全面检查与重构、应用内考试验证窗（未发布）
+
+> 本轮：后端结构重构（路由按域拆分 + 子进程样板合并）、前端组件体系收敛
+> （页面归位 views/、共享组件抽取、令牌收编）、工作区清理与依赖拆分，
+> 以及桌面端「应用内安全验证窗」——考试人机验证不再要求用户在外部浏览器里
+> 手动复制地址。数据库 Schema 与既有 API 契约无变更（新增两条 Cookie 接口见下）。
+
+### 一、工作区清理与依赖拆分
+
+- 清理 `desktop/.cache/`（11 MB Python 嵌入包下载缓存）与 `docs/vue-validation/`
+  旧验收截图（目录随验收脚本重建，已 gitignore）。
+- `tools/ui_seed.py` 去除 UTF-8 BOM（此前 AST 解析报 invalid non-printable character）。
+- 依赖拆分：`requirements.txt` 只留运行依赖；`pytest` / `httpx` / `playwright`
+  移入新文件 `requirements-dev.txt`。`tools/launcher.py` 给终端用户建环境时
+  安装列表因此变小；开发验收按 README 先装 dev 依赖。
+
+### 二、后端重构
+
+- **子进程样板合并**：task_manager / sync_service / session_service / catalog_service
+  四处各自维护的「Popen + JSON Lines 逐行解析 + env 注入 + 优雅终止 + 原子写任务文件」
+  收敛到新模块 `app/subprocess_runner.py`（`worker_env` / `spawn` / `iter_lines` /
+  `parse_record` / `write_json_atomic` / `wait_exit` / `stop_process`）。
+  行为差异保留在各调用方：sync 的非 JSON 行记为 log 事件（其余跳过）、
+  session 等待超时后强杀（其余放弃）。`task_manager._creationflags` 随之删除。
+- **路由按域拆分**：`app/main.py` 里 794 行的 `_register_routes`（50 个路由挤一个函数）
+  拆成 `app/routes/` 七个模块——`system`（health / 内部关机 / SSE）、`overview`、
+  `accounts`（含会话、课程、目录、账号级批量控制）、`workspace`、`tasks`
+  （批次、任务、事件检索/导出、历史、已完成）、`settings`（含预设）、`bank`。
+  `main.py` 从 1538 行降到约 990 行，保留：惰性单例、请求模型、视图序列化辅助
+  （`_task_view` / `_event_view` / `_completed_view` / `_live_view` 等——
+  tests 直接引用这些名字）、CSRF 守卫、自动同步与静态托管。
+  路由模块经 `from .. import main` 在**调用时**动态取 `db/hub/manager/sessions`：
+  conftest 的 sandbox/app_client 逐测试整体替换单例的机制不受影响。
+  实现注记：本机 FastAPI 的 `include_router` 会把路由包成惰性 `_IncludedRouter`
+  （没有 `.path`），而测试需要从 `app.routes` 按 path 找 SSE endpoint；
+  注册改为把各 router 的 APIRoute 直接并入 `app.router.routes`，
+  行为与逐条装饰注册一致。
+
+### 三、前端组件体系收敛与视觉细化
+
+- **页面归位**：`OverviewDashboard / AccountsView / CompletedView / BankView /
+  SettingsView` 五个页面级组件从 `components/` 移入 `views/`，
+  `components/` 只留可复用部件（复用关系零变化，router 导入同步更新）。
+- **共享组件抽取**（消除三类各写各的重复）：
+  - `ProgressBar.vue`：此前 10 处手写 `<div class="progress-track"><i :style>`，
+    aria 属性与 indeterminate 判定各有一套；现在一个出口，`label` / `small` /
+    `indeterminate` 可选。
+  - `EmptyState.vue`：12 处空态结构不一（有图没图、有动作没动作看手气）；
+    统一为「软圆底图标 + 标题 + 说明 + 动作」；`base.css` 的 `.empty > svg`
+    让未迁移的空态也获得同款圆底。答题缓存页保留完整插画（`:deep` 放开圆底）。
+  - `Pagination.vue`：三处「上一页 / 区间 / 下一页」收敛；区间分隔符从 `—` 改为 `-`。
+- **令牌收编**：`tokens.css` 新增 `--navy-deep` / `--primary-contrast` / `--scrim` /
+  `--topbar-bg` / `--toast-bg` / `--toast-ink` / `--scroll-thumb(-active)` /
+  `--ok-glow(-soft)` / `--warn-glow-soft` 十一枚派生令牌；按钮、弹窗遮罩、toast、
+  滚动条、品牌标、引擎心跳辉光全部改走令牌（约 15 处字面色值清零）。
+- **体验统一**：按钮 `:active` 加 0.5px 下压触感；删掉无引用的
+  `.button[aria-disabled]` 死选择器；任务列表读取失败改为就地「重试」
+  （此前写全局 `state.error` 会与宿主页错误条互相覆盖）；告警小窗开关图标
+  `CheckCircle2`（对勾，语义误导）改 `TriangleAlert`；顶栏页面说明文案改按
+  路由名映射（此前按 `state.view` 双源，`/mini` 场景各说各话）。
+
+### 四、应用内考试验证窗（桌面端，T16）
+
+v2.2.2 的「粘贴答题页地址」在真实考试可用，但用户要在外部浏览器完成平台
+安全验证（滑块/考试码）后再复制地址。本轮把这段流程收进应用（方案来源见
+`docs/research-github.md` 的 2026-11 调研增量）：
+
+- **后端**：`GET/POST /api/accounts/{id}/session/cookies`——导出已保存会话的
+  Cookie（供验证窗注入登录态）与把验证后的窗口会话 Cookie 写回缓存
+  （白名单字段：name/value/domain/path/expires/secure/httpOnly/sameSite）。
+  服务只监听本机回环；无会话时导出返回 409 提示先「获取会话」。
+- **桌面壳**（`desktop/src/main.cjs` + `preload.cjs`）：
+  - 新 IPC `verify:open`：按账号开 `persist:cx-<id>` 持久分区的 `BrowserWindow`，
+    注入 Cookie、UA 与 Worker 对齐（减少双端指纹差异），窗口**不挂 preload、
+    不注任何脚本**——验证全部由用户手动完成；
+  - 导航策略：学习通域名留在窗内，其它链接交系统浏览器；
+  - 被动捕获：`webRequest.onBeforeRedirect/onCompleted` 监听带 `enc=` 的
+    `reVersionTestStartNew` / `doHomeWorkNew` / `selectWorkQuestion` 与考试
+    start 跳转，捕获后把地址 + 窗口 Cookie 发给主窗（`verify:captured`）。
+- **前端**：主窗收到捕获事件后自动回写 Cookie 并把地址预填进新建考试任务的
+  「考试答题页地址」（一次性消费，用完清空避免下次误用过期地址）；新建向导里
+  考试条目的「打开考试页」在桌面端改走验证窗（无可用会话时提示并回落系统浏览器）。
+- 平台风控边界不变：程序不绕过任何人机验证、不碰考试页 DOM；地址与 Cookie
+  只是「替用户带路」。
+
+### 五、验证
+
+- `python -m pytest tests -q`：515 passed, 1 skipped（含新增
+  `tests/test_session_cookies.py` 6 条）
+- `python -m pytest cli_copy/tests -q`：30 passed
+- `python tools/smoke_test.py --mock`：53 项全过
+- `npm --prefix desktop test`：8 passed；`node --check` main.cjs / preload.cjs 通过
+- `npx vue-tsc --noEmit` 与 `npm --prefix frontend run build`：通过
+- `python tools/vue_check.py`：57 项全过（分页文案断言同步更新为 `-` 分隔）
+
+---
+
+## 检查、清理与界面打磨（未发布）
+
+> 本轮做三件事：删掉无人引用的代码与临时产物、修一批真实交互缺陷、把设计令牌真正用起来。
+> 数据库 Schema 与 API 契约只有一处扩展（`/api/completed` 新增 `status` 参数），旧数据无需迁移。
+
+### 一、工作区清理
+
+- 删除本地临时目录 `.tmp-gate/`（13 MB，134 个验收沙箱）、`.tmp-ui/`（7.7 MB，一次性截图与
+  调试脚本），两者都由本机验收流程生成，不入库。
+- 删除与 `.agents/` 完全重复的 `agent/` 技能包副本、`skills-lock.json`、`data/skills` 失效软链、
+  `data/uitest`、`data/server.log`、`data/settings.json.migrated` 与各级 `__pycache__`。
+- **修掉一个测试污染缺陷**：`tests/test_nplus1.py` 用 `dirname()` 取了三次仓库根，
+  实际指向父目录 `D:\CODE\AutoChaoxingCLI`，导致每次跑测试都在仓库外留下
+  `.tmp-gate/test-nplus1-*`（实测 9.3 MB）并把父目录塞进 `sys.path`。
+  改为 `tempfile.mkdtemp()`，临时数据落在系统 temp 并随用例删除。
+- 删除 `docs/layout-research.md`（45 KB）：它描述的是 v2.3.0 之前的界面（`ProblemsView.vue` /
+  `NoticeBar.vue` / 站内问题中心），这些代码已不存在，文档也没有进任何索引。
+- 删除仓库根目录的 `answer.py`（79 KB）：它 `import openai` 与 `api.answer_check`，而本仓库
+  既没有 `api/` 目录也没有 openai 依赖，是外部项目的副本，且未被 .gitignore 覆盖（一次
+  `git add -A` 就会误提交）。
+- `.gitignore` 重写：按「运行数据 / 本地环境 / 构建产物 / 验收截图 / 临时目录」分组，
+  新增 `.ruff_cache/`、`.mypy_cache/`、`.coverage`、`htmlcov/`，用 `.tmp-*/` 覆盖全部本机临时目录，
+  移除已不存在的 `.agents/`、`agent/`、`skills-lock.json` 条目。
+
+### 二、通知子系统残留
+
+v2.3.0 已删除通知功能，本轮清掉最后几处遗留：
+
+- `app/main.py`、`app/settings.py` 的 4 处 docstring 仍在写「导入 LLM/题库/通知配置」「失败只记通知」，
+  与现状不符（失败写的是任务事件），改为「任务事件 / 请求参数」。
+- `frontend/src/components/SettingsView.vue` 的 `secret()` 正则还匹配已删除的 `sendkey|bark.key`，
+  收敛为 `api_key|token`。
+- `frontend/src/api.ts` 的超时提示「请检查问题中心」指向已删除的页面，改为
+  「请检查后台服务是否仍在运行」。
+
+### 三、真实交互缺陷
+
+- **进度小窗开关是死按钮**：顶栏切换的是 `windows.map.progress.open`，而 `ProgressWindow.vue`
+  用自己的局部 `closed` / `minimized`，按钮 `.on` 会亮但小窗不动。现在开合、最小化统一走
+  `WindowManager`，顶栏按钮、小窗标题栏与「关闭」三处操作同一份状态。
+- **两个浮窗完全重叠**：逐题小窗与告警小窗都 `position:fixed; right:16px; top:topbar+10px`，
+  同时打开时后开的那个把前一个盖住。改为 `App.vue` 里一个 `.float-stack` 纵向容器承载两者，
+  容器只负责定位与堆叠，单个小窗只描述自身尺寸。
+- **Esc 会一次关掉两层弹窗**：`ModalShell` 每个实例都监听 `document` 的 `keydown`。
+  改为弹窗栈：只有最顶层响应 Escape 与 Tab 焦点陷阱；`inert` 从 `.workspace`/`.sidebar`
+  改为整个 `.shell`（此前三个浮窗在弹窗后面仍可聚焦），焦点落在第一个可操作控件而非容器本身。
+- **「已完成」页筛选时不能翻页、且丢字段**：状态筛选原先改打 `/api/history` 取前 200 条本地过滤，
+  分页被隐藏、逐题汇总与结果说明也不在返回结构里。`/api/completed` 新增 `status` 参数
+  （`succeeded,failed,stopped,interrupted`，逗号分隔），前端统一走该接口，筛选与分页同时成立。
+  对应把 v2.2.3 的契约测试 `test_counterexample_status_query_cannot_hide_failures`
+  改写为 `test_completed_status_filter_is_server_side`（旧断言的前提是「status 不是契约参数」）。
+- **停止类操作没有确认**：批量停止、停止账号、单任务停止都是单击即执行。新增
+  `ConfirmDialog.vue`，批量停止与停止账号先确认；暂停/继续可逆，保持直接执行。
+  「清除登录缓存」同样加了确认（此前只有删除账号有确认）。
+- **搜索无结果时误报「暂无账号」**：学习任务页的空状态只看 `profiles.length`，
+  搜不到时提示「在账号与课程中添加账号」，用户会以为账号被删了。现在区分
+  「搜索无命中（给清空搜索）」与「确实没有账号（给去添加）」。
+- **空状态是死胡同**：任务记录、课程进度、答题缓存的空状态都只给文字不给按钮。
+  现在分别补「清空筛选条件」「去添加账号 / 去同步课程」「导入缓存」。
+- **账号课程弹窗里的指引点不到**：弹窗会把整页 `inert`，但空状态仍让用户去点页面上的
+  「同步课程」。改为在弹窗内直接提供「立即同步课程」。
+- **新建任务的主按钮灰着不说原因**：`创建 N 项任务` 在 `loading || !targets.length` 时禁用，
+  但旁边没有任何说明。现在按钮上方直接写出阻塞原因（读取中 / 未选账号 / 未勾选课程或作业 /
+  正在创建）。
+- **向导里同一条错误显示两次**：`state.error` 由 `ModalShell` 统一渲染，`NewTask` 又渲染一遍。
+  删掉 `NewTask` 里的那份，只保留向导自身的校验错误。
+- **任务记录 tab 不持久、默认过滤也不对**：切到「任务记录与历史」后刷新会跳回「按账号展开」，
+  而且该 tab 用 `TaskList` 默认的 `active` 过滤，只看到当前任务。现在 tab 写进路由 query，
+  历史 tab 以 `all` 起始。
+- **「去创建任务」其实没打开向导**：总览最近完成的空状态按钮调 `navigate('tasks')`，
+  只跳到学习任务页。改为直接打开新建任务弹窗。
+- **加载态与空态长得一样**：`App.vue` 与「已完成」页把 loading 直接塞进 `.empty` 的虚线框，
+  用户会以为页面已经空了。新增 `.loading-state`（脉冲圆点 + `role="status"`）；
+  「已完成」页只在首次加载时占位，已有列表时保留旧行、只在筛选条旁提示「正在刷新…」。
+- **两处色调类名与 CSS 对不上**：新建任务里 `catalogStatusTone()` 返回 `ok|warn|muted`，
+  CSS 却写的是 `.done/.idle`，两种色调从未生效；答题小窗的 `is-ok/is-warn/is-err` 与
+  `base.css` 的 `.pill.ok/.warn/.danger` 同样不匹配。两处都改为对齐后的类名。
+- 其它小修：`TaskList` 的账号下拉补 `:key`（此前 Vue 会报重复 key）；暂停/继续/停止图标按钮
+  补 `title`；品牌链接改 `@click.prevent`（此前 hash 跳转与 router.push 同时触发）；
+  刷新按钮在请求期间禁用并转圈；浮窗开关补 `aria-pressed`；逐题小窗与告警小窗的
+  `role="status"` 改 `role="region"`（整块面板每 2 秒重渲染，屏幕阅读器会被反复打断）；
+  「已完成」每行的结果说明去掉 `role="status"`（30 行会同时成为 live region）。
+- **表格表头口径统一**：账号课程表 30px、课程进度表 32px、其余 34px，字距 0.05/0.06em 混用；
+  现在统一 34px / 0.06em / `--fs-meta`。
+
+### 四、设计令牌落地
+
+- `tokens.css` 补齐此前被引用但未定义的 `--r-pill`（圆角实际为 0），以及
+  `--ok-line/--ok-ink/--warn-line/--warn-ink/--danger-line/--danger-ink/--info-line/--info-ink`
+  八枚状态色、`--sp-1..6` 间距、`--fs-meta/small/body/title/display` 字号、`--z-*` 层级、
+  `--shadow-1..3` 与 `--focus-ring`。
+- 按钮、输入框、弹窗、空状态、状态胶囊、区块标题、页脚统一改用令牌；`base.css` 里
+  `.stat/.metrics/.tbl/.panel/.hint/.mono/button.plain/.avatar.large` 与 `shell.css` 的
+  `.breadcrumb` 等无引用样式删除。
+- 视觉微调：按钮 28→30px、状态胶囊改全圆角、弹窗圆角与阴影统一、侧栏导航改圆角药丸 +
+  2px 选中条、内容区 `max-width:1680px` 居中、顶栏毛玻璃、表格表头统一 34px。
+- 新增 `prefers-reduced-motion` 兜底，系统开启「减少动态效果」时关闭过渡与动画。
+
+### 五、验证
+
+- `python -m pytest tests -q`：509 passed, 1 skipped
+- `python -m pytest cli_copy/tests -q`：30 passed
+- `npm --prefix frontend test`：47 passed
+- `npx vue-tsc --noEmit` 与 `npm --prefix frontend run build`：通过
+
+---
+
 ## 留白与行高修正（未发布）
 
 > 承接「课程进度页与学习任务二级菜单（未发布）」。上一轮把信息压得太紧，实机截图（1919×913、

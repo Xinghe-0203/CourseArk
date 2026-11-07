@@ -48,7 +48,7 @@ export async function request<T>(
       if (error instanceof ApiError) throw error;
       throw new Error(
         error instanceof Error && error.name === "AbortError"
-          ? "等待服务响应超时，请检查问题中心"
+          ? "等待服务响应超时，请检查后台服务是否仍在运行"
           : "无法连接本机服务，请检查启动窗口",
       );
     } finally {

@@ -12,7 +12,9 @@ import {
   Layers,
   Search,
 } from "lucide-vue-next";
-import { state, act } from "../store";
+import ConfirmDialog from "./ConfirmDialog.vue";
+import ProgressBar from "./ProgressBar.vue";
+import { state, act, navigate } from "../store";
 import { request } from "../api";
 import { active, statuses, features, date } from "../format";
 import { missionState, missionTotals } from "../mission";
@@ -62,6 +64,11 @@ const runningCount = computed(() =>
 const pendingCount = computed(() =>
   state.workspaces.reduce((n, p) => n + p.counts.pending, 0),
 );
+/** 当前列表里的账号是否已全部勾选：决定「全选」按钮显示成哪种动作。 */
+const allVisibleChosen = computed(() => {
+  const ids = profiles.value.map((p) => p.account.id);
+  return ids.length > 0 && ids.every((id) => selectedAccounts.value.includes(id));
+});
 function chooseVisibleAccounts() {
   const ids = profiles.value.map((p) => p.account.id);
   selectedAccounts.value = ids.every((id) => selectedAccounts.value.includes(id))
@@ -91,7 +98,16 @@ function chooseAccounts() {
   create();
 }
 const taskFor = (p: AccountWorkspace, c: Course) => taskForCourse(p, c);
+/** 停止不可撤销，先确认；暂停/继续可逆，直接执行。 */
+const stopping = ref<AccountWorkspace[] | null>(null);
 function operation(op: string, profilesToUse: AccountWorkspace[]) {
+  if (op === "stop") {
+    stopping.value = profilesToUse;
+    return;
+  }
+  runOperation(op, profilesToUse);
+}
+function runOperation(op: string, profilesToUse: AccountWorkspace[]) {
   act(
     "batch-" + op,
     async () => {
@@ -119,6 +135,11 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
     },
   );
 }
+function confirmStop() {
+  const targets = stopping.value;
+  stopping.value = null;
+  if (targets?.length) runOperation("stop", targets);
+}
 </script>
 <template>
   <div class="account-workspace">
@@ -133,9 +154,22 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
         <option value="course_all">课程任务点</option>
         <option value="independent_homework">独立作业</option>
       </select>
-      <button @click="chooseVisibleAccounts">全选 / 清除当前账号</button>
-      <button :disabled="!selectedAccounts.length" @click="chooseAccounts">
-        <CheckCheck :size="14" />所选账号开始
+      <button
+        :title="
+          allVisibleChosen
+            ? '取消勾选当前列表里的账号'
+            : '勾选当前列表里的全部账号'
+        "
+        @click="chooseVisibleAccounts"
+      >
+        {{ allVisibleChosen ? "清除账号选择" : `全选 ${profiles.length} 个账号` }}
+      </button>
+      <button
+        :disabled="!selectedAccounts.length"
+        title="用已勾选账号的可学习课程创建任务"
+        @click="chooseAccounts"
+      >
+        <CheckCheck :size="14" />为所选账号新建任务
       </button>
       <button class="primary" :disabled="!selectedCount" @click="create()">
         创建所选 {{ selectedCount }} 门课程任务
@@ -338,12 +372,10 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
               </button>
             </div>
             <div class="live-progress">
-              <div
-                class="progress-track"
-                :class="{ indeterminate: t.progress.percent === null }"
-              >
-                <i :style="{ width: (t.progress.percent || 0) + '%' }" />
-              </div>
+              <ProgressBar
+                :value="t.progress.percent ?? undefined"
+                :label="(t.course_name || '任务') + '进度'"
+              />
               <div class="progress-pair">
                 <span
                   >{{
@@ -491,9 +523,11 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
               }}</span>
             </div>
             <div class="course-progress">
-              <div class="progress-track small">
-                <i :style="{ width: missionFor(selected, c).percent + '%' }" />
-              </div>
+              <ProgressBar
+                small
+                :value="missionFor(selected, c).percent"
+                :label="c.name + '完成度'"
+              />
               <b class="num">{{ missionFor(selected, c).percent }}%</b>
               <button
                 v-if="taskFor(selected, c)"
@@ -511,11 +545,32 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
       </section>
     </div>
 
+    <!-- 区分「确实没有账号」与「搜索没有命中」：此前搜索无结果也提示去添加账号，
+         用户会以为账号被删了。 -->
     <div v-if="!profiles.length" class="empty">
       <Users :size="26" />
-      <h3>暂无账号</h3>
-      <p>在账号与课程中添加账号后，数据会同时显示在这里。</p>
+      <template v-if="query">
+        <h3>没有匹配「{{ query }}」的账号或课程</h3>
+        <p>换个关键词，或清空搜索后查看全部 {{ state.workspaces.length }} 个账号。</p>
+        <button class="primary" @click="query = ''">清空搜索</button>
+      </template>
+      <template v-else>
+        <h3>还没有账号</h3>
+        <p>在「账号与课程」里添加学习通账号后，这里会显示课程、任务点与执行状态。</p>
+        <button class="primary" @click="navigate('accounts')">去添加账号</button>
+      </template>
     </div>
+
+    <ConfirmDialog
+      v-if="stopping"
+      title="停止任务"
+      :message="`将停止 ${stopping.length} 个账号下正在执行与排队的任务。`"
+      hint="已完成的进度会保留，之后可以在任务记录里继续执行。"
+      confirm-text="停止任务"
+      :busy="state.busy.has('batch-stop')"
+      @confirm="confirmStop"
+      @cancel="stopping = null"
+    />
   </div>
 </template>
 <style scoped>
@@ -905,11 +960,11 @@ function operation(op: string, profilesToUse: AccountWorkspace[]) {
 }
 
 .course-row-head {
-  height: 30px;
+  height: 34px;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   background: var(--surface2);
-  font-size: 10.5px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.06em;
   color: var(--faint);
 }

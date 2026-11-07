@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { ChartColumn, ChevronRight, Search } from "lucide-vue-next";
-import { state } from "../store";
+import { state, navigate } from "../store";
 import { courseKey, courseRows, type CourseRow } from "../course";
 import { missionState, missionTotals } from "../mission";
 import { active, date, features, statuses } from "../format";
+import ProgressBar from "../components/ProgressBar.vue";
 import type { Course, Task } from "../types";
 
 const emit = defineEmits<{ select: [task: Task] }>();
@@ -136,9 +137,7 @@ const groups = computed(() => {
         </p>
       </div>
       <div class="summary-bar">
-        <div class="progress-track" :class="{ indeterminate: overall === null }">
-          <i :style="{ width: (overall || 0) + '%' }" />
-        </div>
+        <ProgressBar :value="overall" label="课程整体完成度" />
         <div class="progress-pair">
           <span>{{ overall === null ? "任务点尚未同步" : "整体完成度" }}</span>
           <b v-if="overall !== null">{{ overall }}%</b>
@@ -219,9 +218,11 @@ const groups = computed(() => {
             <span v-else class="faint">{{ item.row.course.if_open ? "还没有执行过" : "课程已关闭" }}</span>
           </div>
           <div class="course-progress">
-            <div class="progress-track small">
-              <i :style="{ width: item.n.percent + '%' }" />
-            </div>
+            <ProgressBar
+              small
+              :value="item.n.percent"
+              :label="item.row.course.name + '完成度'"
+            />
             <b class="num">{{ item.n.percent }}%</b>
           </div>
         </article>
@@ -230,8 +231,23 @@ const groups = computed(() => {
 
     <div v-else class="empty">
       <ChartColumn :size="26" />
-      <h3>没有符合条件的课程</h3>
-      <p>换个关键词或范围看看；账号与课程可以在「账号与课程」页同步。</p>
+      <template v-if="!state.workspaces.length">
+        <h3>还没有可统计的账号</h3>
+        <p>先在「账号与课程」里添加账号并同步课程，这里会按账号汇总平台任务点进度。</p>
+        <button class="primary" @click="navigate('accounts')">去添加账号</button>
+      </template>
+      <template v-else-if="query || scope !== 'all'">
+        <h3>没有符合当前条件的课程</h3>
+        <p>换个关键词或范围，或清空筛选后查看全部 {{ rows.length }} 门课程。</p>
+        <button class="primary" @click="query = ''; scope = 'all'">
+          清空筛选条件
+        </button>
+      </template>
+      <template v-else>
+        <h3>账号下还没有课程</h3>
+        <p>课程来自平台同步；到「账号与课程」点「同步课程」后这里会有数据。</p>
+        <button class="primary" @click="navigate('accounts')">去同步课程</button>
+      </template>
     </div>
   </div>
 </template>
@@ -260,7 +276,7 @@ const groups = computed(() => {
 
 .summary-lead strong {
   display: block;
-  font-size: 26px;
+  font-size: var(--fs-display);
   font-weight: 500;
   line-height: 1.2;
   color: var(--ink);
@@ -406,9 +422,9 @@ const groups = computed(() => {
 }
 
 .progress-course-head {
-  height: 32px;
+  height: 34px;
   border-bottom: 1px solid var(--line);
-  font-size: 10.5px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.06em;
   color: var(--faint);
 }

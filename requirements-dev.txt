@@ -1,0 +1,7 @@
+# 开发与验收依赖（-r requirements.txt 之外另装；终端用户不需要）
+# pip install -r requirements-dev.txt
+-r requirements.txt
+pytest>=8.0.0
+httpx>=0.27.0
+# Playwright 需另执行：python -m playwright install chromium
+playwright>=1.48.0

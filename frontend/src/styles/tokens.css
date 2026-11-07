@@ -18,39 +18,80 @@
   --navy: #123a5e;
   --navy2: #1c5586;
   --navy-soft: #e7edf4;
+  --navy-deep: #0e3152;
+  --primary-contrast: #f4f8fb;
 
   /* 状态色：只表达状态，不做装饰 */
   --ok: #1a7a52;
   --ok-soft: #e8f2ec;
+  --ok-line: #b9d9c8;
+  --ok-ink: #14563c;
   --warn: #96620f;
   --warn-soft: #f7efdc;
+  --warn-line: #e3d0a6;
+  --warn-ink: #6b4606;
   --danger: #b23a2f;
   --danger-soft: #f9eae8;
+  --danger-line: #e5c1bc;
+  --danger-ink: #7c2a22;
   --info: #2a5f9e;
   --info-soft: #e9f0f7;
+  --info-line: #c2d3e4;
+  --info-ink: #1e4a7c;
 
   /* 几何 */
   --r1: 3px;
-  --r2: 4px;
-  --r3: 6px;
-  --rail: 216px;
-  --topbar: 52px;
+  --r2: 5px;
+  --r3: 7px;
+  --r4: 10px;
+  --r-pill: 999px;
+  --rail: 208px;
+  --topbar: 54px;
+
+  /* 间距刻度：4 的倍数，页面只用这几档 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 28px;
+
+  /* 字号刻度：正文 13，说明 12，元信息 11，标题 15/17 */
+  --fs-meta: 11px;
+  --fs-small: 12px;
+  --fs-body: 13px;
+  --fs-title: 15px;
+  --fs-display: 26px;
+
+  /* 层级 */
+  --z-sticky: 10;
+  --z-overlay: 40;
+  --z-float: 45;
+  --z-toast: 60;
+
+  /* 派生色：状态色与中性面的透明变体，避免组件里散落 rgba 字面量 */
+  --ok-glow: rgba(26, 122, 82, 0.4);
+  --ok-glow-soft: rgba(26, 122, 82, 0.12);
+  --warn-glow-soft: rgba(150, 98, 15, 0.14);
+  --scrim: rgba(18, 24, 32, 0.4);
+  --scroll-thumb: #c3cbd3;
+  --scroll-thumb-active: #a7b2bd;
+  --topbar-bg: rgba(255, 255, 255, 0.9);
+  --toast-bg: #1b2027;
+  --toast-ink: #f2f5f8;
+
+  /* 深度：只有三层——卡片贴纸、悬浮、弹窗 */
+  --shadow-1: 0 1px 2px rgba(16, 24, 32, 0.05);
+  --shadow-2: 0 2px 8px rgba(16, 24, 32, 0.08);
+  --shadow-3: 0 18px 44px rgba(16, 24, 32, 0.22);
+  --focus-ring: 0 0 0 3px rgba(28, 85, 134, 0.18);
 
   /* 字体角色 */
   --font-body: "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", system-ui, sans-serif;
   --font-num: "Bahnschrift", "DIN Alternate", "Segoe UI", ui-monospace, monospace;
   --font-mono: Consolas, "Cascadia Mono", ui-monospace, monospace;
 
-  /* 旧变量别名：模板内联 SVG 与历史样式继续可用 */
-  --fg: var(--ink);
-  --fg-muted: var(--mute);
+  /* 旧变量别名：仅保留模板内联 SVG 仍在用的两个；其余已随样式重写移除。 */
   --fg-subtle: var(--faint);
-  --bg: var(--surface);
   --bg-subtle: var(--surface2);
-  --card: var(--surface);
-  --accent: var(--navy);
-  --accent-soft: var(--navy-soft);
-  --border: var(--line);
-  --muted: var(--mute);
-  --shadow: 0 1px 2px rgba(16, 24, 32, 0.06);
 }

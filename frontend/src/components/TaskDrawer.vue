@@ -4,8 +4,10 @@ import { RefreshCw, Radio, LoaderCircle, ShieldAlert, Search } from "lucide-vue-
 import type { AnswerItem, Task, TaskEvent } from "../types";
 import { request } from "../api";
 import { categories, statuses, date, active, terminal } from "../format";
+import ProgressBar from "./ProgressBar.vue";
 import {
   answerSourceLabel,
+  answerStatuses,
   answerStatusLabel,
   groupAnswers,
   summarizeAnswers,
@@ -150,13 +152,14 @@ watch([category, logStage, logQuery], () => {
   logStale = true;
 });
 // —— T8.3 逐题状态筛选 ——
-const answerStatuses: Record<string, string> = {
-  all: "全部状态",
-  answered: "已作答",
-  skipped: "已跳过",
-  unreadable: "未识别",
-};
+// 状态文案统一来自 answers.ts，避免同一批字符串在三个文件里各写一份。
+const answerStatusOptions = [
+  { value: "all", label: "全部状态" },
+  ...Object.entries(answerStatuses).map(([value, label]) => ({ value, label })),
+] as { value: string; label: string }[];
 const answerStatusFilter = ref<"all" | "answered" | "skipped" | "unreadable">("all");
+const answerStatusOptionLabel = (value: string) =>
+  answerStatusOptions.find((item) => item.value === value)?.label || value;
 const statusFilteredGroups = computed(() =>
   filterAnswerGroups(groups.value, answerStatusFilter.value),
 );
@@ -332,10 +335,13 @@ watch(
       <template v-if="tab === 'answers'">
         <div v-if="groups.length" class="filterbar compact answer-filters">
           <select v-model="answerStatusFilter" aria-label="按题状态筛选">
-            <option value="all">全部状态</option>
-            <option value="answered">已作答</option>
-            <option value="skipped">已跳过</option>
-            <option value="unreadable">未识别</option>
+            <option
+              v-for="item in answerStatusOptions"
+              :key="item.value"
+              :value="item.value"
+            >
+              {{ item.label }}
+            </option>
           </select>
           <span class="muted answer-filter-count"
             >{{
@@ -391,16 +397,10 @@ watch(
                 >
               </div>
               <div class="answer-group-progress">
-                <div
-                  class="progress-track"
-                  role="progressbar"
-                  :aria-valuenow="groupPercent(group)"
-                  aria-valuemin="0"
-                  aria-valuemax="100"
-                  :aria-label="group.media + '作答进度'"
-                >
-                  <i :style="{ width: groupPercent(group) + '%' }" />
-                </div>
+                <ProgressBar
+                  :value="groupPercent(group)"
+                  :label="(group.media || '分组') + '作答进度'"
+                />
                 <b class="num">{{ groupPercent(group) }}%</b>
               </div>
             </header>
@@ -420,7 +420,7 @@ watch(
                 }}</span
                 ><time>{{ date(item.ts) }}</time>
               </div>
-              <p class="answer-question" @click="isLong(item) && toggle(item)">
+              <p class="answer-question">
                 {{ item.question || "（题干未识别）" }}
               </p>
               <button
@@ -450,7 +450,7 @@ watch(
           v-else-if="groups.length && !statusFilteredGroups.length"
           class="empty answer-empty"
         >
-          <h3>没有「{{ answerStatuses[answerStatusFilter] }}」状态的题目</h3>
+          <h3>没有「{{ answerStatusOptionLabel(answerStatusFilter) }}」状态的题目</h3>
           <p>
             换个状态筛选，或切回「全部状态」查看所有 {{ answerItems.length }}
             题。
@@ -757,32 +757,32 @@ watch(
 
 .answer-chip.ai {
   background: var(--info-soft);
-  border-color: #cfdcea;
+  border-color: var(--info-line);
   color: var(--info);
 }
 
 .answer-chip.cache {
   background: var(--ok-soft);
-  border-color: #cfe3d7;
+  border-color: var(--ok-line);
   color: var(--ok);
 }
 
 .answer-chip.random,
 .answer-chip.failed {
   background: var(--warn-soft);
-  border-color: #e8dcc2;
+  border-color: var(--warn-line);
   color: var(--warn);
 }
 
 .answer-chip.submit-ok {
   background: var(--ok-soft);
-  border-color: #cfe3d7;
+  border-color: var(--ok-line);
   color: var(--ok);
 }
 
 .answer-chip.submit-fail {
   background: var(--danger-soft);
-  border-color: #eed3ce;
+  border-color: var(--danger-line);
   color: var(--danger);
 }
 

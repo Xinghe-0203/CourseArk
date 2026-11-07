@@ -5,6 +5,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { state, refresh } from "../store";
 import { activityOf, elapsedSeconds, formatDuration, unitPercent, unitText } from "../live";
 import { closeDesktopMini } from "../desktop";
+import ProgressBar from "../components/ProgressBar.vue";
 
 const now = ref(Date.now());
 let timer: ReturnType<typeof setInterval>;
@@ -48,9 +49,7 @@ onUnmounted(() => clearInterval(timer));
         <p class="mini-course">{{ current.course_name }}</p>
         <p class="mini-activity">{{ activityOf(current) || "准备中" }}</p>
         <div v-if="percent !== null" class="mini-bar">
-          <div class="progress-track small">
-            <i :style="{ width: percent + '%' }" />
-          </div>
+          <ProgressBar small :value="percent" label="任务进度" />
         </div>
         <p class="mini-progress">
           <span v-if="unitText(liveUnit)" class="num">{{ unitText(liveUnit) }}</span>

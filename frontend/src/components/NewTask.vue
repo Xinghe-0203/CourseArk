@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { state, act, navigate } from "../store";
 import { request } from "../api";
 import { features } from "../format";
+import { isDesktop, openDesktopVerify } from "../desktop";
 import {
   catalogKindLabel,
   catalogMeta,
@@ -88,6 +89,18 @@ const targets = computed(() =>
       course_name: c.name,
     })),
 );
+/** 主按钮为什么不可点：直接写在按钮旁边，避免「灰着但不说原因」。 */
+const blockReason = computed(() => {
+  if (step.value !== 2) return "";
+  if (loading.value) return "正在读取课程与列表…";
+  if (!selectedAccounts.value.length) return "请先选择至少一个账号。";
+  if (!targets.value.length)
+    return independent.value
+      ? `还没有勾选${catalogKindName.value}，可先「加载列表」再勾选。`
+      : "还没有勾选要执行的课程。";
+  if (state.busy.has("create-run")) return "正在创建任务…";
+  return "";
+});
 type CatalogState = {
   loading: boolean;
   error: string;
@@ -141,6 +154,16 @@ const selection = computed<SelectionParams>(() =>
   collectSelection(selectionStates.value, catalogsReady.value),
 );
 const examUrl = ref("");
+// T16：验证窗捕获到答题页地址后自动带入（一次性消费，用完清空避免下次误用）。
+watch(
+  () => state.capturedExamUrl,
+  (url) => {
+    if (!url) return;
+    examUrl.value = url;
+    state.capturedExamUrl = "";
+    state.toast = "已把捕获的答题页地址带入，确认账号后即可执行";
+  },
+);
 const examUrlMode = computed(
   () => feature.value === "exam" && examUrl.value.trim().length > 0,
 );
@@ -265,6 +288,27 @@ async function openExamInBrowser(
   if (openingExam[openingId]) return;
   openingExam[openingId] = true;
   try {
+    // T16 桌面端优先走应用内验证窗：注入已保存登录态，用户手动完成平台
+    // 安全验证后程序自动捕获答题页地址并回填；浏览器端保持系统浏览器路径。
+    if (isDesktop()) {
+      try {
+        const { items } = await request<{ items: Record<string, unknown>[] }>(
+          `/accounts/${t.account_id}/session/cookies`,
+        );
+        const opened = await openDesktopVerify({
+          accountId: t.account_id,
+          url: examNotesUrl(t, item),
+          cookies: items,
+        });
+        if (opened) {
+          state.toast = "已在应用内打开验证窗，完成验证后地址会自动带回";
+          return;
+        }
+      } catch (e) {
+        // 无可用会话（409）等情况：提示后回落到系统浏览器路径
+        error.value = e instanceof Error ? e.message : String(e);
+      }
+    }
     await request(`/accounts/${t.account_id}/open-chaoxing`, "POST", {
       url: examNotesUrl(t, item),
     });
@@ -448,9 +492,12 @@ function back() {
               ></label
             >
           </div>
-          <p v-if="!accounts.length" class="alert warning">
-            没有已启用账号，请在账号与课程页面添加或启用账号。
-          </p>
+          <div v-if="!accounts.length" class="alert warning">
+            <span>没有已启用账号，先添加或启用账号才能创建任务。</span>
+            <button type="button" class="small" @click="emit('close'); navigate('accounts')">
+              去账号与课程
+            </button>
+          </div>
         </template>
         <template v-else>
           <div class="picker-heading">
@@ -553,8 +600,9 @@ function back() {
                 <h3>考试答题页地址（推荐）</h3>
               </div>
               <p class="muted">
-                先在浏览器里登录学习通并进入考试，看到题目后复制地址栏 URL
-                粘贴到这里：程序会直接在这场考试里逐题作答并交卷。留空则按下方考试列表处理。
+                桌面版可点下方考试条目的「打开考试页」：应用内验证窗会带入本机已保存的登录态，
+                你手动完成安全验证后，程序自动捕获答题页地址填进这里（网页版仍推荐复制粘贴）。
+                留空则按下方考试列表处理。
                 程序不会绕过平台的任何安全验证，考试计时以平台为准。
               </p>
               <input
@@ -743,11 +791,13 @@ function back() {
           </details>
         </template>
       </div>
+      <!-- state.error 由 ModalShell 统一渲染，这里只显示向导自身的校验错误，
+           否则同一条错误会在弹窗里出现两次。 -->
       <p v-if="error" class="alert error" role="alert">{{ error }}</p>
-      <p v-if="state.error" class="alert error" role="alert">
-        {{ state.error }}
-      </p>
       <div class="wizard-foot">
+        <p v-if="blockReason" class="wizard-block" role="status">
+          {{ blockReason }}
+        </p>
         <button type="button" @click="emit('close')">取消</button
         ><button v-if="step === 2" type="button" @click="back">
           上一步：选择账号</button
@@ -760,7 +810,7 @@ function back() {
         ><button
           v-else
           class="primary"
-          :disabled="loading || !targets.length || state.busy.has('create-run')"
+          :disabled="!!blockReason || state.busy.has('create-run')"
         >
           创建 {{ targets.length }} 项任务
         </button>
@@ -820,7 +870,7 @@ function back() {
 .task-wizard-steps li.current span {
   border-color: var(--navy);
   background: var(--navy);
-  color: #fff;
+  color: var(--primary-contrast);
 }
 
 .task-wizard-steps li.done {
@@ -1031,7 +1081,7 @@ function back() {
 .feature-grid button.selected {
   border-color: var(--navy);
   background: var(--navy);
-  color: #fff;
+  color: var(--primary-contrast);
 }
 
 .feature-grid button.selected:hover:not(:disabled) {
@@ -1141,7 +1191,9 @@ function back() {
   color: var(--ink2);
 }
 
-.catalog-status.done {
+/* 与 catalog.ts 的 catalogStatusTone() 返回的 ok|warn|muted 对齐；
+   此前写的是 done/idle，这两种色调从未生效。 */
+.catalog-status.ok {
   color: var(--ok);
 }
 
@@ -1149,7 +1201,7 @@ function back() {
   color: var(--warn);
 }
 
-.catalog-status.idle {
+.catalog-status.muted {
   color: var(--faint);
 }
 
@@ -1193,6 +1245,7 @@ function back() {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
   margin-top: 6px;
   margin-bottom: -16px;
   padding-top: 12px;
@@ -1201,6 +1254,16 @@ function back() {
   position: sticky;
   bottom: -16px;
   background: var(--surface);
+}
+
+/* 主按钮禁用时的原因说明：占满整行、靠右对齐在按钮上方。 */
+.wizard-block {
+  flex: 1 1 100%;
+  order: -1;
+  margin: 0;
+  font-size: var(--fs-meta);
+  color: var(--warn-ink);
+  text-align: right;
 }
 
 .wizard-foot > :first-child {

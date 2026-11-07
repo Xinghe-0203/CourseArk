@@ -15,7 +15,6 @@ import type {
 export const state = reactive({
   accounts: [] as Account[],
   tasks: [] as Task[],
-  totalTasks: 0,
   workspaces: [] as AccountWorkspace[],
   // /api/overview 聚合真值（顶栏计数、心跳与总览指标卡同源取数）。
   overview: null as Overview | null,
@@ -36,6 +35,9 @@ export const state = reactive({
   // 最近收到的 SSE 事件 id（T10）：重连时作 ?last_event_id= 增量续传，
   // 避免每次回到前台都全量重放全部历史事件。
   lastEventId: 0,
+  // T16：应用内验证窗捕获到的答题页地址（带 enc=）。NewTask 消费后清空，
+  // 避免下一次打开向导误用已过期的地址。
+  capturedExamUrl: "",
   // 运行中快照缓存（进度小窗 / 任务列表行摘要共享），键为任务 id。
   liveById: {} as Record<string, TaskLive | null>,
 });
@@ -137,7 +139,6 @@ export async function refresh() {
     state.tasks = values[1].items.map((task) =>
       state.liveById[task.id] ? { ...task, live: state.liveById[task.id] } : task,
     );
-    state.totalTasks = values[1].total;
     state.workspaces = values[2].items;
     state.overview = values[3];
     const validAccounts = new Set(state.workspaces.map((p) => p.account.id));

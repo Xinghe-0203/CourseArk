@@ -386,13 +386,27 @@ def test_counterexample_answers_empty_but_questions_positive(app_client):
     assert "版本之前" in detail["answers_note"]
 
 
-def test_counterexample_status_query_cannot_hide_failures(app_client):
-    """/?status=failed 不是契约参数，不能用来只挑失败任务或隐藏失败任务"""
+def test_completed_status_filter_is_server_side(app_client):
+    """/api/completed 支持 status 过滤（v2.5）：过滤后仍返回完整视图且分页成立。
+
+    v2.2.3 时 status 还不是契约参数，因此旧断言要求它被忽略；前端当时改用
+    /api/history 本地筛选，代价是丢掉逐题汇总且无法翻页。这里改为断言新契约：
+    不带 status 返回全部终态，带 status 只返回该状态。
+    """
     account = _create_account(app_client)
     _create_task("hide-ok", account["id"], status="succeeded")
     _create_task("hide-fail", account["id"], status="failed", error="失败了")
-    payload = app_client.get("/api/completed?status=failed").json()
-    assert {item["id"] for item in payload["items"]} == {"hide-ok", "hide-fail"}
+
+    everything = app_client.get("/api/completed").json()
+    assert {item["id"] for item in everything["items"]} == {"hide-ok", "hide-fail"}
+    assert everything["total"] == 2
+
+    only_failed = app_client.get("/api/completed?status=failed").json()
+    assert {item["id"] for item in only_failed["items"]} == {"hide-fail"}
+    assert only_failed["total"] == 1
+    # 过滤后的行仍是完整视图（逐题汇总 / 结果说明 / 耗时都在）。
+    assert "answers_summary" in only_failed["items"][0]
+    assert only_failed["items"][0]["outcome"]["reason"] == "失败了"
 
 
 def test_counterexample_exam_shape_from_stats_only(app_client):

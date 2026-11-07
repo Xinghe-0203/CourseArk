@@ -92,7 +92,7 @@ def check(url, output):
         assert page.locator('.account-menu-item.chosen').count()==1
         passed('账号勾选与右侧详情在页面切换后保留')
         page.screenshot(path=str(output/'desktop-account-menu.png'),full_page=True)
-        page.get_by_role('button',name='所选账号开始',exact=True).click()
+        page.get_by_role('button',name='为所选账号新建任务',exact=True).click()
         dialog=page.get_by_role('dialog');dialog.wait_for()
         assert dialog.locator('.wizard-account input:checked').count()==2
         assert dialog.locator('.course-picker').count()==0
@@ -126,7 +126,7 @@ def check(url, output):
         assert {t['account_id'] for t in payload['targets']}==selected_ids
         assert len({(t['account_id'],t['course_id'],t['class_id']) for t in payload['targets']})==4
         page.wait_for_selector('.modal',state='detached')
-        passed('仅两个模块，所选账号开始排除残留课程，同名课程账号隔离')
+        passed('仅两个模块，为所选账号新建任务排除残留课程，同名课程账号隔离')
         menu.first.locator('.account-pick').click()
         page.locator('.workspace-account').first.get_by_role('button',name='创建任务',exact=True).click()
         dialog.wait_for()
@@ -158,7 +158,7 @@ def check(url, output):
         page.keyboard.press('Escape')
         page.unroute(f'**/api/accounts/{fail_id}/courses')
         passed('空账号禁止下一步，读取失败分账号提示，全选排除关闭课程')
-        page.get_by_role('button',name='任务记录与历史',exact=True).click()
+        page.get_by_role('tab',name='任务记录与历史',exact=True).click()
         page.get_by_label('任务状态').select_option('all')
         summary=page.locator('.task-live-summary').first
         summary.wait_for()
@@ -258,7 +258,7 @@ def check(url, output):
         page.unroute(catalog_pattern)
         passed('独立考试可加载待做考试，默认全选、取消全选与单选后提交 selected 范围')
         nav.get_by_role('button',name='学习任务').click()
-        page.get_by_role('button',name='任务记录与历史',exact=True).click()
+        page.get_by_role('tab',name='任务记录与历史',exact=True).click()
         page.get_by_label('任务状态').select_option('paused')
         page.wait_for_timeout(300)
         # 独立考试任务：stage=exam 的运行文案，且老任务无逐题明细时给空状态
@@ -453,13 +453,13 @@ def check(url, output):
         page.wait_for_function('document.querySelectorAll(".completed-row").length===10')
         pager = page.locator('.pagination')
         pager.wait_for()
-        assert '1—10 / 12' in pager.inner_text(), pager.inner_text()
+        assert '1-10 / 12' in pager.inner_text(), pager.inner_text()
         pager.get_by_role('button', name='下一页').click()
         page.wait_for_function('document.querySelectorAll(".completed-row").length===2')
-        assert '11—12 / 12' in pager.inner_text(), pager.inner_text()
+        assert '11-12 / 12' in pager.inner_text(), pager.inner_text()
         pager.get_by_role('button', name='上一页').click()
         page.wait_for_function('document.querySelectorAll(".completed-row").length===10')
-        assert '1—10 / 12' in pager.inner_text(), pager.inner_text()
+        assert '1-10 / 12' in pager.inner_text(), pager.inner_text()
         page.screenshot(path=str(output / 'desktop-completed-pagination.png'), full_page=True)
         page.unroute(completed_pattern)
         page.get_by_label('已完成每页条数').select_option('30')

@@ -12,12 +12,15 @@ import {
   GraduationCap,
   CheckCircle2,
   ChartColumn,
+  TriangleAlert,
 } from "lucide-vue-next";
 import { state, initialize, refresh, navigate } from "./store";
 import { engineTotals, overviewCounts } from "./overview";
 import { pushAnswerEvent } from "./windows/answers";
 import { pushAlertEvent } from "./windows/alerts";
 import { closeWindow, openWindow, windows } from "./windows/manager";
+import { onDesktopVerifyCaptured } from "./desktop";
+import { request } from "./api";
 import type { Task } from "./types";
 import TaskDrawer from "./components/TaskDrawer.vue";
 import NewTask from "./components/NewTask.vue";
@@ -70,7 +73,8 @@ const page = computed(
     nav.find((n) => n.key === route.name) ||
     ({ key: "overview", title: String(route.meta.title || "工作总览") } as const),
 );
-// 页面说明文案沿用旧 view → copy 映射。
+// 页面说明文案与标题同源：按路由名映射（此前按 state.view 映射，
+// T13 迁移后两份来源会在 /mini 等场景各说各话）。
 const pageCopy = computed(
   () =>
     ({
@@ -81,7 +85,7 @@ const pageCopy = computed(
       completed: "汇总每次跑完的任务：课程、时间、耗时、逐题明细与结果说明。",
       bank: "查看、导入与清理本机记住的答案，减少重复调用 AI。",
       settings: "设置默认学习方式、账号并发数量与 AI 服务。",
-    })[state.view as keyof Record<string, string>] || "",
+    })[page.value.key as keyof Record<string, string>] || "",
 );
 // 顶栏统计与总览、心跳共用 /api/overview 真值；接口缺席时回退本地任务口径。
 const engine = computed(() => engineTotals(state.overview, state.tasks));
@@ -158,6 +162,17 @@ watch(
 onMounted(() => {
   initialize();
   connect();
+  // T16：应用内验证窗捕获到答题页地址 → Cookie 回写会话缓存 + 交给 NewTask 预填。
+  // 浏览器端无桌面桥，注册是空操作。
+  onDesktopVerifyCaptured((data) => {
+    state.capturedExamUrl = data.url;
+    state.toast = "已捕获答题页地址，新建考试任务时会自动带入";
+    request(`/accounts/${data.accountId}/session/cookies`, "POST", {
+      items: data.cookies,
+    }).catch(() => {
+      // 回写失败不阻塞预填：地址本身已带回，Cookie 仍可用「获取会话」刷新
+    });
+  });
   timer = setInterval(() => {
     if (!document.hidden) refresh();
   }, 10000);
@@ -177,7 +192,7 @@ onUnmounted(() => {
   <RouterView v-if="isMini" />
   <div v-else class="shell">
     <aside class="sidebar">
-      <a href="#overview" class="brand" @click="navigate('overview')"
+      <a href="#overview" class="brand" @click.prevent="navigate('overview')"
         ><span class="brand-mark"><GraduationCap :size="16" /></span
         ><span>课舟<small>CourseArk</small></span></a
       >
@@ -236,6 +251,7 @@ onUnmounted(() => {
           <div class="window-switcher" role="group" aria-label="浮层小窗开关">
             <button
               :class="{ on: windows.map.progress?.open }"
+              :aria-pressed="!!windows.map.progress?.open"
               aria-label="进度小窗开关"
               title="进度小窗"
               @click="toggleWindow('progress')"
@@ -244,6 +260,7 @@ onUnmounted(() => {
             </button>
             <button
               :class="{ on: windows.map.answers?.open }"
+              :aria-pressed="!!windows.map.answers?.open"
               aria-label="逐题小窗开关"
               title="逐题作答小窗"
               @click="toggleWindow('answers')"
@@ -252,15 +269,22 @@ onUnmounted(() => {
             </button>
             <button
               :class="{ on: windows.map.alerts?.open }"
+              :aria-pressed="!!windows.map.alerts?.open"
               aria-label="告警小窗开关"
               title="任务告警小窗"
               @click="toggleWindow('alerts')"
             >
-              <CheckCircle2 :size="14" />
+              <TriangleAlert :size="14" />
             </button>
           </div>
-          <button class="icon-button" aria-label="刷新数据" title="刷新数据" @click="refresh">
-            <RefreshCw :size="15" />
+          <button
+            class="icon-button"
+            aria-label="刷新数据"
+            title="刷新数据"
+            :disabled="state.loading"
+            @click="refresh"
+          >
+            <RefreshCw :size="15" :class="{ spin: state.loading }" />
           </button>
         </div>
       </header>
@@ -269,24 +293,29 @@ onUnmounted(() => {
           <span>{{ state.error }}</span
           ><button @click="state.error = ''">关闭</button>
         </div>
-        <div v-if="state.loading" class="empty">正在读取工作空间…</div>
+        <div v-if="state.loading" class="loading-state" role="status" aria-live="polite">
+          <span class="loading-dot" />正在读取工作空间…
+        </div>
         <!-- T13：页面主体交给 RouterView（routes 见 router.ts）。
              与旧模板一致，loading 期间不挂载页面——SettingsView 等组件在 setup
              时对 state.settings 做一次性快照，必须等 initialize 完成再挂载。 -->
         <RouterView v-else v-slot="{ Component }">
           <component :is="Component" @select="pick" />
         </RouterView>
-        <footer>课舟 CourseArk <span>·</span> 数据保存在本机</footer>
+        <footer class="footer">
+          课舟 CourseArk <span>·</span> 数据保存在本机
+        </footer>
       </div>
     </main>
     <TaskDrawer v-if="selected" :task="selected" @close="selected = null" />
     <NewTask v-if="state.newTask" @close="state.newTask = false" />
     <ProgressWindow @select="pick" />
-    <AnswerFeedWindow
-      v-if="windows.map.answers?.open"
-      @select="pick"
-    />
-    <AlertWindow v-if="windows.map.alerts?.open" />
+    <!-- 两个浮窗共用右上角一列：各自 fixed 到同一坐标会完全重叠，
+         叠进 flex 容器后按打开顺序自然错开。 -->
+    <div class="float-stack">
+      <AnswerFeedWindow v-if="windows.map.answers?.open" @select="pick" />
+      <AlertWindow v-if="windows.map.alerts?.open" />
+    </div>
     <div v-if="state.toast" class="toast" role="status">{{ state.toast }}</div>
   </div>
 </template>
