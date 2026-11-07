@@ -21,6 +21,235 @@ class CoreBehaviorTests(unittest.TestCase):
     def test_xpath_first_really_returns_first_match(self):
         self.assertEqual(xpath_first(_FakeXPathElement(), "ignored"), "first")
 
+    def test_relative_action_resolves_against_page_url(self):
+        """回归（2026-11）：章节测验提交打到 /addStudentWorkNewWeb 直接 404。
+
+        根因：测验表单内嵌在 /mooc-ans/work/doHomeWorkNew 文档里，action 是
+        不带前导斜杠的相对地址；此前 absolute_action 一律按域名根解析，
+        丢掉 /mooc-ans/work/ 前缀后 POST 被 302→404。
+        """
+        from core.work_form import absolute_action, parse_form
+
+        # 1) 带 base_url 的相对 action：按页面文档地址解析
+        resolved = absolute_action(
+            "addStudentWorkNewWeb?_classId=151670988&courseid=244694077&token=t",
+            "https://mooc1.chaoxing.com/mooc-ans/work/doHomeWorkNew?workId=1")
+        self.assertEqual(
+            resolved,
+            "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNewWeb"
+            "?_classId=151670988&courseid=244694077&token=t")
+
+        # 2) 没有 base_url 的相对 action：已知端点兜底归位到规范路径
+        self.assertEqual(
+            absolute_action("addStudentWorkNewWeb?_classId=1&token=t"),
+            "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNewWeb"
+            "?_classId=1&token=t")
+
+        # 3) 解析到 /work/ 但缺 mooc-ans 前缀：同样归位
+        self.assertEqual(
+            absolute_action("/work/addStudentWorkNewWeb?_classId=1"),
+            "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNewWeb"
+            "?_classId=1")
+
+        # 4) 页面本来就是规范绝对地址：原样保留
+        absolute = ("https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNewWeb"
+                    "?_classId=1&token=t")
+        self.assertEqual(absolute_action(absolute), absolute)
+        self.assertEqual(absolute_action(absolute, "https://x.example.com/"), absolute)
+
+        # 5) parse_form 透传 base_url
+        html = ('<form id="submitForm" method="post" '
+                'action="addStudentWorkNewWeb?_classId=1&token=t">'
+                '<input type="hidden" name="courseId" value="1"></form>')
+        form = parse_form(html, base_url="https://mooc1.chaoxing.com/mooc-ans/work/doHomeWorkNew")
+        self.assertTrue(form["found"])
+        self.assertTrue(form["action"].startswith(
+            "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNewWeb"))
+
+    def test_request_exception_reports_real_method(self):
+        """POST 失败的日志标签必须是 POST——此前硬编码 GET 误导排查方向。"""
+        from types import SimpleNamespace
+
+        from core.request_client import RequestClient
+
+        client = RequestClient()
+        client._if_delay = False
+        response = SimpleNamespace(status_code=404, url="https://x/example", text="")
+        with self.assertRaises(Exception) as ctx:
+            client._handle_response(response, "https://x/example", False, method=1)
+        self.assertIn("Method: POST", str(ctx.exception))
+
+    def test_judgment_answer_shorthands_are_accepted(self):
+        """回归（2026-11）：LLM 答判断题返回 F/T 时被校验器判无效而随机作答。
+
+        日志证据：LLM 原始返回 "F"（正确），重试仍 "F"，最后
+        「LLM 返回内容无法用于该题型: F → true (随机)」。归一化必须收编这些变体。
+        """
+        from core.answer_validation import normalize_answer
+
+        for raw, expect in [("F", "false"), ("T", "true"), ("f", "false"),
+                            ("（F）", "false"), ("T.", "true"),
+                            ("Ｆ", "false"),  # 全角 F
+                            ("false", "false"), ("对", "true"), ("×", "false")]:
+            self.assertEqual(normalize_answer("判断题", raw), expect, raw)
+
+    def test_choice_answer_wrapped_decorations_are_accepted(self):
+        from core.answer_validation import normalize_answer
+
+        options = ["A. props", "B. state", "C. mutation"]
+        self.assertEqual(normalize_answer("单选题", "（A）", options), "A")
+        self.assertEqual(normalize_answer("单选题", "B。", options), "B")
+        self.assertEqual(normalize_answer("单选题", "Ａ", options), "A")  # 全角
+
+    def test_stem_normalizes_radicals_and_type_marks(self):
+        """题干解析：康熙部首字符归位为常规汉字；[单选题] 类标记不再残留。"""
+        from core.work_form import _clean_stem, norm_text
+
+        # 字体解密会把「自」还原成康熙部首 ⾃（U+2F80 区段）
+        self.assertEqual(norm_text("⾃定义主题"), "自定义主题")
+        self.assertEqual(_clean_stem("[单选题]下列关于Vue说法错误的是?"),
+                         "下列关于Vue说法错误的是?")
+        self.assertEqual(_clean_stem("（判断题）Vue是渐进式框架"), "Vue是渐进式框架")
+
+    # ---------------- 批量作答与提交重试（2026-11 完善） ----------------
+
+    def _make_bare_exam(self, no_answer_action="random"):
+        """构造只带答题链路所需属性的对象（不经 __init__ 的网络初始化）。"""
+        from functions.deal_exam import DealExam
+
+        class FakeLog:
+            def info(self, *_a): pass
+            def warning(self, *_a): pass
+            def error(self, *_a): pass
+            def debug(self, *_a): pass
+
+        exam = DealExam.__new__(DealExam)
+        exam.answer_mode = "ai"
+        exam.question_bank = None
+        exam.no_answer_action = no_answer_action
+        exam.auto_save = False
+        exam.log = FakeLog()
+        exam.course_name = "HTML5 APP应用开发"
+        exam.active_media_name = "12.6 章节测试6"
+        exam.active_kind = "作业"
+        exam.active_chapter_name = "第三章 Vuex状态管理"
+        exam.active_unit_id = ""
+        exam.llm_batch_size = 6
+        return exam
+
+    def test_batch_answering_resolves_in_one_call(self):
+        """批量作答：6 题一次 LLM 调用解析完成，不再逐题调用。"""
+        exam = self._make_bare_exam()
+        questions = [
+            {"question_id": f"q{i}", "question_type": "单选题",
+             "question_text": f"题{i}", "options": ["A. 甲", "B. 乙"], "kind": "choice"}
+            for i in range(1, 7)
+        ]
+
+        class FakeLLM:
+            calls = []
+
+            def answer(self, qs, context=None, strict=False):
+                self.calls.append({"count": len(qs), "strict": strict,
+                                   "context": context})
+                return ["A"] * len(qs)
+
+            def answer_single(self, *_a, **_k):  # 不应被调用
+                raise AssertionError("批量成功时不应回退逐题调用")
+
+        exam.llm = FakeLLM()
+        results = exam._answer_batch(questions)
+        self.assertEqual(len(FakeLLM.calls), 1)
+        self.assertEqual([r["answer"] for r in results], ["A"] * 6)
+        self.assertTrue(all(r["source"] == "llm" for r in results))
+        # 课程 + 章节 + 作答内容都进上下文
+        context = FakeLLM.calls[0]["context"]
+        self.assertEqual(context["course"], "HTML5 APP应用开发")
+        self.assertEqual(context["extra"], "所属章节：第三章 Vuex状态管理")
+
+    def test_batch_answering_all_failed_falls_back_without_per_question_llm(self):
+        """批量全败：不再对每题发起注定失败的 LLM 调用，直接走随机兜底。"""
+        exam = self._make_bare_exam(no_answer_action="random")
+        questions = [
+            {"question_id": f"q{i}", "question_type": "判断题",
+             "question_text": f"判断题{i}", "options": [], "kind": "choice"}
+            for i in range(1, 5)
+        ]
+
+        class FakeLLM:
+            def __init__(self):
+                self.calls = 0
+
+            def answer(self, qs, context=None, strict=False):
+                self.calls += 1
+                return [None] * len(qs)
+
+        exam.llm = FakeLLM()
+        results = exam._answer_batch(questions)
+        self.assertEqual(exam.llm.calls, 2)  # 首次 + 整批严格重试，无逐题调用
+        self.assertEqual(len(results), 4)
+        self.assertTrue(all(r and r["source"] == "random" for r in results))
+
+    def test_submission_retries_once_on_network_error(self):
+        """提交网络异常重试一次；平台业务拒绝不重试。"""
+        import json as _json
+        from unittest.mock import patch
+
+        from core.config import Config
+        from core.exceptions import RequestException
+        from types import SimpleNamespace
+
+        exam = self._make_bare_exam(no_answer_action="skip")
+        exam.submit_delay = 0
+        exam.auto_submit = True
+        exam.headers = {}
+        exam.user = type("U", (), {"uid": "1"})()
+        exam.class_id = "151893764"
+        exam.course_id = "266056498"
+        exam.cpi = "496369168"
+
+        response_404 = SimpleNamespace(status_code=404, url="https://x/", text="")
+        net_error = RequestException(response_404, 1)
+        responses = [net_error, _json.dumps({"status": True})]
+        calls = []
+
+        def fake_post(url, headers=None, data=None, if_full_back=False):
+            calls.append(url)
+            result = responses.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        page_form = {
+            "found": True,
+            "action": ("https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNewWeb"
+                       "?_classId=1&token=t&totalQuestionNum=a"),
+            "method": "post",
+            "controls": {"courseId": "266056498", "answerwqbid": ""},
+        }
+        old_data = Config._data
+        Config._data = Config._default_config()
+        try:
+            with patch("functions.deal_exam.doPost", side_effect=fake_post), \
+                 patch("functions.deal_exam.doGet", return_value=""), \
+                 patch("functions.deal_exam.runtime.sleep", lambda *_: None):
+                ok, fail = exam._submit_answers(
+                    work_id="55459339",
+                    answered=[{"question_id": "111", "question_type": "单选题",
+                               "answer": "B", "question_text": "题", "options": [],
+                               "kind": "choice", "answer_type": "0"}],
+                    defaults={"clazzId": "1", "knowledgeid": "1"},
+                    jobid="work-55459339", enc=None, ktoken=None,
+                    hidden_fields={}, page_form=page_form,
+                )
+        finally:
+            Config._data = old_data
+        self.assertEqual((ok, fail), (1, 0))
+        self.assertEqual(len(calls), 2)  # 第一次网络失败 + 重试成功
+
+
+
+
     def test_video_finish_response_is_strict(self):
         self.assertTrue(Video.is_passed_response('{"isPassed": true}'))
         self.assertTrue(Video.is_passed_response('{"isPassed": "true"}'))
@@ -83,8 +312,9 @@ class CoreBehaviorTests(unittest.TestCase):
             [{"question_type": "单选题", "question_text": "题干", "options": ["A. 甲", "B. 乙"]}],
             context={"course": "HTML5 APP应用开发", "media": "第4章组件", "kind": "作业"},
         )
-        self.assertIn("课程：HTML5 APP应用开发", prompt)
+        self.assertIn("课程（学科范围）：HTML5 APP应用开发", prompt)
         self.assertIn("作答内容：作业「第4章组件」", prompt)
+        self.assertIn("先根据课程名与作答内容判断本题考查的学科", prompt)
         self.assertIn("共 1 题", prompt)
 
     def test_llm_prompt_without_context_has_no_course_line(self):
@@ -606,10 +836,65 @@ class CoreBehaviorTests(unittest.TestCase):
         self.assertNotEqual(captured["data"].get("totalQuestionNum"), "2")
 
 
-class _StubLog:
-    def __getattr__(self, _name):
-        return lambda *a, **k: None
+    def test_swap_submit_host_between_mooc1_and_api(self):
+        """考试提交域互换：mooc1 ↔ mooc1-api 双向互换，无关主机原样返回。"""
+        from core.exam_answer_page import swap_submit_host
+
+        url = "https://mooc1.chaoxing.com/exam-ans/exam/test/reVersionSubmitTestNew?a=1"
+        swapped = swap_submit_host(url)
+        self.assertTrue(swapped.startswith("https://mooc1-api.chaoxing.com/"))
+        self.assertIn("/exam-ans/exam/test/reVersionSubmitTestNew?a=1", swapped)
+        self.assertEqual(swap_submit_host(swapped), url)  # 双向互换回到原址
+        self.assertEqual(swap_submit_host("https://other.example.com/x"), "https://other.example.com/x")
+
+    def test_chapter_page_fetch_failure_emits_visible_event(self):
+        """章节页抓取最终失败：从静默 debug 升级为 warning + chapter_warning 事件。"""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from core.exceptions import RequestException
+        from functions.deal_course import DealCourse
+
+        class FakeLog:
+            def __init__(self):
+                self.warnings = []
+
+            def info(self, *_a): pass
+            def debug(self, *_a): pass
+            def warning(self, *a): self.warnings.append(a[0] if a else "")
+            def error(self, *_a): pass
+
+        course = DealCourse.__new__(DealCourse)
+        course.class_id = "151670988"
+        course.course_id = "244694077"
+        course.cpi = "518380181"
+        course.log = FakeLog()
+        course.user = SimpleNamespace(headers={})
+        course._safe_read_card_count = lambda knowledge_id: 1  # 单页章节
+
+        emitted = []
+        with patch("functions.deal_course.doGet",
+                   side_effect=RequestException(SimpleNamespace(
+                       status_code=404, url="https://x/", text=""), 0)), \
+             patch("core.runtime.emit",
+                   side_effect=lambda *a, **k: emitted.append((a, k))):
+            attach = course.deal_chapter({"knowledge_id": "1278369537",
+                                          "name": "第三章 Vuex状态管理"})
+
+        self.assertEqual(attach, [])
+        self.assertTrue(any("任务数据读取失败" in w for w in course.log.warnings))
+        self.assertEqual(len(emitted), 1)
+        args, kwargs = emitted[0]
+        self.assertEqual(args[0], "chapter_warning")
+        payload = kwargs.get("payload") or {}
+        self.assertEqual(payload.get("chapter"), "第三章 Vuex状态管理")
+        self.assertEqual(payload.get("failed_pages"), "1")
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _StubLog:
+    def __getattr__(self, _name):
+        return lambda *a, **k: None

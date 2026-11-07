@@ -208,8 +208,13 @@ class RequestClient:
             headers["User-Agent"] = self._get_random_ua()
         return headers
 
-    def _handle_response(self, response, url: str, if_full_back: bool):
-        """统一处理响应状态码"""
+    def _handle_response(self, response, url: str, if_full_back: bool,
+                         method: int = 0):
+        """统一处理响应状态码
+
+        method: 0=GET / 1=POST，RequestException 的日志标签必须反映真实请求方法——
+        POST 被标成 GET 曾把「302 跟随后的最终地址 404」误读成「程序发了 GET」。
+        """
         if if_full_back:
             return response
 
@@ -229,7 +234,7 @@ class RequestClient:
             self._check_antispider(text, url)
             return text
         else:
-            raise RequestException(response, 0)
+            raise RequestException(response, method)
 
     def get(self, url: str, headers: dict = None, if_full_back: bool = False) -> str:
         """
@@ -282,7 +287,7 @@ class RequestClient:
             logger.debug(f"  data: {str(data)[:200]}")
             with self._session_lock:
                 response = self._session.post(url=url, headers=headers, data=data, timeout=self._glo_timeout)
-            return self._handle_response(response, url, if_full_back)
+            return self._handle_response(response, url, if_full_back, method=1)
         except (AntispiderException, RequestException):
             raise
         except Exception as e:

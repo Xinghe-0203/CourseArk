@@ -1,4 +1,4 @@
-﻿"""
+"""
 AutoChaoxingCLI - LLM客户端模块
 
 封装大语言模型API调用，支持任意OpenAI兼容API。
@@ -18,13 +18,13 @@ from core.runtime import logger
 
 from core.request_client import get_external_session
 
-SYSTEM_PROMPT = """你是严谨的课程答题助手，正在帮助一位大学生完成在线课程题目。请结合题目所属课程的知识、题干与全部选项，先在内部推理再给出最终答案。
+SYSTEM_PROMPT = """你是严谨的课程答题助手，正在帮助一位大学生完成在线课程题目。作答前先判断题目考查的学科领域与章节主题，再结合该学科的知识体系、题干与全部选项，在内部推理后给出最终答案。
 
 【作答规则】
 1. 即使不确定，也必须给出你认为最可能正确的答案，禁止留空、禁止回答"无法判断"。
 2. 单选：只返回一个字母，且必须是题目给出的选项字母之一。
 3. 多选：返回全部正确选项的字母，按字母顺序拼接（例如 ABD），不要加空格或分隔符。
-4. 判断：只返回 true 或 false。
+4. 判断：只返回小写的 true 或 false，禁止使用 T/F、对/错、√/×、是/否 等任何缩写或变体。
 5. 填空：按空的顺序返回答案，多个空之间用中文分号"；"分隔。
 6. 简答：用简洁、完整、可直接提交的知识点作答（约 30-120 字），不要写"根据题意"之类的话。
 7. 不要编造题干中不存在的选项；不要输出题型名、题号或解题过程。
@@ -76,14 +76,17 @@ class LLMClient:
         media = str(context.get("media") or "").strip()
         kind = str(context.get("kind") or "").strip() or "作业"
         if course:
-            lines.append(f"课程：{course}")
+            # 课程名通常含学科关键词（如「HTML5 & APP应用开发（Web前端技术）」），
+            # 显式要求按该学科口径作答，避免模型答成相邻学科的说法
+            lines.append(f"课程（学科范围）：{course}")
         if media:
             lines.append(f"作答内容：{kind}「{media}」")
         extra = str(context.get("extra") or "").strip()
         if extra:
             lines.append(f"补充说明：{extra}")
         if lines:
-            lines.append("请结合该课程的知识范围作答，答案要符合教材与课程常见口径。")
+            lines.append("先根据课程名与作答内容判断本题考查的学科与章节主题，"
+                         "再按该学科教材与课程的常见口径作答；题干主题与课程无关时按题干本身作答。")
         return lines
 
     def _build_prompt(self, questions: list[dict], context: dict | None = None) -> str:
@@ -197,6 +200,8 @@ class LLMClient:
             payload["max_tokens"] = self.max_tokens
         try:
             logger.info(f"请求 LLM (model={self.model}, 长度={len(prompt)}字符)...")
+            # 提示词前段（课程/作答内容上下文）进 debug 日志：排查「AI 不知道在做哪一科」时直接可见
+            logger.debug(f"LLM 提示词前段: {prompt[:160]}")
             resp = get_external_session().post(url, headers=headers, json=payload, timeout=self.timeout)
             resp.raise_for_status()
             data = resp.json()

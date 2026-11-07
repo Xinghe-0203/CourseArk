@@ -214,3 +214,50 @@ def test_answer_result_narrative_and_exam_stats_wording():
     assert stats["kind"] == "answer"
     assert "在线题库" not in stats["detail"]
     assert "答题缓存 1" in stats["detail"]
+
+
+def test_work_submit_event_presentation_and_narrative():
+    """结构化提交事件：成败数进标题/详情，有失败归 answer 类并带处置建议。"""
+    from app import narrative, presentation
+
+    ok = presentation.describe("work_submit", "测验A 提交成功", level="success",
+                               stage="work", payload={"kind": "homework", "media": "测验A",
+                                                      "ok": 10, "fail": 0})
+    assert ok["title"] == "提交结果"
+    assert "测验A" in ok["detail"] and "成功 10" in ok["detail"]
+    assert ok["category"] == "homework"
+
+    fail = presentation.describe("work_submit", "测验A 提交失败", level="warning",
+                                 stage="work", payload={"kind": "homework", "media": "测验A",
+                                                        "ok": 7, "fail": 3})
+    assert fail["category"] == "answer"
+    assert "失败 3" in fail["detail"]
+    assert fail["action"]
+
+    item = narrative.describe("work_submit", "考试B 提交失败", level="warning",
+                              stage="exam",
+                              payload={"kind": "exam", "media": "考试B", "ok": 0, "fail": 5})
+    assert item["kind"] == "answer"
+    assert "考试提交：考试B" in item["title"]
+    assert "5 题未成功" in item["detail"]
+
+
+def test_chapter_warning_event_presentation_and_narrative():
+    """章节页抓取失败升级为可见事件：按章节类呈现，附处置动作。"""
+    from app import narrative, presentation
+
+    shown = presentation.describe("chapter_warning", "章节X有 1 页任务数据读取失败",
+                                  level="warning", stage="chapter",
+                                  payload={"chapter": "章节X", "failed_pages": "2",
+                                           "pages": 3})
+    assert shown["category"] == "chapter"
+    assert shown["visible"] is True
+    assert shown["action"]
+
+    item = narrative.describe("chapter_warning", "章节X有 1 页任务数据读取失败",
+                              level="warning", stage="chapter",
+                              payload={"chapter": "章节X", "failed_pages": "2",
+                                       "pages": 3})
+    assert "章节任务数据读取失败" in item["title"]
+    assert "第 2 页" in item["detail"]
+    assert item["level"] == "warning"

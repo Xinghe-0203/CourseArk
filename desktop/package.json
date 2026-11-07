@@ -1,6 +1,6 @@
 {
   "name": "courseark-desktop",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "private": true,
   "description": "CourseArk desktop application",
   "author": "CourseArk contributors",
@@ -18,6 +18,7 @@
     "electron-builder": "26.15.3"
   },
   "build": {
+    "electronDist": "node_modules/electron/dist",
     "appId": "org.autocx.webui",
     "productName": "CourseArk",
     "asar": true,
@@ -36,12 +37,20 @@
       {
         "from": "../app",
         "to": "app-runtime/app",
-        "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc"]
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
       },
       {
         "from": "../worker",
         "to": "app-runtime/worker",
-        "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc"]
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
       },
       {
         "from": "../cli_copy",
@@ -66,7 +75,11 @@
       {
         "from": "../webui_static",
         "to": "app-runtime/webui_static",
-        "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc"]
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
       },
       {
         "from": "../run.py",
@@ -75,14 +88,26 @@
       {
         "from": "build/python",
         "to": "python",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
       "icon": "assets/icon.ico",
       "target": [
-        {"target": "nsis", "arch": ["x64"]},
-        {"target": "portable", "arch": ["x64"]}
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "requestedExecutionLevel": "asInvoker"
     },

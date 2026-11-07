@@ -1,18 +1,26 @@
 """验证答案与题型/选项的对应关系，不从推理段落猜测字母。"""
 import re
+import unicodedata
 
 
 def normalize_answer(q_type: str, answer: str, options=None) -> str:
     if not isinstance(answer, str):
         return ''
-    text = answer.strip().strip('`* ')
+    # NFKC 归一：全角字母/数字 → 半角（Ｆ→F、√ 保持），
+    # 字体解密残留的康熙部首字符同步归位
+    text = unicodedata.normalize('NFKC', answer).strip().strip('`* ')
     text = re.sub(r'^(?:最终答案|正确答案|答案|answer)\s*[:：]\s*', '', text, flags=re.I)
+    # 剥掉包裹性装饰：括号、引号、句末标点（模型常见输出 (F)、A.、「true」。）
+    text = text.strip('（()[]【】「」"\'' ).strip()
+    text = re.sub(r'[.。!！?？,，]+$', '', text).strip()
     if q_type == '判断题':
-        positive = {'对', '正确', '是', 'true', '√', '1'}
-        negative = {'错', '错误', '不正确', '否', 'false', '×', '0'}
-        return 'true' if text.lower() in positive else 'false' if text.lower() in negative else ''
+        positive = {'对', '正确', '是', 'true', 't', '√', '1', 'yes', 'y'}
+        negative = {'错', '错误', '不正确', '否', 'false', 'f', '×', '0', 'no', 'n'}
+        lowered = text.lower()
+        # T/F、对/错等常见缩写此前不被接受，模型答 F 会被判无效而随机作答（2026-11 实机日志）
+        return 'true' if lowered in positive else 'false' if lowered in negative else ''
     if q_type in ('单选题', '多选题'):
-        compact = re.sub(r'[,，;；、\s]', '', text.upper())
+        compact = re.sub(r'[,，;；、\s。．.（）()\-—_]+', '', text.upper())
         if re.fullmatch(r'[A-Z]+', compact):
             letters = ''.join(sorted(set(compact)))
             valid = {chr(65 + i) for i in range(len(options or []))}

@@ -32,7 +32,9 @@
 """
 
 import re
+import unicodedata
 from copy import deepcopy
+from urllib.parse import urljoin
 
 from lxml import etree
 
@@ -71,13 +73,35 @@ KIND_TEXT = "text"
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"[ \t\r\f\v]+")
 _LEAD_INDEX_RE = re.compile(r"^\s*\d+\s*[.、．)）]\s*")
-_TYPE_MARK_RE = re.compile(r"[\(（]\s*(?:%s)\s*[\)）]" % "|".join(TYPE_WORDS))
+# 题干里的题型标记：既有圆括号 (单选题) 也有方括号/书名号形态 [单选题]【判断题】
+_TYPE_MARK_RE = re.compile(
+    r"[\(（\[【]\s*(?:%s)题?\s*[\)）\]】]" % "|".join(TYPE_WORDS))
+
+
+# 字体解密会把部分汉字还原成康熙部首区（U+2F00–2FD5）或兼容表意区（U+F900–FAD9）字符；
+# 只对这两个区段做 NFKC 归位（→常规汉字），不碰全角标点等其余文本
+_RADICAL_RE = re.compile(r"[\u2F00-\u2FD5\uF900-\uFAD9]")
+
+
+def _normalize_radicals(value: str) -> str:
+    if not _RADICAL_RE.search(value):
+        return value
+    return "".join(
+        unicodedata.normalize("NFKC", ch) if _RADICAL_RE.match(ch) else ch
+        for ch in value
+    )
 
 
 def norm_text(value: str) -> str:
-    """压缩空白，保留换行语义。"""
+    """压缩空白，归一部首变体，保留换行语义与全角标点。
+
+    字体解密会把部分汉字还原成康熙部首区字符（⾃ U+2F42 等），
+    逐字符归位到常规汉字后，LLM 阅读更稳、答题缓存的 key 也一致
+    （同一道题不再因部首变体而缓存不命中）。
+    """
     if not value:
         return ""
+    value = _normalize_radicals(value)
     value = value.replace("\u00a0", " ").replace("\u3000", " ")
     value = _WS_RE.sub(" ", value)
     value = re.sub(r"\n\s*\n+", "\n", value)
@@ -356,8 +380,15 @@ def parse_questions(html: str) -> list:
     return questions
 
 
-def parse_form(html: str) -> dict:
-    """提取作业提交表单：action、method 与全部具名控件。"""
+def parse_form(html: str, base_url: str = "") -> dict:
+    """提取作业提交表单：action、method 与全部具名控件。
+
+    Args:
+        html: 页面 HTML
+        base_url: 这份 HTML 实际渲染所在的页面地址。章节测验的表单内嵌在
+            /mooc-ans/work/doHomeWorkNew 文档里，浏览器按文档地址解析相对
+            action；缺省时按域名根解析（旧语义，可能丢路径前缀）。
+    """
     result = {"found": False, "action": "", "method": "post", "controls": {}}
     if not html:
         return result
@@ -381,7 +412,7 @@ def parse_form(html: str) -> dict:
         return result
 
     action = (target.get("action") or "").strip()
-    action = absolute_action(action)
+    action = absolute_action(action, base_url)
 
     controls = {}
     for node in target.xpath(".//input[@name] | .//textarea[@name] | .//select[@name]"):
@@ -410,18 +441,47 @@ def parse_form(html: str) -> dict:
             "controls": controls}
 
 
-def absolute_action(action: str) -> str:
-    """把页面里的相对 action 补全为绝对地址。"""
+# 已知作业提交端点名：真实端点固定在 /mooc-ans/work/ 下
+# （2026-10 真实页面抓包与旧版拼装路径一致，见 docs/research-github.md §1）。
+_WORK_ENDPOINT_RE = re.compile(r"(addStudentWorkNewWeb|addStudentWorkNew)(?=[?#/]|$)")
+
+
+def absolute_action(action: str, base_url: str = "") -> str:
+    """把页面里的相对 action 补全为绝对地址。
+
+    - 无前导斜杠的相对 action 优先按 base_url（页面真实地址）解析：
+      章节测验表单内嵌在 /mooc-ans/work/doHomeWorkNew 文档里，浏览器按文档
+      地址解析相对 action；此前一律按域名根解析会丢掉 /mooc-ans/work/ 前缀，
+      提交打到 /addStudentWorkNewWeb 被 302→404（2026-11 实机日志）。
+    - 兜底：已知作业端点解析后若不在 /mooc-ans/ 下，归位到规范路径。
+    """
     action = (action or "").strip()
     if not action:
         return ""
     if action.startswith("//"):
-        return "https:" + action
-    if action.startswith("/"):
-        return MOOC_HOST + action
-    if action.startswith("http"):
-        return action
-    return f"{MOOC_HOST}/{action.lstrip('./')}"
+        resolved = "https:" + action
+    elif action.startswith("http"):
+        resolved = action
+    elif action.startswith("/"):
+        resolved = MOOC_HOST + action
+    elif base_url:
+        resolved = urljoin(base_url, action)
+    else:
+        resolved = f"{MOOC_HOST}/{action.lstrip('./')}"
+    return _canonical_work_endpoint(resolved)
+
+
+def _canonical_work_endpoint(url: str) -> str:
+    """已知作业端点不在 /mooc-ans/ 下时归位（仅限 mooc1 主站）。"""
+    if not url.startswith(MOOC_HOST) or "/mooc-ans/" in url:
+        return url
+    match = _WORK_ENDPOINT_RE.search(url)
+    if not match:
+        return url
+    endpoint = match.group(1)
+    query_start = url.find("?")
+    query = url[query_start:] if query_start >= 0 else ""
+    return f"{MOOC_HOST}/mooc-ans/work/{endpoint}{query}"
 
 
 def build_submit_url(action: str) -> str:

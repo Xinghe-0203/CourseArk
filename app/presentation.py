@@ -27,7 +27,7 @@ LOG_CATEGORIES = (
 )
 EVENT_CATEGORIES = {'login_failed': 'login', 'task_failed': 'task', 'interrupted': 'task',
                     'force_stop': 'task', 'sync_failed': 'sync', 'worker_exit': 'worker',
-                    'worker_crash': 'worker'}
+                    'worker_crash': 'worker', 'chapter_warning': 'chapter'}
 # v2.4.0 T10：worker_exit 从隐藏名单移除——终局事件用户必须能看到；
 # worker_crash 记录 Worker 进程异常死亡（SIGKILL/OOM/崩溃），同样可见。
 HIDDEN_EVENTS = ('log', 'task_progress', 'media_progress')
@@ -70,14 +70,22 @@ def describe(event, message, level='info', stage='', payload=None):
         if category not in CATEGORIES:
             category = 'chapter'
         title = {'work_plan': '学习内容已读取', 'work_started': '开始处理',
-                 'work_progress': '正在学习', 'work_result': {'succeeded': '已确认完成', 'failed': '尚未完成',
+                 'work_progress': '正在学习', 'work_submit': '提交结果',
+                 'work_result': {'succeeded': '已确认完成', 'failed': '尚未完成',
                  'blocked': '需要处理', 'skipped': '已跳过'}.get(payload.get('status'), '处理结果')}.get(event, '学习进度')
-        if event == 'work_result' and payload.get('status') in ('failed', 'blocked'):
-            category = 'answer' if stage == 'work' else category
         detail = str(payload.get('name') or '')
+        if event == 'work_submit':
+            # 结构化提交结果：媒体名 + 成功/失败题数
+            ok, fail = int(payload.get('ok') or 0), int(payload.get('fail') or 0)
+            detail = ' · '.join(part for part in (
+                str(payload.get('media') or ''), f"成功 {ok}",
+                f"失败 {fail}" if fail else '') if part)
+            if fail:
+                category = 'answer'
         if payload.get('current') is not None and payload.get('total'):
             detail += f" · {payload['current']} / {payload['total']}"
         if event == 'work_result' and payload.get('status') in ('failed', 'blocked'):
+            category = 'answer' if stage == 'work' else category
             detail += ' · ' + narrative._clean(message)
         # 平台显示「此前已交卷」时把原因写进详情，避免只看到一句「已确认完成」
         if event == 'work_result' and payload.get('already_done'):

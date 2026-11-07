@@ -209,6 +209,36 @@ def describe(event: str, message: str, level: str = "info", stage: str = "",
             "progress": progress,
         }
 
+    # ---- 结构化提交结果（章节测验 work_submit / 考试 work_submit） ----
+    if event == "work_submit":
+        media = payload.get("media") or name or "测验"
+        ok = int(payload.get("ok") or 0)
+        fail = int(payload.get("fail") or 0)
+        kind = "考试" if payload.get("kind") == "exam" else "作业"
+        return {
+            "kind": "answer",
+            "actor": "答题",
+            "title": f"{kind}提交：{media}",
+            "detail": f"服务器接受 {ok} 题" + (f" · {fail} 题未成功" if fail else " · 全部成功"),
+            "level": "success" if ok and not fail else "warning",
+            "progress": 100,
+        }
+
+    # ---- 章节任务数据读取失败（网络原因，章节任务可能不完整） ----
+    if event == "chapter_warning":
+        chapter = payload.get("chapter") or name or "章节"
+        failed = payload.get("failed_pages") or ""
+        pages = payload.get("pages") or ""
+        return {
+            "kind": "stage",
+            "actor": "课程",
+            "title": f"章节任务数据读取失败：{chapter}",
+            "detail": f"第 {failed} 页（共 {pages} 页）读取失败，本章任务可能不完整；"
+                      "可对失败课程重新执行补齐",
+            "level": "warning",
+            "progress": None,
+        }
+
     # ---- 逐题作答结果 ----
     if event == "answer_result":
         media = payload.get("media") or name or "作业"

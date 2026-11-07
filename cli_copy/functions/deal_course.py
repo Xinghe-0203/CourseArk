@@ -1,4 +1,4 @@
-﻿"""
+"""
 AutoChaoxingCLI - 课程任务处理器
 
 负责：
@@ -136,6 +136,8 @@ class DealCourse:
         page_count = self._safe_read_card_count(chapter_item.get("knowledge_id"))
         attach_list = []
         not_open = False
+        failed_pages: list[str] = []
+        chapter_name = chapter_item.get("name", "未知章节")
         for page in range(page_count):
             try:
                 medias_url = (f"https://mooc1.chaoxing.com/knowledge/cards?"
@@ -144,16 +146,30 @@ class DealCourse:
                               f"&num={page}&ut=s&cpi={self.cpi}&v=20160407-1")
                 medias_rsp = self._safe_doGet(medias_url, self.user.headers)
                 if not medias_rsp:
-                    continue
+                    raise RuntimeError("响应为空")
                 if "章节未开放" in medias_rsp:
                     not_open = True
                     break
                 attach_list.extend(parse_cards(medias_rsp))
             except Exception as e:
-                self.log.debug(f"章节第{page + 1}页任务数据解析失败: {e}")
+                # 此前只记 debug 并静默跳过：章节悄悄丢任务点，最后表现成
+                # 「平台还有 N 个任务点未完成但识别不到」这类迷惑性失败。
+                # 升级为 warning + 结构化事件，让任务详情直接可见根因。
+                failed_pages.append(str(page + 1))
+                self.log.warning(
+                    f"章节'{chapter_name}'第{page + 1}页任务数据读取失败"
+                    f"（网络原因），本章任务可能不完整: {e}")
                 continue
+        if failed_pages:
+            from core import runtime
+            runtime.emit("chapter_warning",
+                         f"章节'{chapter_name}'有 {len(failed_pages)} 页任务数据读取失败",
+                         stage="chapter", level="warning",
+                         payload={"chapter": chapter_name,
+                                  "failed_pages": ",".join(failed_pages),
+                                  "pages": page_count})
         if not_open:
-            self.log.info(f"  章节'{chapter_item.get('name')}'未开放，跳过")
+            self.log.info(f"  章节'{chapter_name}'未开放，跳过")
             chapter_item["_not_open"] = True
         return attach_list
 

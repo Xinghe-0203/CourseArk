@@ -152,8 +152,11 @@ def parse_questions(html: str) -> list:
     return questions
 
 
-def parse_form(html: str) -> dict:
-    """优先找考试提交表单（action 含 exam/submit），否则沿用 work_form 的选择结果。"""
+def parse_form(html: str, base_url: str = "") -> dict:
+    """优先找考试提交表单（action 含 exam/submit），否则沿用 work_form 的选择结果。
+
+    base_url 语义同 work_form.parse_form：相对 action 按页面真实地址解析。
+    """
     if not html:
         return {"found": False, "action": "", "method": "post", "controls": {}}
     try:
@@ -165,12 +168,12 @@ def parse_form(html: str) -> dict:
         for form in forms:
             action = (form.get("action") or "").lower()
             if any(word in action for word in ("exam", "submittest", "submit")):
-                return _form_controls(form, tree)
-    return work_form.parse_form(html)
+                return _form_controls(form, tree, base_url)
+    return work_form.parse_form(html, base_url=base_url)
 
 
-def _form_controls(form, tree) -> dict:
-    action = work_form.absolute_action(form.get("action") or "")
+def _form_controls(form, tree, base_url: str = "") -> dict:
+    action = work_form.absolute_action(form.get("action") or "", base_url)
     controls = {}
     for node in form.xpath(".//input[@name] | .//textarea[@name] | .//select[@name]"):
         name = (node.get("name") or "").strip()

@@ -255,6 +255,24 @@ def submit_url(form_action: str, cpi: str = "", temp_save: bool = True) -> str:
     return SUBMIT_HOST + SUBMIT_PATH + "?" + urllib.parse.urlencode(query)
 
 
+# 提交域备用名单：同类项目实测提交 host 不一致（yatori 用 mooc1-api，
+# CxKitty 用 mooc1，见 docs/research-github.md §3.4），主域连接/HTTP 失败时
+# 换备用域重试一次
+_SUBMIT_HOST_ALTERNATES = (
+    "https://mooc1.chaoxing.com",
+    "https://mooc1-api.chaoxing.com",
+)
+
+
+def swap_submit_host(url: str) -> str:
+    """把考试相关 URL 的主机在 mooc1 与 mooc1-api 之间互换；无关主机原样返回。"""
+    for host in _SUBMIT_HOST_ALTERNATES:
+        if url.startswith(host + "/"):
+            alternate = next(h for h in _SUBMIT_HOST_ALTERNATES if h != host)
+            return alternate + url[len(host):]
+    return url
+
+
 def build_submit_data(page: dict, answer: str, temp_save: bool) -> dict:
     """构造提交请求体：页面隐藏字段 + 本题答案 + 保存/交卷标记。"""
     data = dict(page.get("fields") or {})

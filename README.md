@@ -21,7 +21,7 @@
   「一页一题」的考试会被识别并安全中止（不会提交半份答案）。若平台要求在进入考试前完成
   人机校验（验证码）或输入考试码，程序会明确提示并**不会启动考试、也不会尝试绕过**；
   可在考试列表点「在浏览器中打开」手动完成验证。
-  **桌面版应用内验证窗（未发布）**：考试条目的「打开考试页」会在应用内打开一个
+  **桌面版应用内验证窗（v2.5.0）**：考试条目的「打开考试页」会在应用内打开一个
   带本机登录态的 Chromium 窗口，你手动完成平台安全验证后，程序自动捕获答题页地址
   （带 `enc=`）并填进新建考试任务，无需再手动复制；验证后的会话同时回写，
   保证后续逐题作答与验证在同一登录态上进行。
@@ -36,36 +36,36 @@
   缓存可在「答题缓存」页搜索、导入、导出、单条删除或一键清空。
 - 任务控制：按账号或跨账号暂停、继续、停止；查看任务进度、逐题明细与历史。
 - 诊断日志便于定位问题：任务详情里可按分类与级别筛选，也可下载完整日志。
-- 留白与行高修正（未发布）：实机截图里账号竖列「刘畅」与「23 门 · 1071 / 1206 任务点」、
+- 留白与行高修正（v2.5.0）：实机截图里账号竖列「刘畅」与「23 门 · 1071 / 1206 任务点」、
   课程行「5 / 24」与「待完成 19」字面压在一起。根因是按钮基类的 `line-height:1` 被内部多行文本
   继承（汉字字身约 1.15em 超出 1em 行盒），已补全局兜底 `button b/strong/small { line-height:1.45 }`
   并给每处标题/说明写显式行高；全站表头 28→34px、行内 padding 提到 11~15px、账号竖列每项约 52px、
   进度小窗 300px、浮窗 340px。另修两处缺陷：课程表「完成度」末列百分比与「查看」贴边（改
   `minmax(0,1fr) 40px auto` + 右对齐）、新建任务弹窗底部按钮被裁（`.modal-body` 补
   `flex:1 1 auto; min-height:0`，`.wizard-foot` 用负 margin 吃掉 padding-bottom）。详见
-  [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 的「留白与行高修正（未发布）」一节。
-- 课程进度页与学习任务二级菜单（未发布）：新增 `#/progress`「课程进度」主页面，按账号分组把
+  [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 的「留白与行高修正（v2.5.0）」一节。
+- 课程进度页与学习任务二级菜单（v2.5.0）：新增 `#/progress`「课程进度」主页面，按账号分组把
   「账号 × 课程 × 平台任务点」一次摊平（页头总进度条 + 三格事实条 + 搜索/范围筛选，每段四列
   「课程 / 平台任务点 / 本轮任务 / 完成度」）；学习任务页改为竖向二级菜单——左侧 238px 账号竖列
   （勾选框 + 账号名 + `N 门 · fn / all 任务点` + 执行状态点，sticky 跟随），右侧只渲染选中账号的详情，
   课程区从卡片网格改为四列行式表格；任务点进度只显示数字（`fn / all` + `待完成 N`），
   不再和状态徽标里的「已完成」撞词。共用口径抽到 `frontend/src/course.ts`（`courseKey` /
   `taskForCourse` / `courseRows`）。`tools/vue_check.py` 57 项全过。详见
-  [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 的「课程进度页与学习任务二级菜单（未发布）」一节。
-- 界面重做（未发布）：样式拆成 `frontend/src/styles/` 的 tokens / base / shell / windows 四层
+  [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 的「课程进度页与学习任务二级菜单（v2.5.0）」一节。
+- 界面重做（v2.5.0）：样式拆成 `frontend/src/styles/` 的 tokens / base / shell / windows 四层
   （冷灰纸面 + 仪器墨蓝 + 交通灯语义色），顶栏承载页面标题；总览删掉重复的四张指标卡、环形仪表
   与三条比例条，改为「续跑条 → 单块执行摘要 → 调度队列表格 → 执行中账号 → 最近完成」；账号与课程、
   已完成、答题缓存、任务记录改为行式表格；学习任务卡不再卡内滚动（后续一轮又改为竖向二级菜单）。
   同时修掉三处真实缺陷：`RouterView` 上的 `@select` 把原生 Event 当任务传给抽屉导致整页被 `inert` 锁死、
   迷你窗被套上侧栏与顶栏、迷你窗已用时算出 `497823:05:24`。详见
-  [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 的「界面重做（未发布）」一节。
-- 检查、清理与界面打磨（未发布）：删除 `.tmp-gate/`、`.tmp-ui/`、重复技能包等约 26 MB 本地垃圾，
+  [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 的「界面重做（v2.5.0）」一节。
+- 检查、清理与界面打磨（v2.5.0）：删除 `.tmp-gate/`、`.tmp-ui/`、重复技能包等约 26 MB 本地垃圾，
   并修掉 `tests/test_nplus1.py` 把临时目录写到**仓库外**的缺陷；清除 v2.3.0 遗留的最后几处通知痕迹；
   修一批真实交互缺陷——进度小窗开关是死按钮、两个浮窗完全重叠、Esc 一次关掉两层弹窗、
   「已完成」页筛选时不能翻页且丢字段、停止类操作无确认、搜索无结果误报「暂无账号」、
   空状态是死胡同、新建任务主按钮灰着不说原因；`tokens.css` 补齐 `--r-pill` 等被引用却未定义
   的令牌并真正用到按钮/输入/弹窗/状态胶囊上。详见
-  [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 的「检查、清理与界面打磨（未发布）」一节。
+  [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 的「检查、清理与界面打磨（v2.5.0）」一节。
 - v2.4.0 工程质量版：CLI 移植遗留清理（配置单源、任务状态机、N+1 查询消灭、存储与日志通道
   加固——120 任务下列表页 SQL 142→4 条）；页面按实际信息重排（总览接 `/api/overview` 真值、
   调度队列可见、已完成页服务端筛选、题库统计接真值、任务详情日志检索分页与续跑链）；
@@ -111,8 +111,8 @@ python run.py
 
 在 [GitHub Releases](https://github.com/Xinghe-0203/CourseArk/releases) 下载：
 
-- `CourseArk-2.4.0-Setup.exe`：Windows x64 安装版。
-- `CourseArk-2.4.0-Portable.exe`：Windows x64 便携版。
+- `CourseArk-2.5.0-Setup.exe`：Windows x64 安装版。
+- `CourseArk-2.5.0-Portable.exe`：Windows x64 便携版。
 
 桌面版内置 Python 运行时，不要求最终用户安装 Python 或 Node.js。关闭应用时会停止本机服务和 Worker。为兼容现有安装，桌面数据目录继续使用 `%APPDATA%\AutoCxWebUI`；安装包不包含账号、配置、答题缓存或任务数据库。
 
@@ -153,7 +153,7 @@ python tools/check_work_page.py --exam-url "<答题页地址>"            # 只�
 必须先通过人机验证（或考试码）才会跳到答题页。这类校验与账号绑定，程序**不会**尝试绕过，
 遇到时只会记录原因并安全中止（不启动考试计时、不提交任何答案）。
 
-**推荐做法（桌面版应用内验证窗，未发布）**：
+**推荐做法（桌面版应用内验证窗，v2.5.0）**：
 
 1. 在 CourseArk 新建「独立考试」任务，点考试条目的「打开考试页」；
 2. 应用内验证窗会用本机已保存的登录态打开考试说明页（提示先「获取会话」则先在
@@ -270,7 +270,7 @@ python tools/ui_check.py --serve --port 8899
 | 文档 | 内容 |
 | --- | --- |
 | [`docs/architecture.md`](docs/architecture.md) | 组件划分、作业/考试/同步链路、事件、前端结构与浮层规则 |
-| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | v2.1 起完整变更历史（最新 v2.4.0 + 未发布章节） |
+| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | v2.1 起完整变更历史（最新 v2.5.0） |
 | [`docs/research-exam.md`](docs/research-exam.md) | 考试协议调研（手机端 / PC 端端点、逐题提交、风控） |
 | [`docs/research-github.md`](docs/research-github.md) | 同类开源项目调研与作业协议结论 |
 

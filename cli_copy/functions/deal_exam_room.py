@@ -281,7 +281,7 @@ class DealExamRoom:
             self.log.error(f"  无法进入考试: {blocked}")
             return empty
 
-        form = exam_form.parse_form(html)
+        form = exam_form.parse_form(html, base_url=start_url)
         questions = exam_form.parse_questions(html)
         diagnostics = exam_form.describe_diagnostics(html, questions, form)
         self.log.debug(f"  考试页诊断: {json.dumps(diagnostics, ensure_ascii=False)}")
@@ -348,6 +348,14 @@ class DealExamRoom:
         runtime.emit("exam_stats", "提交结果", stage="exam", payload={
             "media": title, "questions": len(questions),
             "submit_ok": ok, "submit_fail": stats["submit_fail"]})
+        # 结构化提交结果（与章节测验同事件名，便于按类型筛选成败）
+        runtime.emit("work_submit",
+                     f"考试'{title}'提交成功" if ok and not stats["submit_fail"]
+                     else f"考试'{title}'提交失败",
+                     stage="exam",
+                     level="success" if ok and not stats["submit_fail"] else "warning",
+                     payload={"kind": "exam", "media": title, "ok": ok,
+                              "fail": stats["submit_fail"]})
         return stats
 
     # ------------------------------------------------------------------ 提交
@@ -388,14 +396,32 @@ class DealExamRoom:
             source = f"探测接口（{candidates[0]['token']}）"
 
         self.log.info(f"  正在提交考试答案（{source}）...")
+        submit_headers = {
+            "Referer": "https://mooc1.chaoxing.com/exam/test",
+            "X-Requested-With": "XMLHttpRequest",
+        }
         try:
-            response = doPost(endpoint, headers={
-                "Referer": "https://mooc1.chaoxing.com/exam/test",
-                "X-Requested-With": "XMLHttpRequest",
-            }, data=body)
+            response = doPost(endpoint, headers=submit_headers, data=body)
         except Exception as e:
-            self.log.error(f"  提交考试答案失败: {e}")
-            return (0, total)
+            # 提交域备用兜底：同类项目实测提交 host 不一致（mooc1 vs mooc1-api），
+            # 主域连接/HTTP 失败时换域重试一次（反爬虫冷却不重试）
+            from core.exceptions import AntispiderException
+            from core import exam_answer_page
+
+            if isinstance(e, AntispiderException):
+                self.log.error(f"  提交考试答案失败: {e}")
+                return (0, total)
+            alternate = exam_answer_page.swap_submit_host(endpoint)
+            if alternate == endpoint:
+                self.log.error(f"  提交考试答案失败: {e}")
+                return (0, total)
+            self.log.warning(f"  主提交域失败（{e}），换备用域名重试一次...")
+            runtime.sleep(1.5)
+            try:
+                response = doPost(alternate, headers=submit_headers, data=body)
+            except Exception as retry_error:
+                self.log.error(f"  备用域名提交也失败: {retry_error}")
+                return (0, total)
 
         if self._is_success(response):
             return (total, 0)

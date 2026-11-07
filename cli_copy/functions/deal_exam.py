@@ -100,10 +100,14 @@ class DealExam:
         self.no_answer_action = str(Config.get("answer.no_answer_action", "skip")).lower()
         self.auto_save = exam_config.get("auto_save", True)
 
-        # 当前作答单元（供 LLM 提示词携带课程/作业上下文，提升答题准确率）
+        # 当前作答单元（供 LLM 提示词携带课程/章节/作业上下文，提升答题准确率）
         self.active_unit_id = ""
         self.active_media_name = ""
         self.active_kind = "作业"
+        self.active_chapter_name = ""
+        # LLM 批量作答：一次请求带多道题，摊薄提示词开销并让模型从同批题目
+        # 互相印证学科范围；批量失败/个别题解析不出时回退逐题链路
+        self.llm_batch_size = 6
 
     def do_finish(self):
         from functions.deal_course import DealCourse
@@ -177,6 +181,9 @@ class DealExam:
         media_name = _clean_name(
             attachment.get("property", {}).get("name")) or chapter.get("name", "未知作业")
         self.log.info(f"作业: {media_name}")
+        # 章节名进 AI 上下文：测验标题（"12.6 章节测试7"）本身不含学科信息，
+        # 章节名（如"第三章 Vuex状态管理"）才是 AI 判断考点范围的关键
+        self.active_chapter_name = _clean_name(chapter.get("name")) or ""
 
         # 获取加密参数
         enc = attachment.get("enc") or self._find_enc(jobid)
@@ -257,34 +264,69 @@ class DealExam:
         self.active_media_name = media_name
         self.active_kind = kind
 
-        cache_hits = llm_calls = random_answers = 0
-        answered = []
-        for idx, q in enumerate(questions, 1):
-            # 每题之间是暂停/停止的安全边界
-            runtime.checkpoint()
-            ans = self._answer_question(q, idx, len(questions))
+        total = len(questions)
+        counters = {"cache": 0, "llm": 0, "random": 0}
+        answers_by_pos: list[dict | None] = [None] * total
+
+        def _record(pos: int, ans: dict | None):
+            """记录一题结果并发该题的实时事件（进度 + 逐题明细 + 统计）。"""
+            idx = pos + 1
             if getattr(self, 'active_unit_id', ''):
                 runtime.emit('work_progress', '正在作答', stage='exam', payload={
-                    'id': self.active_unit_id, 'name': media_name, 'current': idx, 'total': len(questions)})
+                    'id': self.active_unit_id, 'name': media_name,
+                    'current': idx, 'total': total})
             if ans is not None:
-                answered.append(ans)
                 source = ans.get("source", "")
-                if source == "cache":
-                    cache_hits += 1
-                elif source == "llm":
-                    llm_calls += 1
-                elif source == "random":
-                    random_answers += 1
-            # 逐题实时上报，供界面展示「AI 做题」明细
-            self._emit_answer_result(q, ans, idx, len(questions), media_name)
+                if source in counters:
+                    counters[source] += 1
+            self._emit_answer_result(questions[pos], ans, idx, total, media_name)
             runtime.emit("exam_stats", "答题进度", stage="exam", payload={
                 "media": media_name,
                 "current": idx,
-                "total": len(questions),
-                "cache_hits": cache_hits,
-                "llm_calls": llm_calls,
-                "random_answers": random_answers,
+                "total": total,
+                "cache_hits": counters["cache"],
+                "llm_calls": counters["llm"],
+                "random_answers": counters["random"],
             })
+
+        # 第1步：门控 + 缓存预取；未命中的进批量队列
+        pending: list[int] = []
+        for pos, q in enumerate(questions):
+            # 每题之间是暂停/停止的安全边界
+            runtime.checkpoint()
+            progress = f"[{pos + 1}/{total}]"
+            if not self._answerable(q, progress):
+                _record(pos, None)
+                continue
+            ans = self._answer_from_cache(q, progress)
+            answers_by_pos[pos] = ans
+            _record(pos, ans)
+            if ans is None:
+                pending.append(pos)
+
+        # 第2步：批量 LLM 作答（batch_size=1 时等价逐题），结果按原题序上报
+        if pending and self.answer_mode == "ai":
+            batch_size = max(1, int(getattr(self, "llm_batch_size", 6) or 1))
+            for start in range(0, len(pending), batch_size):
+                runtime.checkpoint()
+                chunk = pending[start:start + batch_size]
+                if batch_size > 1:
+                    chunk_answers = self._answer_batch([questions[p] for p in chunk])
+                else:
+                    chunk_answers = [self._answer_question(questions[p], p + 1, total)
+                                     for p in chunk]
+                for pos, ans in zip(chunk, chunk_answers):
+                    answers_by_pos[pos] = ans
+                    _record(pos, ans)
+        elif pending:
+            # 未知作答模式：与旧逐题链路一致，直接走随机/跳过兜底
+            for pos in pending:
+                answers_by_pos[pos] = self._fallback_answer(questions[pos], pos + 1, total)
+                _record(pos, answers_by_pos[pos])
+
+        answered = [a for a in answers_by_pos if a is not None]
+        cache_hits, llm_calls, random_answers = (counters["cache"], counters["llm"],
+                                                 counters["random"])
 
         # 提交答案：无题目ID的备用解析结果不能构造有效表单
         submit_ok = 0
@@ -306,6 +348,15 @@ class DealExam:
                 )
                 submit_ok += ok
                 submit_fail += fail
+                # 结构化提交结果：此前只有普通 log 行（淹没在 debug 里），
+                # 任务详情/动态流无法按事件类型筛选提交成败
+                runtime.emit("work_submit",
+                             f"{media_name} 提交成功" if ok and not fail
+                             else f"{media_name} 提交失败",
+                             stage="exam" if kind == "考试" else "work",
+                             level="success" if ok and not fail else "warning",
+                             payload={"kind": "exam" if kind == "考试" else "homework",
+                                      "media": media_name, "ok": ok, "fail": fail})
 
             if submit_ok and not submit_fail:
                 self.log.success(f"  [{media_name}] 服务器已接受 {submit_ok}题答案")
@@ -385,7 +436,7 @@ class DealExam:
                 logger.debug(f"访问作业详情页失败: {e}")
                 html = ""
             if html:
-                parsed = self._extract_independent_page(html)
+                parsed = self._extract_independent_page(html, base_url=page_url)
                 if parsed:
                     return parsed
                 next_url = self._find_work_question_url(html)
@@ -396,14 +447,14 @@ class DealExam:
                         logger.debug(f"访问作业题目页失败: {e}")
                         html2 = ""
                     if html2:
-                        parsed = self._extract_independent_page(html2)
+                        parsed = self._extract_independent_page(html2, base_url=next_url)
                         if parsed:
                             return parsed
 
         # 尝试2：直接调用题目接口
         return self._fetch_independent_via_api(work_id, answer_id)
 
-    def _extract_independent_page(self, html: str):
+    def _extract_independent_page(self, html: str, base_url: str = ""):
         """从作业页面提取题目、隐藏字段与提交表单，无题目时返回None"""
         if not html:
             return None
@@ -412,7 +463,7 @@ class DealExam:
         if not questions:
             return None
         hidden = self._extract_form_hidden_fields(decoded)
-        form = work_form.parse_form(decoded)
+        form = work_form.parse_form(decoded, base_url=base_url)
         return (questions, hidden, form)
 
     @staticmethod
@@ -523,7 +574,12 @@ class DealExam:
             decoded = self.font_decoder.decode_page(rsp)
             hidden = self._extract_form_hidden_fields(decoded)
             questions = self._parse_questions_from_html(decoded)
-            form = work_form.parse_form(decoded)
+            # 相对 action 的解析基准：这份 HTML 实际渲染在 doHomeWorkNew 文档里
+            #（浏览器端表单按该地址解析相对 action），不能按域名根解析。
+            base_url = (f"https://mooc1.chaoxing.com/mooc-ans/work/doHomeWorkNew?"
+                        f"workId={params.get('workId', '')}&courseid={self.course_id}"
+                        f"&clazzid={params.get('clazzId', '')}&ut=s")
+            form = work_form.parse_form(decoded, base_url=base_url)
             return (questions, hidden, form)
         except Exception as e:
             logger.error(f"获取作业题目失败: {e}")
@@ -708,71 +764,156 @@ class DealExam:
                 })
         return questions
 
-    def _answer_question(self, question: dict, idx: int = 0, total: int = 0) -> dict | None:
-        """回答单道题目（回退链：答题缓存 → LLM → 随机/跳过）"""
-        q_text = question.get("question_text", "")
-        q_type = question.get("question_type", "单选题")
-        options = question.get("options", [])
-        q_id = question.get("question_id", "")
-        icon = TYPE_ICONS.get(q_type, "未知")
-        progress = f"[{idx}/{total}]" if total > 0 else ""
-
-        meta = {
-            "question_id": q_id, "question_text": q_text,
-            "question_type": q_type, "options": options,
-            "kind": question.get("kind"), "blank_count": question.get("blank_count", 0),
+    @staticmethod
+    def _meta_of(question: dict) -> dict:
+        return {
+            "question_id": question.get("question_id", ""),
+            "question_text": question.get("question_text", ""),
+            "question_type": question.get("question_type", "单选题"),
+            "options": question.get("options", []),
+            "kind": question.get("kind"),
+            "blank_count": question.get("blank_count", 0),
             "answer_type": question.get("answer_type", ""),
         }
 
-        if not q_text:
-            return None
+    def _answerable(self, question: dict, progress: str = "") -> bool:
+        """可自动作答性检查；不可作答时记录原因。"""
+        icon = TYPE_ICONS.get(question.get("question_type", ""), "未知")
+        if not question.get("question_text"):
+            return False
         if question.get('unreadable'):
             reason = question.get('unreadable_reason') or '题目字体或图片内容未完整识别'
             self.log.warning(f'{reason}，请在学习通中核对后处理')
-            return None
-
+            return False
         if self.answer_mode == "manual":
             self.log.info(f"  {progress}{icon} 手动模式，跳过自动作答")
+            return False
+        return True
+
+    def _answer_from_cache(self, question: dict, progress: str = "") -> dict | None:
+        """只查本地答题缓存（批量预取阶段用），命中返回答案项。"""
+        q_text = question.get("question_text", "")
+        q_type = question.get("question_type", "单选题")
+        options = question.get("options", [])
+        if not self.question_bank:
             return None
-
+        cached = self.question_bank.lookup(q_text, options)
+        normalized = self._normalize_answer(q_type, cached, options) if cached else ""
+        if not normalized:
+            return None
         display_text = q_text[:50] + "..." if len(q_text) > 50 else q_text
+        self.log.info(f"  {progress}{TYPE_ICONS.get(q_type, '未知')} {display_text} -> {normalized} (缓存)")
+        return {**self._meta_of(question), "answer": normalized, "source": "cache"}
 
-        # 第1步：查本地答题缓存
-        if self.question_bank:
-            cached = self.question_bank.lookup(q_text, options)
-            normalized = self._normalize_answer(q_type, cached, options) if cached else ""
-            if normalized:
-                self.log.info(f"  {progress}{icon} {display_text} -> {normalized} (缓存)")
-                return {**meta, "answer": normalized, "source": "cache"}
+    def _llm_context(self) -> dict:
+        context = {
+            "course": self.course_name,
+            "media": self.active_media_name or "",
+            "kind": self.active_kind,
+        }
+        chapter = getattr(self, "active_chapter_name", "")
+        if chapter:
+            context["extra"] = f"所属章节：{chapter}"
+        return context
 
-        # 第2步：AI 作答（提示词携带课程/作业上下文，首次空答时用严格模式重试一次）
-        if self.answer_mode == "ai":
-            self.log.info(f"  {progress}{icon} {display_text}")
-            self.log.info("    -> 调用 LLM...")
-            context = {
-                "course": self.course_name,
-                "media": self.active_media_name or "",
-                "kind": self.active_kind,
-            }
-            llm_result = self.llm.answer_single(question, context=context)
+    def _answer_via_llm_single(self, question: dict, idx: int = 0, total: int = 0) -> dict | None:
+        """单题 LLM 链路（批量作答的回退路径）：严格重试一次 → 随机/跳过。"""
+        q_type = question.get("question_type", "单选题")
+        options = question.get("options", [])
+        display_text = question.get("question_text", "")[:50] + "..." \
+            if len(question.get("question_text", "")) > 50 else question.get("question_text", "")
+        icon = TYPE_ICONS.get(q_type, "未知")
+        progress = f"[{idx}/{total}]" if total > 0 else ""
+        self.log.info(f"  {progress}{icon} {display_text}")
+        self.log.info("    -> 调用 LLM...")
+        llm_result = self.llm.answer_single(question, context=self._llm_context())
+        answer = self._normalize_answer(q_type, llm_result, options) if llm_result else ""
+        if not answer:
+            self.log.info("    -> 首次未得到可用答案，使用严格模式重试...")
+            llm_result = self.llm.answer_single(question, context=self._llm_context(), strict=True)
             answer = self._normalize_answer(q_type, llm_result, options) if llm_result else ""
-            if not answer:
-                self.log.info("    -> 首次未得到可用答案，使用严格模式重试...")
-                llm_result = self.llm.answer_single(question, context=context, strict=True)
-                answer = self._normalize_answer(q_type, llm_result, options) if llm_result else ""
-            if answer:
-                self.log.info(f"    -> 答案: {answer} (LLM)")
-                return {**meta, "answer": answer, "source": "llm"}
-            self.log.warning(f"    -> LLM 返回内容无法用于该题型: {str(llm_result)[:60]}")
+        if answer:
+            self.log.info(f"    -> 答案: {answer} (LLM)")
+            return {**self._meta_of(question), "answer": answer, "source": "llm"}
+        self.log.warning(f"    -> LLM 返回内容无法用于该题型: {str(llm_result)[:60]}")
+        return None
 
-        # 第3步：无答案时的兜底策略
+    def _fallback_answer(self, question: dict, idx: int = 0, total: int = 0) -> dict | None:
+        """无答案时的兜底：按配置随机，非客观题跳过。"""
+        q_type = question.get("question_type", "单选题")
+        options = question.get("options", [])
+        q_text = question.get("question_text", "")
+        display_text = q_text[:50] + "..." if len(q_text) > 50 else q_text
+        icon = TYPE_ICONS.get(q_type, "未知")
+        progress = f"[{idx}/{total}]" if total > 0 else ""
         random_answer = self._random_answer(q_type, options)
         if random_answer:
             self.log.warning(f"  {progress}{icon} {display_text} -> {random_answer} (随机)")
-            return {**meta, "answer": random_answer, "source": "random"}
-
+            return {**self._meta_of(question), "answer": random_answer, "source": "random"}
         self.log.warning(f"  {progress}{icon} {display_text} -> 获取失败")
         return None
+
+    def _answer_question(self, question: dict, idx: int = 0, total: int = 0) -> dict | None:
+        """回答单道题目（回退链：答题缓存 → LLM → 随机/跳过）"""
+        progress = f"[{idx}/{total}]" if total > 0 else ""
+        if not self._answerable(question, progress):
+            return None
+        cached = self._answer_from_cache(question, progress)
+        if cached:
+            return cached
+        if self.answer_mode != "ai":
+            return self._fallback_answer(question, idx, total)
+        answered = self._answer_via_llm_single(question, idx, total)
+        if answered:
+            return answered
+        return self._fallback_answer(question, idx, total)
+
+    def _answer_batch(self, questions: list[dict]) -> list[dict | None]:
+        """批量 LLM 作答：一次请求带多道题。
+
+        解析不出的题先整批严格重试；仍失败时——若本批至少解出一题
+        （说明 LLM 活着）回退逐题链路，若全败视为 LLM 不可用、直接走
+        随机/跳过兜底，避免对每题发起注定失败的调用。
+        """
+        count = len(questions)
+        if not count:
+            return []
+        results: list[dict | None] = [None] * count
+        context = self._llm_context()
+
+        def _apply(raw_list, positions) -> list[int]:
+            """把一批 LLM 返回写回 results；返回未解析题的位置。"""
+            unresolved = []
+            for pos, raw in zip(positions, raw_list):
+                q = questions[pos]
+                q_type = q.get("question_type", "单选题")
+                answer = self._normalize_answer(q_type, raw, q.get("options")) if raw else ""
+                if answer:
+                    results[pos] = {**self._meta_of(q), "answer": answer, "source": "llm"}
+                else:
+                    unresolved.append(pos)
+            return unresolved
+
+        positions = list(range(count))
+        self.log.info(f"    -> 批量调用 LLM（{count} 题）...")
+        unresolved = _apply(self.llm.answer(questions, context=context), positions)
+        if unresolved:
+            self.log.info(f"    批量作答有 {len(unresolved)} 题未解析，严格模式重试...")
+            retry_questions = [questions[p] for p in unresolved]
+            unresolved = _apply(self.llm.answer(retry_questions, context=context, strict=True),
+                                unresolved)
+        if not unresolved:
+            return results
+
+        if any(item is not None for item in results):
+            # LLM 可用，个别顽固题走单题链路（缓存→严格重试→随机）
+            for pos in unresolved:
+                results[pos] = self._answer_question(questions[pos])
+        else:
+            self.log.warning("    本批 LLM 全部未解析，按兜底策略处理")
+            for pos in unresolved:
+                results[pos] = self._fallback_answer(questions[pos])
+        return results
 
     def _normalize_answer(self, q_type: str, answer: str, options: list = None) -> str:
         from core.answer_validation import normalize_answer
@@ -905,6 +1046,30 @@ class DealExam:
             logger.debug(f"提交前校验失败，按可提交处理: {e}")
         return (True, "")
 
+    def _post_submission(self, url: str, headers: dict, data) -> str:
+        """提交请求带一次网络重试。
+
+        只重试连接类异常（超时/断连/读响应失败——2026-11 日志里「章节第1页任务
+        数据解析失败: Max retries exceeded」同类）；反爬虫冷却由异常自带逻辑处理，
+        平台业务拒绝（JSON 里的 code-2 等）不重试。重复提交同一份表单是安全的：
+        平台按最后一次保存为准。
+        """
+        from core.exceptions import AntispiderException
+
+        last_error: Exception | None = None
+        for attempt in (1, 2):
+            try:
+                return doPost(url=url, headers=headers, data=data)
+            except AntispiderException:
+                raise
+            except Exception as exc:
+                last_error = exc
+                if attempt == 1:
+                    self.log.warning(f"  提交请求网络异常，稍后重试一次: {exc}")
+                    runtime.sleep(2.0)
+        assert last_error is not None
+        raise last_error
+
     def _submit_answers(self, work_id: str, answered: list[dict], defaults: dict,
                         jobid: str, enc: str | None, ktoken: str | None,
                         hidden_fields: dict = None, page_form: dict = None,
@@ -943,7 +1108,7 @@ class DealExam:
             if not ready:
                 self.log.error(f"  提交前校验未通过: {reason}")
                 return (0, len(answered))
-            rsp = doPost(url=submit_url, headers=_headers, data=form_data)
+            rsp = self._post_submission(url=submit_url, headers=_headers, data=form_data)
             if not rsp:
                 self.log.error("  提交失败: 无响应")
                 return (0, len(answered))
