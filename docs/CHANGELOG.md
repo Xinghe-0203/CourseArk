@@ -73,16 +73,19 @@
   `deal_exam` 在六个提交失败分支各写 `self.submit_error`（提交前校验未通过、
   平台未返回响应、触发反爬、平台拒绝提交（附 msg）、返回内容无法解析、请求异常），
   并把 `unreadable` 题数一并返回，任务详情里能直接看到是「哪一类」失败。
+  另：`questions == 0` 时单独给「平台没有返回题目内容（作业接口与详情页都没有解析到题目），
+  请在网页端核对」，不再笼统说成「测验有未作答题目」。
 
 ### 六、验证
 
-- `python -m pytest tests cli_copy\tests -q` → **569 passed, 1 skipped**（本轮前 559）。
+- `python -m pytest tests cli_copy\tests -q` → **573 passed, 1 skipped**（本轮前 559）。
 - 新增回归测试：`tests/test_work_form.py` 3 个（部分作答仍提交全部题号、
   `page_question_ids` 顺序、主观题误标单选可作答）、
   `cli_copy/tests/test_core_behaviors.py` 1 个（部分作答保留全部页面题号）、
   `tests/test_modernization.py` 1 个（`api/work` 空壳回退详情页）、
   `tests/test_live_heartbeat.py` 6 个（Referer、拒绝原因、空响应、缺 streamName、
-  无时长记 skipped、批量统计不算失败）。
+  无时长记 skipped、批量统计不算失败）、`tests/test_course_execution.py` 4 个
+  （平台原文优先、题干未识别、部分接受、页面无题）。
 
 ### 改动文件（提交失败排查，摘要）
 

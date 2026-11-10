@@ -85,3 +85,27 @@ def test_course_without_mission_points_reports_no_pending():
     result = execution._finish_without_jobs(None)
     assert result["no_pending"] is True
     assert any("暂无任务点" in line for line in handler.log.lines)
+
+
+def test_quiz_blocked_reason_prefers_platform_submit_error():
+    """平台在提交阶段给的原文（code-2、作业已过期等）必须原样透出。"""
+    reason = CourseExecution._quiz_blocked_reason(
+        {"questions": 10, "submit_ok": 0, "submit_error": "平台拒绝提交：无效的参数：code-2！"})
+    assert reason == "平台拒绝提交：无效的参数：code-2！"
+
+
+def test_quiz_blocked_reason_explains_unreadable_questions():
+    reason = CourseExecution._quiz_blocked_reason(
+        {"questions": 10, "submit_ok": 0, "unreadable": 10})
+    assert reason == "10 道题的题干或选项未能识别，未提交答案，请在网页端核对"
+
+
+def test_quiz_blocked_reason_explains_partial_acceptance():
+    reason = CourseExecution._quiz_blocked_reason({"questions": 26, "submit_ok": 15})
+    assert reason == "平台只接受 15/26 题答案，其余题未能作答或提交失败"
+
+
+def test_quiz_blocked_reason_explains_empty_page():
+    """2026-11 实机：api/work 与详情页都没有题目时，不能只说「测验有未作答题目」。"""
+    reason = CourseExecution._quiz_blocked_reason({"questions": 0, "submit_ok": 0})
+    assert "平台没有返回题目内容" in reason

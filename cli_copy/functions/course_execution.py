@@ -27,6 +27,8 @@ class CourseExecution:
         questions = int(result.get('questions') or 0)
         submit_ok = int(result.get('submit_ok') or 0)
         unreadable = int(result.get('unreadable') or 0)
+        if not questions:
+            return '平台没有返回题目内容（作业接口与详情页都没有解析到题目），请在网页端核对'
         if questions and not submit_ok:
             if unreadable >= questions:
                 return f'{questions} 道题的题干或选项未能识别，未提交答案，请在网页端核对'
