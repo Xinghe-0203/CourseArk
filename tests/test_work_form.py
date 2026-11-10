@@ -223,6 +223,37 @@ def test_build_submission_writes_answers_like_the_browser():
     assert body["workRelationId"] == "4444"
 
 
+def test_build_submission_keeps_all_page_qids_when_partially_answered():
+    """回归：只答了一部分题时 answerwqbid 仍须是页面全部题号。
+
+    2026-11 实机日志：页面 10 题只答出 3 题就提交，平台返回
+    「无效的参数：code-2！」；把题目全部答完的测验从未出现该错误，
+    全库也没有任何一次「部分作答」被接受。页面 ready2Submit() 是把
+    #questionIds 填成全部题号再提交的。
+    """
+    form = work_form.parse_form(PAGE)
+    answered = [
+        {"question_id": "900001", "question_type": "单选题", "answer": "A",
+         "kind": work_form.KIND_CHOICE, "answer_type": "0"},
+    ]
+    url, body = work_form.build_submission(form, answered)
+    assert body["answerwqbid"] == "900001,900002,"
+    assert body["answer900001"] == "A"
+    # 未作答的题不写入答案值，但题号仍在
+    assert "answer900002" not in body or body["answer900002"] == ""
+
+
+def test_page_question_ids_reads_controls_in_page_order():
+    form = work_form.parse_form(PAGE)
+    assert work_form.page_question_ids(form["controls"]) == ["900001", "900002"]
+    # 填空的 answerEditor<qid><n> 末尾有序号，不能被当成题号
+    assert work_form.page_question_ids({
+        "answerEditor9000021": "", "answerEditor9000022": "",
+        "answertype900002": "2",
+    }) == ["900002"]
+    assert work_form.page_question_ids({}) == []
+
+
 def test_build_submission_falls_back_to_legacy_when_no_form():
     answered = [{"question_id": "900001", "question_type": "单选题", "answer": "B"}]
     url, body = work_form.build_submission({"found": False, "action": "", "controls": {}}, answered)
@@ -239,3 +270,54 @@ def test_build_submission_uses_fallback_qids():
     )
     assert body["answerwqbid"] == "900001,900002,"
     assert url.startswith("https://mooc1.chaoxing.com/")
+
+
+SUBJECTIVE_MISLABELED = """
+<html><body>
+<form id="submitForm" method="post" action="/mooc-ans/work/addStudentWorkNewWeb?_classId=1&courseid=2&token=t">
+  <input type="hidden" name="answerwqbid" value="">
+  <div class="questionLi singleQuesId" data="405817409" typename="单选题">
+    <input type="hidden" name="answertype405817409" value="0">
+    <h3 class="mark_name">1. 液压系统由哪几部分组成？各部分的作用是什么？</h3>
+    <div class="eidtDiv"><textarea name="answerEditor4058174091"></textarea></div>
+  </div>
+  <div class="questionLi singleQuesId" data="405817410" typename="单选题">
+    <input type="hidden" name="answertype405817410" value="0">
+    <h3 class="mark_name">2. 液压传动的主要优、缺点是什么？</h3>
+    <div class="eidtDiv" contenteditable="true"></div>
+  </div>
+</form>
+</body></html>
+"""
+
+
+def test_subjective_question_mislabeled_as_choice_is_answerable():
+    """页面把主观题标成单选题且没有选项时，不能判成不可读。
+
+    2026-11 实机日志：这类题被丢掉后测验只提交了一部分题目，
+    平台一律回「无效的参数：code-2」，整门课因此失败。
+    """
+    questions = work_form.parse_questions(SUBJECTIVE_MISLABELED)
+
+    assert [q["question_id"] for q in questions] == ["405817409", "405817410"]
+    blank, text = questions
+    assert blank["unreadable"] is False
+    assert blank["kind"] == work_form.KIND_BLANK
+    assert blank["blank_count"] == 1
+    assert blank["question_type"] == "填空题"
+
+    assert text["unreadable"] is False
+    assert text["kind"] == work_form.KIND_TEXT
+    assert text["question_type"] == "简答题"
+
+
+def test_choice_without_options_and_without_input_is_still_unreadable():
+    html = """
+<html><body><div class="questionLi singleQuesId" data="900777" typename="单选题">
+  <input type="hidden" name="answertype900777" value="0">
+  <h3 class="mark_name">3. 图片题</h3>
+</div></body></html>
+"""
+    questions = work_form.parse_questions(html)
+    assert questions[0]["unreadable"] is True
+    assert "选项" in questions[0]["unreadable_reason"]

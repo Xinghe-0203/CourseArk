@@ -18,6 +18,23 @@ class CourseExecution:
         self.jobs = []
         self.stats = {'success': 0, 'failed': 0, 'already_done': 0, 'skipped': 0}
 
+    @staticmethod
+    def _quiz_blocked_reason(result):
+        """把测验未完成的原因说清楚：平台拒绝、部分题未识别、还是任务点未确认。"""
+        error = (result.get('submit_error') or '').strip()
+        if error:
+            return error
+        questions = int(result.get('questions') or 0)
+        submit_ok = int(result.get('submit_ok') or 0)
+        unreadable = int(result.get('unreadable') or 0)
+        if questions and not submit_ok:
+            if unreadable >= questions:
+                return f'{questions} 道题的题干或选项未能识别，未提交答案，请在网页端核对'
+            return f'{questions} 道题未获得可靠答案，未提交，请在网页端核对'
+        if submit_ok < questions:
+            return f'平台只接受 {submit_ok}/{questions} 题答案，其余题未能作答或提交失败'
+        return '测验有未作答题目或平台未确认完成，请核对'
+
     def result(self, job, status, detail=''):
         runtime.emit('work_result', detail or job['name'], stage=job['kind'],
                      level='warning' if status in ('failed', 'blocked') else 'info',
@@ -166,7 +183,8 @@ class CourseExecution:
                         h.ui.record_exam_result(*(result.get(k, 0) for k in ('questions', 'cache_hits', 'llm_calls', 'random_answers', 'submit_ok', 'submit_fail')))
                     answered_all = result.get('questions', 0) > 0 and result.get('submit_ok', 0) == result.get('questions') and not result.get('submit_fail')
                     ok = answered_all and Work(job['media'], h.user.headers, job['defaults'], h.course_id).do_finish()
-                    self.result(job, 'succeeded' if ok else 'blocked', '测验任务点已确认' if ok else '测验有未作答题目或平台未确认完成，请核对')
+                    self.result(job, 'succeeded' if ok else 'blocked',
+                                '测验任务点已确认' if ok else self._quiz_blocked_reason(result))
                 except Exception as exc:
                     self.result(job, 'failed', f'测验处理失败：{exc}')
         if h.ui:

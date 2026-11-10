@@ -253,6 +253,7 @@ class DealVideo:
         try:
             live_status = live.get_status()
             if not live_status:
+                live.last_error = '直播状态读取失败，请在学习通核对这场直播是否仍在进行'
                 log.error(f"直播'{live.name}'状态获取失败")
                 return False
 
@@ -261,13 +262,18 @@ class DealVideo:
             duration = data.get('duration') if data else None
 
             if duration is None or duration <= 0:
-                log.error(f"直播'{live.name}'时长获取失败或无效")
+                # 未开播/已结束的直播没有可刷时长，不是程序故障
+                live.last_error = '直播尚未开播或已经结束，没有可观看时长'
+                live.skipped = True
+                log.warning(f"直播'{live.name}'没有可观看时长，跳过")
                 return False
 
             _dis = (duration + 59) // 60
             for i in range(int(_dis)):
                 log.info(f"'{live.name}' 当前刷取时长{i + 1}分钟, 总时长{_dis}分钟")
                 if not live.do_finish():
+                    if not live.last_error:
+                        live.last_error = f'第 {i + 1} 分钟观看时长未被平台接受'
                     log.error(f"直播'{live.name}'第{i + 1}分钟上报失败")
                     return False
                 runtime.emit("media_progress", f"直播'{live.name}'进度上报", stage="video", payload={
@@ -280,9 +286,11 @@ class DealVideo:
 
             return True
         except AntispiderException:
+            live.last_error = '直播时长上报被平台验证拦截，请在学习通完成验证后重试'
             log.error(f"直播'{live.name}'因反爬虫验证失败，刷取中断")
             return False
         except Exception as e:
+            live.last_error = f'直播处理异常：{e}'
             log.error(f"直播'{live.name}'刷取异常: {e}")
             return False
 
@@ -345,6 +353,7 @@ class DealVideo:
                 task = futures[future]
                 video_name = task["video"].name or "未命名"
                 finished += 1
+                skipped = False
                 try:
                     # as_completed 产出的 future 已经结束，此处不再伪装无效的超时控制
                     result = future.result()
@@ -352,7 +361,10 @@ class DealVideo:
                         success += 1
                         self.log.success(f"  [OK] {video_name}")
                     else:
-                        failed += 1
+                        # 用 is True 判断：Mock 对象会凭空长出任何属性，bool() 会误判为跳过
+                        skipped = getattr(task['video'], 'skipped', False) is True
+                        if not skipped:
+                            failed += 1
                 except Exception as e:
                     failed += 1
                     task['video'].last_error = f'视频处理异常：{e}'
@@ -360,11 +372,13 @@ class DealVideo:
                 reason = getattr(task['video'], 'last_error', '')
                 if not isinstance(reason, str) or not reason:
                     reason = '平台尚未确认视频任务点，请在任务详情核对播放结果'
-                runtime.emit('work_result', '播放完成' if result else f'{video_name}：{reason}',
-                             level='info' if result else 'warning', stage='video',
+                status = 'succeeded' if result else ('skipped' if skipped else 'failed')
+                detail = '播放完成' if result else f'{video_name}：{reason}'
+                runtime.emit('work_result', detail,
+                             level='info' if status != 'failed' else 'warning', stage='video',
                              payload={'id': self.unit_id(task['video']), 'name': video_name,
                                       'kind': 'video', 'reason': '' if result else reason,
-                                      'status': 'succeeded' if result else 'failed'})
+                                      'status': status})
                 runtime.emit("media_progress", "视频批量刷取进度", stage="video", payload={
                     "current": finished,
                     "total": total,

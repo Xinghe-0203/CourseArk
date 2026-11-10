@@ -55,6 +55,28 @@ Electron ── Python runtime ── FastAPI ── Vue 页面
 - 题目容器不能用 `div.TiMu`（命中的是整页外壳，会把「举报」和课程标题当成题干）。
 - 题干兼容两代结构：`h3.mark_name` 与 `.Zy_TItle > .fontLabel`，需剥离题号与题型标记。
 
+### 提交失败的四类成因（v2.5.0 实机排查）
+
+```text
+答不全 → answerwqbid 只写已作答题号 → 平台「无效的参数：code-2」
+   ├─ 主观题被页面标成单选题且无 li.option → 曾直接判 unreadable（已按 textarea/填空数改判）
+   └─ 0 题可答时整段跳过提交 → 任务 blocked
+api/work 只回空壳 → 解析 0 题 → 回退 doHomeWorkNew 详情页再解析
+直播 saveTimePc 回 @fail → Media 基类只保留 UA，心跳缺 Referer
+liveinfo 无时长 → 未开播/已结束，记 skipped 而不是 failed
+```
+
+- `answerwqbid` 必须是**页面全部题号**（`page_question_ids` 从 `answertype*/tiankongsize*`
+  控件名反推，退而 `answer*`），只写已作答题号会被判 code-2；题号正则用 `\d+`，
+  不能假设最少位数（`answerEditor<qid><n>` 末尾还有空序号）。
+- 判「选择题未解析出选项」之前先看作答控件：有 `textarea` / `contenteditable`
+  就按填空题（有 `tiankongsize`）或简答题处理，否则整道题会被丢掉。
+- `api/work` 无题时 `_fetch_questions_from_page` 再取一次 `mooc-ans/work/doHomeWorkNew`。
+- `Media` 基类只保留 `User-Agent`，需要 Referer 的接口必须自己补
+  （`_do_simple_job_finish`、`Live.do_finish` 都是这个惯例）。
+- 未开播/已结束的直播记 `skipped`：`Live.skipped` 用 `is True` 判断
+  （Mock 对象会凭空长出属性，`bool()` 会误判成跳过）。
+
 ## 考试链路（v2.2）
 
 ```text

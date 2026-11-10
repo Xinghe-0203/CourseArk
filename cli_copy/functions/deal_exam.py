@@ -43,6 +43,8 @@ QUESTION_TYPE_REVERSE = {v: k for k, v in QUESTION_TYPE_MAP.items()}
 
 SUBMIT_URL = "https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNewWeb"
 WORK_API_URL = "https://mooc1.chaoxing.com/mooc-ans/api/work"
+# 作业详情页：api/work 只回空壳时，题目仍渲染在这个文档里
+WORK_PAGE_URL = "https://mooc1.chaoxing.com/mooc-ans/work/doHomeWorkNew"
 
 
 def job_id_from_work(work_id: str) -> str:
@@ -260,13 +262,17 @@ class DealExam:
                            page_form: dict = None, page_url: str = "",
                            kind: str = "作业") -> dict:
         """共享的答题与提交流程（章节测验、独立作业与考试复用）"""
-        self.log.info(f"[答题] '{media_name}' 共 {len(questions)} 道题，开始答题...")
+        if questions:
+            self.log.info(f"[答题] '{media_name}' 共 {len(questions)} 道题，开始答题...")
+        else:
+            self.log.warning(f"[答题] '{media_name}' 平台没有返回题目内容，本题无法作答")
         self.active_media_name = media_name
         self.active_kind = kind
 
         total = len(questions)
         counters = {"cache": 0, "llm": 0, "random": 0}
         answers_by_pos: list[dict | None] = [None] * total
+        self.submit_error = ""
 
         def _record(pos: int, ans: dict | None):
             """记录一题结果并发该题的实时事件（进度 + 逐题明细 + 统计）。"""
@@ -327,6 +333,9 @@ class DealExam:
         answered = [a for a in answers_by_pos if a is not None]
         cache_hits, llm_calls, random_answers = (counters["cache"], counters["llm"],
                                                  counters["random"])
+        # 页面题目全集：提交时 answerwqbid 必须是「全部题号」，见 build_submission
+        page_qids = [str(q.get("question_id")) for q in questions if q.get("question_id")]
+        unreadable_count = sum(1 for q in questions if q.get("unreadable"))
 
         # 提交答案：无题目ID的备用解析结果不能构造有效表单
         submit_ok = 0
@@ -344,7 +353,7 @@ class DealExam:
             if self.auto_submit and submittable:
                 ok, fail = self._submit_answers(
                     work_id, submittable, defaults, jobid, enc, ktoken, hidden_fields,
-                    page_form=page_form, page_url=page_url,
+                    page_form=page_form, page_url=page_url, page_qids=page_qids,
                 )
                 submit_ok += ok
                 submit_fail += fail
@@ -366,6 +375,14 @@ class DealExam:
                 self._save_submitted_answers(submittable)
             elif self.auto_submit:
                 self.log.error(f"  [{media_name}] 答题提交失败")
+        elif self.auto_submit and questions:
+            self.log.warning(
+                f"  [{media_name}] {len(questions)} 道题均未获得答案，未发起提交"
+                f"（{unreadable_count} 道题题干或选项未能识别）")
+
+        # 提交结果事件对「有答案」与「一题都没答」两条路径都要发，
+        # 否则任务详情里看不到该测验的提交结论
+        if self.auto_submit and questions:
             runtime.emit("exam_stats", "提交结果", stage="exam", payload={
                 "media": media_name,
                 "questions": len(questions),
@@ -380,6 +397,8 @@ class DealExam:
             "random_answers": random_answers,
             "submit_ok": submit_ok,
             "submit_fail": submit_fail,
+            "unreadable": unreadable_count,
+            "submit_error": getattr(self, "submit_error", ""),
         }
 
     def _emit_answer_result(self, question: dict, answer: dict | None, index: int,
@@ -509,7 +528,52 @@ class DealExam:
         if ktoken:
             params["ktoken"] = ktoken
 
-        return self._try_fetch_questions_via_api(params)
+        result = self._try_fetch_questions_via_api(params)
+        if result and result[0]:
+            return result
+        # api/work 有时只回一个不含题目的空壳（实测「共 0 道题」后整门课被判
+        # 未完成，2026-11 实机日志），此时退回作业详情页直接解析题目。
+        page = self._fetch_questions_from_page(work_id, defaults, enc, ktoken)
+        if page and page[0]:
+            logger.debug(f"接口未返回题目，改用作业详情页解析到 {len(page[0])} 道题")
+            return page
+        return result
+
+    def _fetch_questions_from_page(self, work_id: str, defaults: dict,
+                                   enc: str | None = None,
+                                   ktoken: str | None = None):
+        """从 doHomeWorkNew 详情页解析题目（api/work 返回空壳时的兜底）。"""
+        query = {
+            "workId": work_id,
+            "courseid": self.course_id,
+            "clazzid": defaults.get("clazzId", self.class_id),
+            "knowledgeid": defaults.get("knowledgeid", ""),
+            "cpi": self.cpi, "ut": "s", "mooc2": "1",
+        }
+        if enc:
+            query["enc"] = enc
+        if ktoken:
+            query["ktoken"] = ktoken
+        url = f"{WORK_PAGE_URL}?{urlencode(query)}"
+        try:
+            rsp = doGet(url=url, headers=self.headers)
+        except Exception as e:
+            logger.debug(f"作业详情页读取失败: {e}")
+            return None
+        if not rsp:
+            return None
+        try:
+            decoded = self.font_decoder.decode_page(rsp)
+            questions = self._parse_questions_from_html(decoded)
+            if not questions:
+                logger.warning(f"作业详情页同样没有解析到题目（返回 {len(decoded)} 字符）")
+                return None
+            hidden = self._extract_form_hidden_fields(decoded)
+            form = work_form.parse_form(decoded, base_url=url)
+            return (questions, hidden, form)
+        except Exception as e:
+            logger.debug(f"作业详情页解析失败: {e}")
+            return None
 
     def _find_enc(self, jobid: str) -> str | None:
         """查找作业的enc加密参数"""
@@ -574,6 +638,8 @@ class DealExam:
             decoded = self.font_decoder.decode_page(rsp)
             hidden = self._extract_form_hidden_fields(decoded)
             questions = self._parse_questions_from_html(decoded)
+            if not questions:
+                logger.warning(f"作业接口没有返回题目（{len(decoded)} 字符），将改用作业详情页")
             # 相对 action 的解析基准：这份 HTML 实际渲染在 doHomeWorkNew 文档里
             #（浏览器端表单按该地址解析相对 action），不能按域名根解析。
             base_url = (f"https://mooc1.chaoxing.com/mooc-ans/work/doHomeWorkNew?"
@@ -1073,7 +1139,7 @@ class DealExam:
     def _submit_answers(self, work_id: str, answered: list[dict], defaults: dict,
                         jobid: str, enc: str | None, ktoken: str | None,
                         hidden_fields: dict = None, page_form: dict = None,
-                        page_url: str = "") -> tuple[int, int]:
+                        page_url: str = "", page_qids: list = None) -> tuple[int, int]:
         """提交答案到服务器。
 
         学习通现行页面把提交端点与令牌写在页面 form 的 action 查询串里
@@ -1083,7 +1149,8 @@ class DealExam:
         self.log.info(f"  提交 {len(answered)} 道题的答案...")
 
         if page_form and page_form.get("found") and page_form.get("controls"):
-            submit_url, form_data = work_form.build_submission(page_form, answered)
+            submit_url, form_data = work_form.build_submission(
+                page_form, answered, fallback_qids=page_qids)
             logger.debug(f"按页面表单提交: {submit_url}")
         else:
             submit_url, form_data = self._legacy_submission(
@@ -1107,13 +1174,16 @@ class DealExam:
             ready, reason = self._check_submit_ready()
             if not ready:
                 self.log.error(f"  提交前校验未通过: {reason}")
+                self.submit_error = f"提交前校验未通过：{reason}"
                 return (0, len(answered))
             rsp = self._post_submission(url=submit_url, headers=_headers, data=form_data)
             if not rsp:
                 self.log.error("  提交失败: 无响应")
+                self.submit_error = "平台未返回响应"
                 return (0, len(answered))
             if 'antispider' in str(rsp).lower() or '<html' in str(rsp).lower():
                 self.log.error("  提交失败: 触发反爬虫验证页面")
+                self.submit_error = "触发反爬虫验证，请在网页端手动提交"
                 return (0, len(answered))
             try:
                 result = json.loads(rsp)
@@ -1124,12 +1194,15 @@ class DealExam:
                 else:
                     msg = result.get('msg', '未知错误')
                     self.log.error(f"  提交失败! {msg}")
+                    self.submit_error = f"平台拒绝提交：{msg}"
                     return (0, len(answered))
             except (json.JSONDecodeError, TypeError):
                 self.log.warning(f"  提交响应非JSON: {rsp[:100]}")
+                self.submit_error = "平台返回内容无法解析，可能是登录状态失效"
                 return (0, len(answered))
         except Exception as e:
             self.log.error(f"  提交异常: {e}")
+            self.submit_error = f"提交请求异常：{e}"
             return (0, len(answered))
 
 

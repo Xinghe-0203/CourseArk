@@ -10,6 +10,91 @@
 
 ---
 
+## v2.5.0 · 提交失败排查与修复（答题 / 直播）
+
+> 起因：用户反馈「现在很多科目提交失败了」。逐条回放实机日志后定位到四类互不相干的
+> 缺陷——提交题号集合不全（code-2）、主观题被页面标成单选题而被判不可读、作业接口
+> 返回空壳时整段放弃、直播心跳缺 Referer 且未开播被记成失败。四类都已修复并补回归测试。
+
+### 一、`answerwqbid` 只写已作答题号 → 平台回「无效的参数：code-2」
+
+- 现象：`电工电子技术` 6 个章节测验、41 题全部 `提交失败! 无效的参数：code-2！`；
+  `2.9 章节测验` 识别 10 题只答出 3 题，`3.7 / 6.13 / 9.7 / 10.7 / 11.13` 各少 1 题。
+- 全库统计（`task_events` 里 `exam_stats` 的 `提交结果`）：**全题成功 25 次、全失败 35 次、
+  部分成功 0 次** —— 只要答出的题数少于页面题数，提交必被拒。
+- 根因：`cli_copy/core/work_form.py` 的 `build_submission` 把 `answerwqbid` 拼成
+  「**已作答**题号 + 尾逗号」，而页面 `ready2Submit()` 填的是「**全部**题号 + 尾逗号」
+  （`docs/research-github.md` 抓包与 SuperAutoStudy `Decode.java:331-336` 均如此，
+  `docs/architecture.md` 与旧 CHANGELOG 也一直写着「全部题号」）。
+- 修法：新增 `page_question_ids(controls)`，从页面控件名反推全部题号
+  （优先 `answertype*/tiankongsize*`，退而 `answer*`，保持页面顺序去重），
+  `build_submission` 改为「页面全部题号 → 已作答补充 → `fallback_qids`」；
+  `deal_exam._submit_answers` 新增 `page_qids` 参数，把本页题号顺序传下去。
+- 注意：题号正则不能用 `\d{6,}`（真实 qid 只有 3 位，且 `answerEditor<qid><n>`
+  末尾还有空序号），统一用 `\d+`。
+
+### 二、主观题被页面标成「单选题」→ 判不可读 → 题目答不全
+
+- 现象：`液压与气动传动` 的 `1.1 液压传动工作原理与系统组成` 10 题全部
+  `status: unreadable`、`note: 选择题未解析出选项`，其中题干是
+  「液压系统由哪几部分组成？各部分的作用是什么？」——明明是问答题。
+- 根因：`cli_copy/core/work_form.py` 的 `parse_questions` 只看题型文字与选项，
+  页面把主观题标成 `typename="单选题"` 且无 `li.option` 时直接判不可读，
+  整道题被丢弃，进而题目答不全（触发上面的 code-2），或 0 题可答时连提交都不发。
+- 修法：判不可读前先看有没有作答控件——有 `textarea` / `contenteditable` 就按
+  「填空题（有 `tiankongsize`）」或「简答题」处理；只有既无选项也无输入框时才判不可读。
+
+### 三、`api/work` 返回空壳 → 整门课被判未完成
+
+- 现象：`机械制造工艺`（`1.6 / 4.4 / 4.7`）、`国家安全教育`（`3.1.2`）的作业日志只有
+  `[答题] '…' 共 0 道题，开始答题...` 一行，随后 `测验有未作答题目或平台未确认完成`。
+- 根因：`api/work` 对这些作业只回一个不含题目节点的空壳 HTML，解析结果为空后
+  提交段直接跳过，`course_execution` 判 `blocked`。
+- 修法：`_fetch_work_questions` 在接口无题时回退到新方法 `_fetch_questions_from_page`
+  （GET `mooc-ans/work/doHomeWorkNew`，同样过字体解码、隐藏域与表单解析），
+  并把 0 题时的日志从 `info` 改成 `warning`「平台没有返回题目内容，本题无法作答」。
+
+### 四、直播：心跳缺 Referer，未开播的直播被记成失败
+
+- 现象：`新编大学生军事课教程（2019新大纲）` 10 个直播任务点全部 `failed`——
+  7 个 `saveTimePc` 一律回 `@fail`（全库 `@success` 0 次），3 个在 `liveinfo` 阶段
+  `duration` 就是 `None/<=0`（未开播或已结束）。
+- 根因：`cli_copy/models/media.py` 的基类只保留 `User-Agent`，Referer 被丢掉；
+  `live.do_finish()` 因此只带 UA 打 `zhibo.chaoxing.com/saveTimePc`（跨域 GET）。
+- 修法：`do_finish()` 显式补 `Referer: mooc1.chaoxing.com/ananas/modules/live/index.html`、
+  `X-Requested-With`、`Accept`；`liveinfo` 无时长时记 `skipped`（新增 `Live.skipped`），
+  `batch_run_videos` 不再把它算进 `failed`，`work_result` 用 `info` 级 `skipped` 上报
+  （判断必须写 `is True`，Mock 对象会凭空长出属性，`bool()` 会误判）。
+
+### 五、失败原因不再是同一句「部分内容未完成」
+
+- `cli_copy/functions/course_execution.py` 新增 `_quiz_blocked_reason(result)`，
+  按「平台拒绝 / 题干选项未识别 / 部分题未被接受 / 平台未确认」四档给出具体说明；
+  `deal_exam` 在六个提交失败分支各写 `self.submit_error`（提交前校验未通过、
+  平台未返回响应、触发反爬、平台拒绝提交（附 msg）、返回内容无法解析、请求异常），
+  并把 `unreadable` 题数一并返回，任务详情里能直接看到是「哪一类」失败。
+
+### 六、验证
+
+- `python -m pytest tests cli_copy\tests -q` → **569 passed, 1 skipped**（本轮前 559）。
+- 新增回归测试：`tests/test_work_form.py` 3 个（部分作答仍提交全部题号、
+  `page_question_ids` 顺序、主观题误标单选可作答）、
+  `cli_copy/tests/test_core_behaviors.py` 1 个（部分作答保留全部页面题号）、
+  `tests/test_modernization.py` 1 个（`api/work` 空壳回退详情页）、
+  `tests/test_live_heartbeat.py` 6 个（Referer、拒绝原因、空响应、缺 streamName、
+  无时长记 skipped、批量统计不算失败）。
+
+### 改动文件（提交失败排查，摘要）
+
+| 文件 | 改动 |
+| --- | --- |
+| `cli_copy/core/work_form.py` | `page_question_ids` 新增；`build_submission` 用全部题号；主观题按填空/简答处理 |
+| `cli_copy/functions/deal_exam.py` | 传 `page_qids`；六个失败分支写 `submit_error`；`api/work` 空壳回退详情页 |
+| `cli_copy/functions/course_execution.py` | `_quiz_blocked_reason` 说清 blocked 原因 |
+| `cli_copy/media/live.py` | 心跳补 Referer；`last_error` / `skipped` |
+| `cli_copy/functions/deal_video.py` | 未开播直播记 `skipped`，不算失败 |
+| `tests/`、`cli_copy/tests/` | 12 个新回归用例 |
+
 ## v2.5.0 · 全面检查与重构、应用内考试验证窗
 
 > 本轮：后端结构重构（路由按域拆分 + 子进程样板合并）、前端组件体系收敛

@@ -533,6 +533,47 @@ def test_question_fetch_uses_ajax_headers_and_plain_font_template(monkeypatch):
     assert form is not None
 
 
+def test_work_question_fetch_falls_back_to_detail_page_when_api_returns_empty(monkeypatch):
+    """回归：api/work 只回不含题目的空壳时，改从 doHomeWorkNew 详情页取题。
+
+    2026-11 实机日志：机械制造工艺 / 国家安全教育的作业在 api/work 里拿到
+    0 道题，随后整门课被判「测验有未作答题目或平台未确认完成」而失败。
+    """
+    from functions.deal_exam import DealExam
+    from core.font_decoder import FontDecoder
+
+    exam = DealExam.__new__(DealExam)
+    exam.headers = {'User-Agent': 'test-agent'}
+    exam.course_id = '266056498'
+    exam.class_id = '151893764'
+    exam.cpi = '496369168'
+    exam.font_decoder = FontDecoder()
+
+    page = ('<form action="/mooc-ans/work/addStudentWorkNewWeb?_classId=151893764">'
+            '<div class="TiMu"><div class="Zy_TItle">【判断】Flash可以制作动画</div>'
+            '<input name="answertype12345"/></div></form>')
+    calls = []
+
+    def fake_get(url=None, headers=None, **_kwargs):
+        calls.append(url)
+        if '/api/work' in url:
+            return '<html><body>接口没有返回题目</body></html>'
+        return page
+
+    monkeypatch.setattr('functions.deal_exam.doGet', fake_get)
+
+    questions, _hidden, form = exam._fetch_work_questions(
+        '21a1d2be4e41424c83a1a22ec5bd5900', 'work-21a1d2be4e41424c83a1a22ec5bd5900',
+        {'clazzId': '151893764', 'knowledgeid': '1219259957'})
+
+    assert len(calls) == 2
+    assert '/mooc-ans/api/work' in calls[0]
+    assert '/mooc-ans/work/doHomeWorkNew' in calls[1]
+    assert 'workId=21a1d2be4e41424c83a1a22ec5bd5900' in calls[1]
+    assert len(questions) == 1
+    assert form is not None and form['found']
+
+
 @pytest.mark.parametrize('worker_name', ['sync_runner', 'session_runner'])
 def test_sync_and_session_logs_and_public_sse_redact_secrets(worker_name):
     import importlib

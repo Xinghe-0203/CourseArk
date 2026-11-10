@@ -341,6 +341,7 @@ def parse_questions(html: str) -> list:
             if codes:
                 type_code = str(codes[0].get("value") or "")
 
+        page_type_code = type_code
         q_type = resolve_type(q_el.get("typename") or "", type_code)
         if not type_code:
             type_code = TYPE_TO_CODE.get(q_type, "0")
@@ -363,8 +364,20 @@ def parse_questions(html: str) -> list:
 
         kind = _kind_of(q_type, type_code)
         if kind == KIND_CHOICE and not options:
-            unreadable = True
-            reasons.append("选择题未解析出选项")
+            # 页面常把主观题标成单选题（typename 缺失、answertype 缺省成 0）：
+            # 这类题没有选项，但作答区是填空框/文本框，能正常作答。
+            # 直接判「选择题未解析出选项」会把整道题丢掉，实测导致 35 个测验
+            # 因题目答不全被平台判 code-2（2026-11 实机日志）。
+            has_text_area = bool(q_el.xpath(".//textarea")) or bool(
+                q_el.xpath(".//*[@contenteditable='true']"))
+            if blank_count or has_text_area:
+                kind = KIND_BLANK if blank_count else KIND_TEXT
+                q_type = "填空题" if kind == KIND_BLANK else "简答题"
+                if not page_type_code:
+                    type_code = TYPE_TO_CODE.get(q_type, type_code)
+            else:
+                unreadable = True
+                reasons.append("选择题未解析出选项")
 
         questions.append({
             "question_id": qid,
@@ -511,21 +524,56 @@ def split_blanks(answer: str, blank_count: int) -> list:
     return parts[:blank_count]
 
 
+# 题号只从题型/填空数量这类「一题一个」的控件名里取：
+# answerEditor<qid><n> 末尾还有空序号，无法与题号区分。
+_TYPE_CONTROL_RE = re.compile(r"^(?:answertype|tiankongsize)(\d+)$")
+_ANSWER_CONTROL_RE = re.compile(r"^answer(\d+)$")
+
+
+def page_question_ids(controls: dict) -> list:
+    """按表单控件名收集页面上的全部题号（保持页面顺序、去重）。"""
+    qids = []
+    seen = set()
+    for pattern in (_TYPE_CONTROL_RE, _ANSWER_CONTROL_RE):
+        for name in controls or {}:
+            match = pattern.match(str(name or ""))
+            if not match:
+                continue
+            qid = match.group(1)
+            if qid not in seen:
+                seen.add(qid)
+                qids.append(qid)
+        if qids:
+            return qids
+    return qids
+
+
 def build_submission(form: dict, answered: list, fallback_qids: list = None) -> tuple:
     """把答案写回表单控件，返回 (url, body)。
 
     Args:
         form: parse_form() 的结果
         answered: 答题结果列表（含 question_id/question_type/answer/kind/blank_count）
-        fallback_qids: 表单缺失 answerwqbid 时的题目 ID 顺序
+        fallback_qids: 页面控件里读不到题号时的题目 ID 顺序
+
+    `answerwqbid` 必须与页面题目集合一致：页面 `ready2Submit()` 会把它填成
+    「全部题号 + 尾逗号」，浏览器即使有题没答也照样提交全部题号。此前只写
+    已作答题号，服务端判定参数不完整，返回「无效的参数：code-2」——2026-11
+    实机日志里 35 个测验全数如此，而把题目全部答完的 25 个测验一次都没出现
+    该错误，也没有任何一次「部分作答」被接受。
     """
     controls = dict(form.get("controls") or {})
-    qids = [str(item.get("question_id")) for item in answered if item.get("question_id")]
+    qids = page_question_ids(controls)
+    for qid in [str(item.get("question_id")) for item in answered if item.get("question_id")]:
+        if qid not in qids:
+            qids.append(qid)
+    for qid in (fallback_qids or []):
+        qid = str(qid)
+        if qid not in qids:
+            qids.append(qid)
 
     if qids:
         controls["answerwqbid"] = ",".join(qids) + ","
-    elif fallback_qids:
-        controls["answerwqbid"] = ",".join(str(q) for q in fallback_qids) + ","
 
     for item in answered:
         qid = str(item.get("question_id") or "")

@@ -18,6 +18,12 @@ class Live(Media):
     def __init__(self, attachment: dict, headers: dict, defaults: dict, course_id: str):
         super().__init__(attachment, headers, defaults, course_id)
         self.name = (self.attachment.get("property") or {}).get("title", "")
+        # 失败原因：批量执行时由 deal_video 读出来写进任务详情，
+        # 避免所有失败都落到「平台尚未确认视频任务点」这句笼统文案上。
+        self.last_error = ""
+        # 未开播/已结束的直播没有可刷时长，属于「跳过」而不是「失败」，
+        # 否则整门课会被判成 failed。
+        self.skipped = False
 
     def do_finish(self) -> bool:
         """完成直播任务点"""
@@ -25,6 +31,7 @@ class Live(Media):
         _stream_name = _property.get("streamName")
         _vdoid = _property.get("vdoid")
         if not _stream_name or not _vdoid:
+            self.last_error = "直播任务缺少 streamName 或 vdoid，无法上报观看时长"
             logger.warning("直播任务缺少streamName或vdoid")
             return False
 
@@ -33,12 +40,26 @@ class Live(Media):
                 f"&userId={self.defaults.get('userid')}"
                 f"&isStart=0&t={int(time.time() * 1000)}"
                 f"&courseId={self.course_id}")
-        _rsp = doGet(url=_url, headers=self.headers)
+        # Media 基类只保留 User-Agent，Referer/Origin 会被丢掉；
+        # 直播心跳是跨域 GET（mooc1 页面 → zhibo.chaoxing.com），
+        # 缺 Referer 时平台直接回 @fail，所以这里显式补齐。
+        _headers = {
+            "Accept": "*/*",
+            "Referer": "https://mooc1.chaoxing.com/ananas/modules/live/index.html?v=2022-1214-1139",
+            "X-Requested-With": "XMLHttpRequest",
+        }
+        _headers.update(self.headers)
+        _rsp = doGet(url=_url, headers=_headers)
         logger.debug(_rsp)
         if not _rsp:
+            self.last_error = "直播时长上报没有返回内容，可能是登录状态失效"
             logger.warning(f"直播'{self.name}'完成请求返回空响应")
             return False
-        return _rsp == "@success"
+        if _rsp.strip() == "@success":
+            self.last_error = ""
+            return True
+        self.last_error = f"平台拒绝直播心跳（{_rsp.strip()[:40]}），直播可能已结束或需要在网页端观看"
+        return False
 
     def get_status(self) -> dict | None:
         """获取直播状态信息"""

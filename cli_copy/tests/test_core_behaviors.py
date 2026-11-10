@@ -712,6 +712,73 @@ class CoreBehaviorTests(unittest.TestCase):
                          "6eaca1bf84b6b650bc4b09d8f8805f1e")
         self.assertIn("mooc-ans/mooc2/work/task", captured["headers"]["Referer"])
 
+    def test_submit_partial_answers_keeps_all_page_qids(self):
+        """回归：只答出一部分题时，answerwqbid 仍须是页面全部题号。
+
+        2026-11 实机日志：10 题只答出 3 题就提交，平台回「无效的参数：code-2！」；
+        把题目全部答完的测验从未报该错，全库也没有任何一次「部分作答」被接受。
+        页面 ready2Submit() 是把 #questionIds 填成全部题号再提交的。
+        """
+        import json as _json
+        from unittest.mock import patch
+
+        from core.config import Config
+
+        exam = self._make_exam()
+        captured = {}
+
+        def fake_post(url, headers=None, data=None, if_full_back=False):
+            captured["data"] = data
+            return _json.dumps({"status": True})
+
+        page_form = {
+            "found": True,
+            "action": ("https://mooc1.chaoxing.com/mooc-ans/work/addStudentWorkNewWeb"
+                       "?_classId=151893764&courseid=266056498&token=2c292aeb00e3f15e"
+                       "&totalQuestionNum=6eaca1bf84b6b650bc4b09d8f8805f1e&wMicroNodeId="),
+            "method": "post",
+            "controls": {
+                "courseId": "266056498", "classId": "151893764",
+                "cpi": "496369168", "workRelationId": "55459339",
+                "answertype111": "0", "answer111": "",
+                "answertype222": "0", "answer222": "",
+                "answertype333": "0", "answer333": "",
+                "answerwqbid": "",
+            },
+        }
+
+        old_data = Config._data
+        Config._data = Config._default_config()
+        try:
+            with patch("functions.deal_exam.doPost", side_effect=fake_post), \
+                 patch("functions.deal_exam.doGet", return_value=""), \
+                 patch("functions.deal_exam.runtime.sleep", lambda *_: None):
+                ok, fail = exam._submit_answers(
+                    work_id="55459339",
+                    answered=[{
+                        "question_id": "222", "question_type": "单选题",
+                        "answer": "A", "question_text": "题", "options": [],
+                        "kind": "choice", "answer_type": "0",
+                    }],
+                    defaults={"clazzId": "151893764", "knowledgeid": "1219259997"},
+                    jobid="work-55459339",
+                    enc="2c292aeb00e3f15e16910622fc0070cd",
+                    ktoken=None,
+                    hidden_fields={},
+                    page_form=page_form,
+                    page_url=("https://mooc1.chaoxing.com/mooc-ans/mooc2/work/task"
+                              "?courseId=266056498&workId=55459339"),
+                    page_qids=["111", "222", "333"],
+                )
+        finally:
+            Config._data = old_data
+
+        self.assertEqual((ok, fail), (1, 0))
+        body = captured["data"]
+        # 题号全集来自页面控件，未作答的 111/333 也在里面
+        self.assertEqual(body["answerwqbid"], "111,222,333,")
+        self.assertEqual(body["answer222"], "A")
+
     def test_submit_falls_back_to_legacy_endpoint(self):
         """页面拿不到表单时，回退到兼容端点，参数全部放表单体。"""
         import json as _json
