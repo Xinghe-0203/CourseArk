@@ -36,7 +36,7 @@
   缓存可在「答题缓存」页搜索、导入、导出、单条删除或一键清空。
 - 任务控制：按账号或跨账号暂停、继续、停止；查看任务进度、逐题明细与历史。
 - 诊断日志便于定位问题：任务详情里可按分类与级别筛选，也可下载完整日志。
-- 提交失败修复（v2.5.0）：按实机日志修掉四类「科目提交失败」。① `answerwqbid`
+- 提交失败修复（v2.5.1）：按实机日志修掉四类「科目提交失败」。① `answerwqbid`
   只写已作答题号，而页面 `ready2Submit()` 填的是**全部题号**——只要少答一题，
   平台就回「无效的参数：code-2」（全库统计：全题成功 25 次、全失败 35 次、
   部分成功 0 次）。现改为从页面控件反推全部题号。② 主观题被页面标成「单选题」
@@ -45,7 +45,7 @@
   「共 0 道题」）回退到 `doHomeWorkNew` 详情页再解析。④ 直播心跳 `saveTimePc`
   缺 Referer 一律回 `@fail`，未开播的直播也不再记成失败而是 `skipped`。
   任务详情的失败说明同时从统一的「部分内容未完成」改为具体原因。详见
-  [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 的「提交失败排查与修复（v2.5.0）」一节。
+  [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 的「提交失败排查与修复（v2.5.1）」一节。
 - 留白与行高修正（v2.5.0）：实机截图里账号竖列「刘畅」与「23 门 · 1071 / 1206 任务点」、
   课程行「5 / 24」与「待完成 19」字面压在一起。根因是按钮基类的 `line-height:1` 被内部多行文本
   继承（汉字字身约 1.15em 超出 1em 行盒），已补全局兜底 `button b/strong/small { line-height:1.45 }`
@@ -121,8 +121,8 @@ python run.py
 
 在 [GitHub Releases](https://github.com/Xinghe-0203/CourseArk/releases) 下载：
 
-- `CourseArk-2.5.0-Setup.exe`：Windows x64 安装版。
-- `CourseArk-2.5.0-Portable.exe`：Windows x64 便携版。
+- `CourseArk-2.5.1-Setup.exe`：Windows x64 安装版。
+- `CourseArk-2.5.1-Portable.exe`：Windows x64 便携版。
 
 桌面版内置 Python 运行时，不要求最终用户安装 Python 或 Node.js。关闭应用时会停止本机服务和 Worker。为兼容现有安装，桌面数据目录继续使用 `%APPDATA%\AutoCxWebUI`；安装包不包含账号、配置、答题缓存或任务数据库。
 
@@ -280,7 +280,7 @@ python tools/ui_check.py --serve --port 8899
 | 文档 | 内容 |
 | --- | --- |
 | [`docs/architecture.md`](docs/architecture.md) | 组件划分、作业/考试/同步链路、事件、前端结构与浮层规则 |
-| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | v2.1 起完整变更历史（最新 v2.5.0） |
+| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | v2.1 起完整变更历史（最新 v2.5.1） |
 | [`docs/research-exam.md`](docs/research-exam.md) | 考试协议调研（手机端 / PC 端端点、逐题提交、风控） |
 | [`docs/research-github.md`](docs/research-github.md) | 同类开源项目调研与作业协议结论 |
 

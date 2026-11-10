@@ -55,7 +55,7 @@ Electron ── Python runtime ── FastAPI ── Vue 页面
 - 题目容器不能用 `div.TiMu`（命中的是整页外壳，会把「举报」和课程标题当成题干）。
 - 题干兼容两代结构：`h3.mark_name` 与 `.Zy_TItle > .fontLabel`，需剥离题号与题型标记。
 
-### 提交失败的四类成因（v2.5.0 实机排查）
+### 提交失败的四类成因（v2.5.1 实机排查）
 
 ```text
 答不全 → answerwqbid 只写已作答题号 → 平台「无效的参数：code-2」
