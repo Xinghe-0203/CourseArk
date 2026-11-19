@@ -36,6 +36,15 @@
   缓存可在「答题缓存」页搜索、导入、导出、单条删除或一键清空。
 - 任务控制：按账号或跨账号暂停、继续、停止；查看任务进度、逐题明细与历史。
 - 诊断日志便于定位问题：任务详情里可按分类与级别筛选，也可下载完整日志。
+- 题干乱码修复（v2.5.2）：用户反馈「提交的答题内容是乱码字」，回放日志后确认**答案本身没问题**，
+  乱码在**题干与选项**——学习通的加密字体把真实汉字换成部首字形，轮廓反查只能查到部首码位，
+  于是出现 `⽤`（U+2F64）、`⻚`（U+2EDA）、`⻅`（U+2EC5）这类「看着像字、其实是部首」的字符。
+  参考表 `font_map_table.json` 里这些部首码位**没有汉字孪生**（`uni7528`「用」根本不在表里），
+  所以必须做码位归一。新增 `cli_copy/core/text_norm.py`：康熙部首与兼容表意区走 Unicode NFKC
+  （实测覆盖 214/224），部首补充区 `U+2E80–U+2EFF` 用 114 条内置表（NFKC 只覆盖 2 条，简体优先）；
+  在 `font_decoder` 的轮廓映射与位图兜底两处**解码源头**归位，题干、选项、答题缓存 key 一并干净。
+  旧题库缓存会因题干变化 miss 一次，不影响正确性。详见
+  [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 的「题干里的部首字符归位（v2.5.2）」一节。
 - 提交失败修复（v2.5.1）：按实机日志修掉四类「科目提交失败」。① `answerwqbid`
   只写已作答题号，而页面 `ready2Submit()` 填的是**全部题号**——只要少答一题，
   平台就回「无效的参数：code-2」（全库统计：全题成功 25 次、全失败 35 次、
@@ -121,8 +130,8 @@ python run.py
 
 在 [GitHub Releases](https://github.com/Xinghe-0203/CourseArk/releases) 下载：
 
-- `CourseArk-2.5.1-Setup.exe`：Windows x64 安装版。
-- `CourseArk-2.5.1-Portable.exe`：Windows x64 便携版。
+- `CourseArk-2.5.2-Setup.exe`：Windows x64 安装版。
+- `CourseArk-2.5.2-Portable.exe`：Windows x64 便携版。
 
 桌面版内置 Python 运行时，不要求最终用户安装 Python 或 Node.js。关闭应用时会停止本机服务和 Worker。为兼容现有安装，桌面数据目录继续使用 `%APPDATA%\AutoCxWebUI`；安装包不包含账号、配置、答题缓存或任务数据库。
 
@@ -280,7 +289,7 @@ python tools/ui_check.py --serve --port 8899
 | 文档 | 内容 |
 | --- | --- |
 | [`docs/architecture.md`](docs/architecture.md) | 组件划分、作业/考试/同步链路、事件、前端结构与浮层规则 |
-| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | v2.1 起完整变更历史（最新 v2.5.1） |
+| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | v2.1 起完整变更历史（最新 v2.5.2） |
 | [`docs/research-exam.md`](docs/research-exam.md) | 考试协议调研（手机端 / PC 端端点、逐题提交、风控） |
 | [`docs/research-github.md`](docs/research-github.md) | 同类开源项目调研与作业协议结论 |
 

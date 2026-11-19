@@ -32,11 +32,12 @@
 """
 
 import re
-import unicodedata
 from copy import deepcopy
 from urllib.parse import urljoin
 
 from lxml import etree
+
+from core.text_norm import normalize_radicals
 
 MOOC_HOST = "https://mooc1.chaoxing.com"
 
@@ -78,18 +79,9 @@ _TYPE_MARK_RE = re.compile(
     r"[\(（\[【]\s*(?:%s)题?\s*[\)）\]】]" % "|".join(TYPE_WORDS))
 
 
-# 字体解密会把部分汉字还原成康熙部首区（U+2F00–2FD5）或兼容表意区（U+F900–FAD9）字符；
-# 只对这两个区段做 NFKC 归位（→常规汉字），不碰全角标点等其余文本
-_RADICAL_RE = re.compile(r"[\u2F00-\u2FD5\uF900-\uFAD9]")
-
-
-def _normalize_radicals(value: str) -> str:
-    if not _RADICAL_RE.search(value):
-        return value
-    return "".join(
-        unicodedata.normalize("NFKC", ch) if _RADICAL_RE.match(ch) else ch
-        for ch in value
-    )
+# 字体解密会把部分汉字还原成部首码位（U+2F00–2FDF 康熙部首、U+2E80–U+2EFF 部首补充、
+# U+F900–U+FAD9 兼容表意）。归一逻辑集中在 core/text_norm.py，解析层只负责调用。
+_normalize_radicals = normalize_radicals
 
 
 def norm_text(value: str) -> str:

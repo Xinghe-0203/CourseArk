@@ -77,6 +77,27 @@ liveinfo 无时长 → 未开播/已结束，记 skipped 而不是 failed
 - 未开播/已结束的直播记 `skipped`：`Live.skipped` 用 `is True` 判断
   （Mock 对象会凭空长出属性，`bool()` 会误判成跳过）。
 
+### 题干里的部首码位（v2.5.2 实机排查）
+
+```text
+加密字体把真实汉字换成部首字形
+   └─ font_map_table.json 只有部首码位（uni2F64 ⽤），没有汉字孪生（uni7528 用 不在表里）
+        └─ 轮廓反查必然解出部首 → 题干/选项出现 ⽤ ⻚ ⻅ ⻮
+             ├─ 模型读起来像乱码
+             └─ 答题缓存 key（md5(题干+选项)）与正常题目对不上
+```
+
+- 归位集中在 `cli_copy/core/text_norm.py` 的 `normalize_radicals`，**幂等**：
+  `U+2F00–U+2FDF`（康熙部首）与 `U+F900–U+FAD9`（兼容表意）走 `unicodedata.normalize("NFKC", ch)`；
+  `U+2E80–U+2EFF`（部首补充）走内置 `_SUPPLEMENTAL` 表（NFKC 只覆盖 2/128，必须手工给目标字，简体优先）。
+- 归一发生在**解码源头**：`font_decoder._build_mapping_via_contour` 命中参考表后先归位，
+  位图兜底 `font_bitmap.decode_characters` 的返回值同样逐条归位；`work_form.norm_text`
+  保留同一函数的二次兜底（`_normalize_radicals = normalize_radicals`）。
+- 位图参考数据 `resource/font_ref_cx.bin`（7,027 条码位）里康熙部首 0、部首补充 0，
+  所以部首只可能来自 `font_map_table.json` 的轮廓比对，不是位图兜底。
+- `U+2F3E ⼾` 的 NFKC 结果是 `U+6236 戶`（繁体）而非简体「户」，按 Unicode 标准行为保留。
+- 题干归一后题库缓存 hash 会变，旧缓存 miss 一次即可重新积累，不影响正确性。
+
 ## 考试链路（v2.2）
 
 ```text

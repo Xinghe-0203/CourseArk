@@ -10,6 +10,70 @@
 
 ---
 
+## v2.5.2 · 题干里的部首字符归位（答题乱码）
+
+> 起因：用户反馈「我看我提交的答题内容是乱码字」。回放 11-07 与 11-10 两批实机日志后
+> 确认：提交的**答案**本身没有问题，乱码来自**题干与选项**——加密字体把真实汉字换成了
+> 部首字形，轮廓反查只能查到部首码位，于是题干里出现 `⽤`（U+2F64）、`⻚`（U+2EDA）、
+> `⻅`（U+2EC5）这类「看着像字、其实是部首」的字符。
+
+### 一、取证：乱码只在题干，不在答案
+
+- `task_events` 全库扫描（25,482 条 `message` + `payload_json`）：私用区、U+FFFD、
+  mojibake（`Ã Â â€ ï¼`）、控制字符、`\uXXXX` / `&#NNN;` 转义 —— **五类全部 0 命中**。
+- 841 条 `answer_result` 的 `answer` 字段：582 条非空答案、**0 条含异常字符**，
+  327 个非 ASCII 字符全部落在 CJK / 全角 / 中文标点区。
+- `answer` 干净的原因：`cli_copy/core/answer_validation.py` 的 `normalize_answer`
+  第一步就是 `unicodedata.normalize("NFKC", answer)`，答案侧本来就会归一。
+- 题干侧统计：`answer_result` 的 `question` 字段里 **114 条含康熙部首**、
+  **9 条含部首补充区字符**；11-07 有 119/546 条，11-10 只剩 2/295 条。
+
+### 二、根因：参考表里只有部首码位，没有汉字孪生
+
+- `cli_copy/resource/font_map_table.json`（30,884 条）是 `字形名 → 轮廓哈希` 表，
+  其中 `uni2F00–uni2FDF`（康熙部首）209 条、`uni2E80–uni2EFF`（部首补充）114 条。
+- 对每个部首码位的哈希在表内找同哈希的其他字形名：**有 CJK 孪生 0 条、无孪生 323 条**
+  —— `uni2F64`（⽤）的哈希唯一对应部首，`uni7528`（用）**根本不在表里**。
+  所以 `_load_reference_map` 按 `chr(int(glyph_name[3:], 16))` 建映射时，
+  轮廓命中必然解出部首，不是「取首个取错」。
+- `cli_copy/core/work_form.py` 早在 v2.5.0（`c2b80b4`）就有 `_normalize_radicals`，
+  但 `_RADICAL_RE` 只写了 `[\u2F00-\u2FD5\uF900-\uFAD9]`，**不含 U+2E80–U+2EFF**
+  —— 这就是 11-10 仍有 `常⻅热处理缺陷` 被判不可读的原因。
+- 位图兜底不背这个锅：`cli_copy/resource/font_ref_cx.bin`（7,027 条码位）里
+  康熙部首 0、部首补充 0、常规汉字 6,763，`core/font_bitmap.py` 只会返回常规汉字。
+
+### 三、修法：新建 `cli_copy/core/text_norm.py`，在解码源头归位
+
+- `normalize_radicals(value)`：只处理 `U+2E80–U+2EFF`、`U+2F00–U+2FDF`、`U+F900–U+FAD9`
+  三段；康熙部首与兼容表意区走 `unicodedata.normalize("NFKC", ch)`
+  （实测 `U+2F00–U+2FDF` 可映射 214/224），部首补充区走内置 `_SUPPLEMENTAL` 表
+  （114 条，NFKC 只能覆盖 2 条，必须手工给目标字，简体优先）。函数幂等。
+- `cli_copy/core/work_form.py`：删掉自己的 `_RADICAL_RE` 与函数体，
+  `_normalize_radicals = normalize_radicals` 转发；`norm_text` 调用点不变。
+- `cli_copy/core/font_decoder.py`：`_build_mapping_via_contour` 命中参考表时先
+  `normalize_radicals(...)` 再写进 `char_map`；位图兜底 `decode_characters` 的结果
+  同样逐条归位。这样题干、选项、答题缓存的 key 从源头就是干净汉字。
+
+### 四、影响与验证
+
+- 题库缓存：`core/question_bank.py` 的 hash 是 `md5(question_text + options)`，
+  题干归一后旧缓存会全部 miss 一次，重新积累即可（不影响正确性）。
+- `U+2F3E ⼾` 的 NFKC 结果是 `U+6236 戶`（繁体）而非简体「户」，按 Unicode 标准行为保留。
+- 新增 `tests/test_text_norm.py`（6 个用例）：康熙部首、部首补充区、兼容表意区、
+  纯文本原样、幂等性、以及「`parse_questions` 输出的题干与选项不含 U+2E80–U+2FDF」。
+- 全量回归：`python -m pytest tests cli_copy\tests -q` → **579 passed, 1 skipped**。
+
+### 改动文件（v2.5.2，摘要）
+
+| 文件 | 改动 |
+| --- | --- |
+| `cli_copy/core/text_norm.py` | 新增，部首码位归位（康熙部首 NFKC + 部首补充手工表） |
+| `cli_copy/core/work_form.py` | 删除本地 `_RADICAL_RE`，改为转发 `normalize_radicals` |
+| `cli_copy/core/font_decoder.py` | 轮廓映射与位图兜底的解码结果在源头归位 |
+| `tests/test_text_norm.py` | 新增 6 个用例，含题干/选项无部首的断言 |
+
+---
+
 ## v2.5.1 · 提交失败排查与修复（答题 / 直播）
 
 > 起因：用户反馈「现在很多科目提交失败了」。逐条回放实机日志后定位到四类互不相干的

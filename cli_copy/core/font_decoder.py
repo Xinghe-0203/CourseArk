@@ -20,6 +20,7 @@ from core import runtime
 from core.runtime import logger
 
 from core.paths import get_resource_path
+from core.text_norm import normalize_radicals
 
 # 模块级缓存
 _cached_ref_map = None
@@ -140,7 +141,10 @@ class FontDecoder:
             missing = used - set(char_map)
             if missing:
                 from core.font_bitmap import decode_characters
-                char_map.update(decode_characters(font_data, missing))
+                char_map.update({
+                    key: normalize_radicals(value)
+                    for key, value in decode_characters(font_data, missing).items()
+                })
         except Exception as exc:
             logger.debug(f'字体补充识别不可用: {type(exc).__name__}')
         trusted = bool(char_map)
@@ -202,7 +206,9 @@ class FontDecoder:
                 contour_hash = self._glyph_contour_hash(glyph)
                 if contour_hash and contour_hash in self._ref_map:
                     fake_char = chr(fake_codepoint)
-                    real_char = self._ref_map[contour_hash]
+                    # 参考表里存的是部首码位（uni2F64 ⽤ 等），先归位成常规汉字，
+                    # 否则题干/选项会带着 ⽤⻚⻅ 这类字符进 LLM 与答题缓存。
+                    real_char = normalize_radicals(self._ref_map[contour_hash])
                     char_map[fake_char] = real_char
             font.close()
             return char_map
