@@ -24,6 +24,7 @@ Electron ── Python runtime ── FastAPI ── Vue 页面
 - `worker/`：任务、同步与会话子进程入口。
 - `cli_copy/`：复用的 AutoChaoxingCLI 业务代码及 WebUI 适配；资源来源与许可见其 `resource/`。
 - `desktop/`：Electron 桌面壳、Windows 构建和打包冒烟检查。
+- `cli_copy/core/answer_quality.py`：题干/答案的字体加密残留检测（私用区、部首码位、mojibake、GB2312 之外的生僻字占比），供解析、作答与答题缓存共用。
 - `tools/check_work_page.py`：只读自检脚本，核对作业/考试页面解析与提交报文（不提交、不调用 AI）。
 - `app/catalog_service.py` + `worker/catalog_runner.py`：新建任务时按需读取课程作业/考试列表（子进程登录、只读 GET、SQLite 缓存 600 秒）。
 
@@ -97,6 +98,31 @@ liveinfo 无时长 → 未开播/已结束，记 skipped 而不是 failed
   所以部首只可能来自 `font_map_table.json` 的轮廓比对，不是位图兜底。
 - `U+2F3E ⼾` 的 NFKC 结果是 `U+6236 戶`（繁体）而非简体「户」，按 Unicode 标准行为保留。
 - 题干归一后题库缓存 hash 会变，旧缓存 miss 一次即可重新积累，不影响正确性。
+
+### 字体加密残留的答案拦截（v2.5.3 实机排查）
+
+```text
+字体轮廓反查失败 / 字体数据缺失
+   └─ 文本里留下「能正常显示的生僻汉字」：忑速忝忔忞忟…
+        ├─ 模型照着乱码作答 → 提交后学习通页面显示乱码答案
+        └─ 旧版本把乱码答案写进 question_cache → 后续命中一直复现
+```
+
+- `answer_quality.encoding_issues()` 识别四类风险：私用区/替换符/康熙部首/兼容表意、
+  控制字符、常见 mojibake，以及「一句里混进一批 GB2312 之外的生僻字」
+  （≥3 个且占全句汉字 ≥30%，且至少一个是 GB2312 与 Big5 都装不下的强证据）。
+  纯繁体文本两套字符集都能覆盖、`饕餮`/`魑魅魍魉` 本身在 GB2312 内，都不会误判。
+- 三层拦截：`work_form.parse_questions` 把含残留的题标记 `unreadable`；
+  `deal_exam._answerable` 再做一次闸；`answer_validation.normalize_answer` 对
+  填空题/简答题答案返回空；`utils/question_bank.py` 的 `lookup/save` 跳过异常记录。
+- WebUI 侧 `app/question_bank_manager.py` 复用同一检测：`stats` 返回 `suspicious`，
+  `search` 返回每行 `quality`，`DELETE /api/question-bank/anomalies` 批量清理
+  旧版题干（部首码位已失效）与乱码答案。清理是显式操作，Worker 命中前已会跳过，
+  不会把乱码提交到平台。
+- 题号兜底必须用 `\d+`：真实 qid 可能只有 3 位；`answerEditor<qid><n>` 末尾还有空序号，
+  不能作为题号来源。
+- 多空填空以页面 `tiankongsize<qid>` 为准；值为 `0`/空时回退到解析出的空数，
+  否则 `build_submission` 只会填第 1 空，其余留空会被平台判为未作答。
 
 ## 考试链路（v2.2）
 
@@ -237,11 +263,38 @@ Worker 通过 `runtime.emit` 写事件，`app/database.py` 落库，`app/narrati
   最近完成。原先四张等大指标卡、环形仪表与三条阶段比例条都在重复同一件事，已删除。
 - **列表用行式表格**：账号与课程、已完成、答题缓存、任务记录都是「34px 表头 + 行」，不再用大卡片；
   行内多行信息用 `small` 与 `.num` 分层次，状态统一 `.status` 胶囊。
+- **信息密度与按钮语义（v2.5.3）**：总览新增「今日」统计条（`/api/overview.today` 的
+  任务点/答题/缓存/AI/提交/并发/命中率，全零时不渲染）与「最近异常」条（`recent_events`
+  里 warning/error **按文案归并** + 次数）；调度队列每行可暂停/继续/停止/查看详情，
+  与 `app/task_model.py` 的 `TRANSITIONS` 对齐，停止走 ConfirmDialog。账号列表显示
+  `login_state` 三态徽标 + `last_error` 原因 + `username_masked` 打码手机号 + `display_name`
+  昵称，课程弹窗顶部给任务点合计。学习任务页把「查找/全选」留在工具条、把「批量操作与
+  创建任务」移入选择条（未选时只显示一行引导）。答题缓存导出收成单一格式下拉。
+  偏好设置删掉与「学习方式」重复的「作答偏好」tab（同一 `ParameterForm` 渲染两份，
+  改一处另一处不更新）。
+- **列表与 live 快照一次取回**：`GET /api/tasks?include_live=1` 对非终态任务
+  （`app/main.py` 的 `LIVE_STATUSES`）随行补 `live`，前端 `store.ts` 与 `TaskList`
+  都走这条；**不要再**「拿完列表再对每个运行中任务各打一次 `/tasks/{id}`」——
+  详情接口每次要查 4 次事件表 + 一次 500 条 `answer_result`，8 个任务就是 8 次往返。
+- **破坏性操作必须确认**：停止任务在总览队列、任务记录、任务详情抽屉三处入口都走
+  同一套 `ConfirmDialog` 二次确认；终态任务的「继续执行」与后端 `resume`/`retry`
+  是同一件事，界面只保留一个入口。
+- **前后端路径一致性**：`node tools/audit_api_paths.mjs` 会把 `@router` 注册路径与
+  前端 `request()/fetch()` 字面量做形状比对（参数段折叠成 `:x`），改接口名后跑一次，
+  避免前端静默 404。
+- **控件尺寸单一来源**：`tokens.css` 的 `--h-control`(28px) / `--h-control-sm`(24px) 由
+  `base.css` 的按钮、输入框、搜索框、筛选条、分页统一引用，不再各自写 25/26/27/28/30px。
+  `.muted` / `.hint` 必须保留（模板有 23 处引用，v2.4.0 曾误删导致说明文字按正文色显示）。
+- **手机端（≤760px）修正**：账号菜单由横向滚动改为两列网格（隐藏头像给账号名留宽度，
+  末行只保留一个下边框）；「已完成」列表改为逐行卡片，去掉「容器边框 + 行分隔线」的嵌套感；
+  浮窗（逐题/告警）左右贴边并限高 46vh，进度小窗显示时 `.page-content` 预留 88px 底部空间，
+  避免浮窗盖住保存按钮或最后一行。
 - **学习任务用竖向二级菜单**：`.account-workspaces` 是 `238px + minmax(0,1fr)` 的两列网格，
   左列 `nav.account-menu` 每个账号一行（勾选框、头像、账号名、`N 门 · fn / all 任务点`、执行状态点），
   `position: sticky` 跟随滚动；右列只渲染选中账号（`.workspace-account`），一次一个。
   课程区从卡片网格改为四列表格 `.course-row-head`（课程 / 平台任务点 / 本轮任务 / 完成度），
-  行高由内容决定，不再有卡内滚动。1080px 以下左列转横向可滚动条、课程表折成两行。
+  行高由内容决定，不再有卡内滚动。1080px 以下左列转横向可滚动条；760px 以下改为
+  两列账号网格（避免横向滚动只露出半张卡片），课程表折成两行。
 - **进度口径只出现一次**：`frontend/src/course.ts` 提供 `courseKey` / `taskForCourse` / `courseRows`，
   进度页与学习任务页共用同一份「账号 × 课程 × 本轮任务」映射；任务点进度在表格里只显示数字
   （`fn / all` + `待完成 N`），不输出「已完成 x / y，待完成 z」整句——状态徽标已经写着「已完成」。

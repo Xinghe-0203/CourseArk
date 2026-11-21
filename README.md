@@ -45,6 +45,15 @@
   在 `font_decoder` 的轮廓映射与位图兜底两处**解码源头**归位，题干、选项、答题缓存 key 一并干净。
   旧题库缓存会因题干变化 miss 一次，不影响正确性。详见
   [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 的「题干里的部首字符归位（v2.5.2）」一节。
+- 填空答案乱码拦截（v2.5.3）：字体轮廓反查失败时还会留下「能显示但不是原字」的
+  生僻字（`忑速忝忔忞忟…`），模型照抄就会提交乱码答案。新增 `cli_copy/core/answer_quality.py`，
+  在题干解析、作答、答案缓存三层拦截；答题缓存页会提示旧版/疑似乱码记录，并可二次确认后
+  一键清理（旧缓存题干里的部首码位在 v2.5.2 归一后已无法命中）。
+- 界面信息与操作补齐（v2.5.3）：总览加「今日」统计条（任务点/答题/缓存/AI/提交/并发/
+  缓存命中率）与「最近异常」条（按文案归并 + 次数）；调度队列每行可直接暂停/继续/停止单项任务；
+  账号列表显示登录三态徽标、失败原因与打码手机号；课程弹窗给出任务点合计；学习任务页把
+  「查找/全选」与「批量操作/创建任务」分成工具条和选择条；答题缓存导出收成一个下拉；
+  偏好设置删除与「学习方式」重复的 tab。
 - 提交失败修复（v2.5.1）：按实机日志修掉四类「科目提交失败」。① `answerwqbid`
   只写已作答题号，而页面 `ready2Submit()` 填的是**全部题号**——只要少答一题，
   平台就回「无效的参数：code-2」（全库统计：全题成功 25 次、全失败 35 次、
@@ -130,8 +139,8 @@ python run.py
 
 在 [GitHub Releases](https://github.com/Xinghe-0203/CourseArk/releases) 下载：
 
-- `CourseArk-2.5.2-Setup.exe`：Windows x64 安装版。
-- `CourseArk-2.5.2-Portable.exe`：Windows x64 便携版。
+- `CourseArk-2.5.3-Setup.exe`：Windows x64 安装版。
+- `CourseArk-2.5.3-Portable.exe`：Windows x64 便携版。
 
 桌面版内置 Python 运行时，不要求最终用户安装 Python 或 Node.js。关闭应用时会停止本机服务和 Worker。为兼容现有安装，桌面数据目录继续使用 `%APPDATA%\AutoCxWebUI`；安装包不包含账号、配置、答题缓存或任务数据库。
 
@@ -289,7 +298,7 @@ python tools/ui_check.py --serve --port 8899
 | 文档 | 内容 |
 | --- | --- |
 | [`docs/architecture.md`](docs/architecture.md) | 组件划分、作业/考试/同步链路、事件、前端结构与浮层规则 |
-| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | v2.1 起完整变更历史（最新 v2.5.2） |
+| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | v2.1 起完整变更历史（最新 v2.5.3） |
 | [`docs/research-exam.md`](docs/research-exam.md) | 考试协议调研（手机端 / PC 端端点、逐题提交、风控） |
 | [`docs/research-github.md`](docs/research-github.md) | 同类开源项目调研与作业协议结论 |
 

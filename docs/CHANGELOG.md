@@ -10,6 +10,175 @@
 
 ---
 
+## v2.5.3 · 填空题乱码答案拦截、旧缓存清理与界面重构
+
+> 起因：用户反馈「有些填空题提交上的答案是乱码字，这些只能在学习通的网站上看到」。
+> v2.5.2 修好了题干里的**部首码位**，但字体轮廓反查失败/字体数据缺失时，还会留下
+> 另一类残留：文本里是一批「能正常显示、但不是原字」的生僻汉字（`忑速忝忔忞忟…`）。
+> 模型照着这些字作答，答案就是乱码；旧版本把这种答案写进答题缓存后，后续命中再原样
+> 提交，问题会一直复现。
+
+### 一、根因（本机 3,242 条缓存取证）
+
+- 有 **6** 条答案本身是乱码残留（例：`忑速忝忔忞忟热处忕为，和`）；
+- 有 **30** 条题干含同类型生僻字残留（模型据此作答会产出乱码）；
+- 另有 **1,602** 条旧缓存题干仍带康熙部首/部首补充码位（v2.5.2 归一后 hash 已对不上，
+  属于失效缓存，但仍会占列表）。三类合计命中 1,662 行。
+- 旧缓存在 `QuestionBank.lookup` 命中后直接返回答案，没有质量检查；这是「网站能看到
+  乱码答案」的最后一环。
+
+### 二、修法：在解析、作答、缓存三层同时拦截
+
+- 新增 `cli_copy/core/answer_quality.py`：识别私用区/替换符/康熙部首/兼容表意、
+  控制字符、常见 mojibake，以及 GB2312 之外的生僻字（数量 ≥3 且占比 ≥30%，
+  且至少一个「GB2312 与 Big5 都装不下」的强证据字）。第三个条件是防误杀的关键：
+  纯繁体文本（`社會主義核心價值觀`、`液壓傳動系統`）trad 占比很高但 exotic 为 0，
+  不会被判乱码；`饕餮`、`魑魅魍魉` 本身在 GB2312 内，同样不误判。
+- `work_form.parse_questions`：题干/选项带残留时直接置 `unreadable`，模型不再看到乱码题；
+  `deal_exam._answerable` 增加第二道闸，覆盖旧解析器入口。
+- `answer_validation.normalize_answer`：填空题/简答题的答案含残留时返回空，交由严格重试/跳过，
+  不把乱码写进表单。
+- `utils/question_bank.py`：`lookup` 命中前校验题干与答案，异常按未命中处理并累计
+  `rejected`；`save`/`batch_save` 拒绝写入乱码记录。
+- `work_form` 题号兜底从 `\d{6,}` 改为 `\d+`，并从兜底里移除末尾带空序号的
+  `answerEditor<qid><n>`，避免真实 3 位题号被漏掉（漏题会重新触发 code-2）。
+- `work_form.build_submission`：页面 `tiankongsize` 为 `0`/空时回退到解析出的空数，
+  不能只填第 1 空把其余留空（多空填空题会因此提交不完整）。
+
+### 三、界面重构：把「后端已经有的信息」真正显示出来
+
+> 背景：这次不只修乱码，还把「数据和操作已经存在、界面却没给」的几处一起补上。
+> 原则：**同一条信息只出现一次，每个按钮都能说清它做什么。**
+
+- **总览**
+  - 新增「今日」统计条：完成任务点 / 答题 / 缓存命中 / AI 调用 / 提交成功 / 待处理 /
+    并发上限 / 缓存命中率，全部来自 `/api/overview.today`——这些字段后端一直返回，
+    界面此前一处未用。全为 0 时整条不渲染，新装用户不会先看到一排零。
+  - 新增「最近异常」条：从 `recent_events` 里取 warning/error，**按文案归并**成一行 +
+    次数（实测同一句「登录失败」会连刷 4 条），并给「处理异常」入口。
+  - 调度队列表格每行新增暂停 / 继续 / 停止 / 详情四个操作，与 `app/task_model.py`
+    的状态迁移表严格对齐；停止走 `ConfirmDialog` 二次确认。
+  - 队列的「进度」列改成「4/8 + 创建时间」两行，列宽收窄，操作区才有位置。
+- **账号与课程**
+  - 列表直接显示 `login_state` 三态徽标（已验证 / 登录失败 / 待验证）与失败原因，
+    此前只显示「登录时自动验证」；手机号改用接口的 `username_masked` 打码展示，
+    平台昵称（`display_name`）单独一行。
+  - 课程同步失败标红；登录时间用等宽字体展示。
+  - 课程弹窗顶部新增「任务点合计」条（合计 fn/all、可学习门数、剩余任务点），
+    每门课右侧带彩色任务点徽标，不再需要逐门心算。
+  - 账号工作台头部同步显示打码手机号 + 登录状态 + 最近登录时间。
+- **学习任务**
+  - 工具条重排：查找 / 选模块 / 统计提示 / 全选账号留在工具条，其余动作移到下方
+    「选择条」——没选账号时选择条只显示一行引导文案（虚线），选了以后才出现
+    「已选 N 个账号 · M 门课程」与批量暂停/继续/停止、为所选账号新建任务、创建任务。
+    此前四个按钮平铺在同一行，分不清先后顺序。
+- **答题缓存**
+  - 工具条收敛：导入（主按钮）+「导出缓存」下拉（JSON/CSV 合一）+ 分隔线 + 清空全部。
+    两个并列的导出链接不再抢注意力，导出后给出提示。
+- **偏好设置**
+  - 删除与「学习方式」完全重复的「作答偏好」tab（同一个 `ParameterForm` 渲染两份，
+    改一处另一处仍是旧值）。`ParameterForm` 每个字段补上说明文案。
+- **全局样式**
+  - 补回 v2.4.0 样式重写时误删的 `.muted` / `.hint`：模板里 23 处 `class="muted"`
+    一直按正文墨色渲染，和标题抢注意力。
+  - 修 `settings-backup[open]` 的 `content` 乱码（`2` → `−`）。
+  - 控件高度收敛成 `--h-control` / `--h-control-sm` 两档 token，按钮、输入、搜索框、
+    分页、筛选条不再各写 25/26/27/28/30px。
+  - 账号登录态新增 `.status.ok` / `.status.unknown` 两个语义类，与任务状态共用色板。
+
+### 四、操作一致性与请求收敛（深挖第二轮）
+
+- **停止任务统一二次确认**：任务记录页的 `停止` 之前点一下就直接发指令，
+  与总览页「停止必须确认」的行为不一致（属于破坏性操作）。现在 `TaskList`
+  也走 `ConfirmDialog`。
+- **任务详情抽屉补齐操作**：此前只能在列表行里暂停/继续/停止，打开详情后想
+  停掉必须关弹窗再找那一行。抽屉头现在按状态给出「暂停 / 继续 / 停止」，
+  终态只留「继续执行」一个入口——后端 `resume` 与 `retry` 对终态任务本来就是
+  同一件事（用原参数快照新建 pending 任务），两个按钮并存会让用户以为有区别。
+- **`/api/tasks?include_live=1`**：列表接口可选随行返回非终态任务的 live 快照。
+  前端原来拿完列表再对**每个**运行中任务各打一次 `/tasks/{id}`（每次 4 次事件表
+  查询 + 一次 500 条 `answer_result`）——8 个任务是 8 次详情请求，每 10 秒一轮。
+  改为一次列表请求后，`store.ts` 删掉 `refreshLives` 的 N+1 轮询，
+  `TaskList` 也改用 `include_live=1`。7,232 事件的任务单次详情 SQL 约 11ms，
+  即每轮省下约 90ms DB 时间与 7 次 HTTP 往返。
+- **任务点四数口径统一**：账号工作台的 `missionNumbers()` 与进度页的 `numbersOf()`
+  曾是两份完全相同的实现（含「已完成大于总数」时夹在 0–100 的兜底）。现在收敛到
+  `mission.ts` 的 `missionNumbers()`，并补了 3 条边界用例（待完成不为负、百分比 =100、全零）。
+- **新增 `tools/audit_api_paths.mjs`**：把后端 `@router` 注册的路径与前端
+  `request()/fetch()` 的字面量做形状比对（参数段折叠成 `:x`），一条命令即可发现
+  「前端调了但后端没注册」的 404 隐患。当前结果：45 条路由 / 32 条前端请求，
+  **全部匹配**；未直接请求的 14 条均为 SSE、下载链接或工具脚本使用。
+
+### 五、界面：答题缓存可直接看到并清理
+
+- `/api/question-bank/stats` 增加 `suspicious`，`/search` 每行返回 `quality` 原因；
+  新增 `DELETE /api/question-bank/anomalies`。
+- 「答题缓存」页：顶部出现「旧版 / 疑似乱码缓存」提示条，行内标红并显示原因，
+  「清理缓存」走 `ConfirmDialog` 二次确认；清理后正常题目会重新调用 AI。
+- 手机端布局修正：账号菜单从横向滚动改为两列网格（不再只露出半张卡片，隐藏头像给账号名留宽度）；
+  「已完成」列表改为逐行卡片，去掉「容器边框 + 行分隔线」的嵌套感；浮窗改为左右贴边并限高 46vh，
+  进度小窗显示时页面底部预留滚动空间，避免遮住保存按钮/最后一行。
+
+### 六、桌面版打包（v2.5.3）
+
+- 版本号升到 **2.5.3**（`desktop/package.json`、`frontend/package.json` 及两份 lock）。
+- 新增 **`PYTHONDONTWRITEBYTECODE=1`**（`desktop/src/server-manager.cjs` 与
+  `app/subprocess_runner.worker_env()` 两处）：打包后 `app-runtime` 位于安装目录
+  （`%LOCALAPPDATA%\Programs\CourseArk`，通常只读），允许写 `.pyc` 会在首次启动时
+  尝试创建 `__pycache__`，轻则留垃圾目录，重则因无权限报错。实测原先「冒烟前 0 个
+  `__pycache__`、冒烟后出现 26 个 `.pyc`」，修复后冒烟前后均为 0。
+- 产物：`CourseArk-2.5.3-Setup.exe`（NSIS 安装版）与 `CourseArk-2.5.3-Portable.exe`
+  （便携版），各约 164 MB，含内置 Python 3.13.12 运行时。
+- 打包内容抽查：`webui_static/vue/assets/index-*.js` 含本轮全部新增文案
+  （今日统计「完成任务点」、登录三态「登录失败/已验证」、乱码清理「疑似乱码」、
+  导出缓存下拉、详情抽屉操作、`include_live=1`）；`app/routes/tasks.py` 含
+  `include_live`、`cli_copy/core/answer_quality.py` 与 `clean_anomalies` 均已入包；
+  `app.asar` 的 `package.json` 版本为 2.5.3、`server-manager.cjs` 含新环境变量。
+- 冒烟：`npm --prefix desktop test` 8 项、`smoke:runtime`、`smoke:packaged`
+  全部通过（打包版能加载 Vue 并正常停掉 Python 后端）。
+
+### 七、验证
+
+- `python -m pytest tests cli_copy/tests -q`：**593 passed, 1 skipped**（新增 14 个用例：乱码识别（含纯繁体不误判）、
+  缓存命中拒绝、写入拒绝、清理接口、短题号兜底、页面空数为 0 时的填空回退、
+  `_answerable` 拒绝残留题干、`/api/tasks?include_live=1` 快照）。
+- `npm --prefix frontend run build`：`vue-tsc --noEmit` + Vite 构建通过。
+- `npm --prefix frontend test`：**50 passed**（Node 26 的实验性 localStorage 在单测环境不可用，
+  新增 `frontend/vitest.setup.ts` 提供内存态 polyfill，只影响测试；另加 2 个
+  `loginState()` 文案用例与 `missionNumbers()` 边界用例）。
+- `python tools/ui_check.py`：**64 项**界面断言全部通过。新增断言覆盖：今日统计条、
+  异常归并、队列行内指令入口、账号登录三态与打码手机号、课程弹窗任务点合计、
+  答题缓存导出下拉、疑似乱码缓存提示与清理；视口覆盖 390px / 1440px / 1920px。
+
+### 八、改动文件（v2.5.3 摘要）
+
+| 文件 | 改动 |
+| --- | --- |
+| `cli_copy/core/answer_quality.py` | 新增：乱码/生僻残留检测（码位区段 + 汉字统计特征） |
+| `cli_copy/core/work_form.py` | 题干/选项残留标 `unreadable`；短题号兜底；空数为 0 时回退 |
+| `cli_copy/functions/deal_exam.py` | `_answerable` 第二道闸，覆盖旧解析器入口 |
+| `cli_copy/core/answer_validation.py` | 填空题/简答题答案含残留时判无效 |
+| `cli_copy/utils/question_bank.py` | `lookup`/`save`/`batch_save` 跳过异常记录 |
+| `app/question_bank_manager.py` | `suspicious` 统计、`quality` 行内原因、`clean_anomalies` |
+| `app/routes/bank.py` | 新增 `DELETE /api/question-bank/anomalies` |
+| `app/routes/tasks.py` · `app/main.py` | `/api/tasks?include_live=1` 批量 live 快照 + `LIVE_STATUSES` |
+| `frontend/src/store.ts` · `components/TaskList.vue` · `components/TaskDrawer.vue` | 去掉 N+1 轮询、停止二次确认、抽屉内任务操作 |
+| `tools/audit_api_paths.mjs` | 新增：前后端路由形状比对 |
+| `desktop/src/server-manager.cjs` · `app/subprocess_runner.py` | 打包版禁止写 `.pyc`（安装目录只读） |
+| `desktop/{package.json,package-lock.json}` · `frontend/*` | 版本号 2.5.2 → 2.5.3 |
+| `frontend/src/views/OverviewDashboard.vue` | 今日统计条、异常归并、队列行内暂停/继续/停止 |
+| `frontend/src/views/AccountsView.vue` | 登录三态与失败原因、打码手机号、课程任务点合计 |
+| `frontend/src/views/SettingsView.vue` · `components/ParameterForm.vue` | 去掉重复 tab、字段说明、`content` 乱码修复 |
+| `frontend/src/components/AccountWorkspace.vue` | 工具条/选择条重排、账号头登录态 |
+| `frontend/src/views/BankView.vue` | 乱码提示条、行内标红、二次确认清理、导出下拉 |
+| `frontend/src/styles/{tokens,base}.css` · `format.ts` | 控件高度 token、补回 `.muted`、`loginState()` |
+| `frontend/src/components/AccountWorkspace.vue` · `views/CompletedView.vue` · `styles/{shell,windows}.css` | 手机端布局与浮层修正 |
+| `frontend/vite.config.ts` · `vitest.setup.ts` | Node 26 实验性 localStorage 的测试 polyfill |
+| `tools/ui_seed.py` · `tools/vue_check.py` | 乱码缓存样例、登录三态种子与新增断言（64 项） |
+| `tests/test_answer_quality.py` · `tests/test_work_form.py` · `cli_copy/tests/test_core_behaviors.py` · `tests/test_api.py` | 14 个新用例 |
+
+---
+
 ## v2.5.2 · 题干里的部首字符归位（答题乱码）
 
 > 起因：用户反馈「我看我提交的答题内容是乱码字」。回放 11-07 与 11-10 两批实机日志后
