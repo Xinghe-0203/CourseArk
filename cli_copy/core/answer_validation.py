@@ -6,6 +6,13 @@ import unicodedata
 def normalize_answer(q_type: str, answer: str, options=None) -> str:
     if not isinstance(answer, str):
         return ''
+    # 题干加密未完全解出时，模型会「照着乱码」作答；这类答案提交后在学习通
+    # 页面上就是乱码字，必须在归一化之前拦掉。只拦主观题，客观题答案只能是
+    # 字母/true/false，不受影响。
+    if q_type in ('填空题', '简答题'):
+        from core.answer_quality import encoding_issues
+        if encoding_issues(answer, label='答案'):
+            return ''
     # NFKC 归一：全角字母/数字 → 半角（Ｆ→F、√ 保持），
     # 字体解密残留的康熙部首字符同步归位
     text = unicodedata.normalize('NFKC', answer).strip().strip('`* ')

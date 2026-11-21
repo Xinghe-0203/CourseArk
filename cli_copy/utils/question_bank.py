@@ -17,6 +17,7 @@ import threading
 import time
 
 from core import runtime
+from core.answer_quality import encoding_issues
 from core.runtime import logger
 
 from core.paths import get_user_data_path
@@ -118,14 +119,33 @@ class QuestionBank:
         return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
     def lookup(self, question_text: str, options=None) -> str | None:
-        """查询题目答案，命中则增加计数"""
+        """查询题目答案，命中则增加计数。
+
+        旧版本/字体解码失败时写入的答案可能含加密字体残留；这种缓存命中后
+        会把乱码原样提交到学习通（用户能看到的就是乱码答案）。命中前先校验
+        题干与答案，异常时按未命中处理，让调用方重新走 AI；不自动删除，
+        用户可以在「答题缓存」页确认后批量清理。
+        """
         opts_str = self._normalize_options(options)
         q_hash = self._make_hash(question_text, opts_str)
         with self._lock:
             row = self._conn.execute(
-                "SELECT answer FROM question_cache WHERE hash = ?", (q_hash,)
+                "SELECT question_text, answer FROM question_cache WHERE hash = ?", (q_hash,)
             ).fetchone()
             if row:
+                issues = (
+                    encoding_issues(question_text, label="题干")
+                    + encoding_issues(row[1] or "", label="答案")
+                )
+                if issues:
+                    self._bump_stat("lookups")
+                    self._bump_stat("rejected")
+                    self._commit_with_retry()
+                    logger.debug(
+                        "答题缓存疑似乱码，已跳过: %s | %s",
+                        question_text[:40], issues[0],
+                    )
+                    return None
                 self._conn.execute(
                     "UPDATE question_cache SET hit_count = hit_count + 1 WHERE hash = ?",
                     (q_hash,),
@@ -133,7 +153,7 @@ class QuestionBank:
                 self._bump_stat("lookups")
                 self._bump_stat("hits")
                 self._commit_with_retry()
-                return row[0]
+                return row[1]
             self._bump_stat("lookups")
             self._commit_with_retry()
         return None
@@ -158,7 +178,19 @@ class QuestionBank:
 
     def save(self, question_text: str, question_type: str, answer: str,
              options=None, course_id: str = "", chapter_id: str = ""):
-        """保存题目和答案（INSERT OR REPLACE语义）"""
+        """保存题目和答案（INSERT OR REPLACE语义）
+
+        题干或答案含字体加密残留时直接跳过：这类记录命中后会把乱码提交到
+        平台，且题干本身无法用于后续同题匹配。
+        """
+        issues = (
+            encoding_issues(question_text, label="题干")
+            + encoding_issues(answer, label="答案")
+        )
+        if issues:
+            logger.debug("跳过疑似乱码的答题缓存: %s | %s",
+                         (question_text or "")[:40], issues[0])
+            return
         opts_str = self._normalize_options(options)
         q_hash = self._make_hash(question_text, opts_str)
         with self._lock:
@@ -177,6 +209,11 @@ class QuestionBank:
             return
         with self._lock:
             for q in questions:
+                if (
+                    encoding_issues(q.get("question_text", ""), label="题干")
+                    or encoding_issues(q.get("answer", ""), label="答案")
+                ):
+                    continue
                 opts_str = self._normalize_options(q.get("options", ""))
                 q_hash = self._make_hash(
                     q.get("question_text", ""),

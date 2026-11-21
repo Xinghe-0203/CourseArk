@@ -16,11 +16,30 @@ import io
 import json
 import os
 import sqlite3
+import sys
 import time
 
 from . import paths
 
 BUSY_TIMEOUT_SECONDS = 30.0
+
+_QUALITY_ISSUES = None
+
+
+def _encoding_issues(text: str, label: str) -> list:
+    """延迟载入 CLI 侧的乱码检测（避免 app 导入期就依赖 cli_copy 的 sys.path）。"""
+    global _QUALITY_ISSUES
+    if _QUALITY_ISSUES is None:
+        cli_dir = getattr(paths, "CLI_COPY_DIR", "")
+        if cli_dir and cli_dir not in sys.path:
+            sys.path.insert(0, cli_dir)
+        from core.answer_quality import encoding_issues
+        _QUALITY_ISSUES = encoding_issues
+    return _QUALITY_ISSUES(text, label=label)
+
+
+def _cache_issues(question_text: str, answer: str) -> list:
+    return _encoding_issues(question_text or "", "题干") + _encoding_issues(answer or "", "答案")
 
 TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS question_cache (
@@ -224,6 +243,10 @@ def stats(days: int = 7) -> dict:
         latest = conn.execute(
             "SELECT question_text, answer, created_at FROM question_cache ORDER BY created_at DESC LIMIT 5"
         ).fetchall()
+        suspicious = 0
+        for row in conn.execute("SELECT question_text, answer FROM question_cache"):
+            if _cache_issues(row["question_text"], row["answer"]):
+                suspicious += 1
     finally:
         conn.close()
 
@@ -240,6 +263,7 @@ def stats(days: int = 7) -> dict:
         "by_course": [{"course_id": row["course_id"], "count": row["c"]} for row in by_course],
         "recent_days": days,
         "recent_count": int(recent or 0),
+        "suspicious": suspicious,
         "latest": [{"question": row["question_text"][:120], "answer": row["answer"],
                     "created_at": row["created_at"]} for row in latest],
     }
@@ -280,6 +304,7 @@ def search(keyword: str = "", question_type: str = "", limit: int = 50, offset: 
             "course_id": row["course_id"],
             "created_at": row["created_at"],
             "hit_count": row["hit_count"],
+            "quality": _cache_issues(row["question_text"], row["answer"]),
         })
     return {"total": int(total or 0), "items": items}
 
@@ -550,5 +575,27 @@ def clear_cache() -> int:
         conn.execute("DELETE FROM question_stats")
         conn.commit()
         return int(deleted or 0)
+    finally:
+        conn.close()
+
+
+def clean_anomalies() -> int:
+    """删除题干或答案含字体加密残留的缓存，返回删除条数。
+
+    这些记录是旧版本/字体解码失败时写入的；Worker 的 lookup 已经会跳过它们，
+    但残留记录仍会出现在界面上，所以提供一次性清理。
+    """
+    conn = _connect()
+    try:
+        _immediate_transaction(conn)
+        hashes = [
+            row["hash"] for row in conn.execute(
+                "SELECT hash, question_text, answer FROM question_cache")
+            if _cache_issues(row["question_text"], row["answer"])
+        ]
+        for question_hash in hashes:
+            conn.execute("DELETE FROM question_cache WHERE hash = ?", (question_hash,))
+        conn.commit()
+        return len(hashes)
     finally:
         conn.close()

@@ -190,6 +190,16 @@ class CoreBehaviorTests(unittest.TestCase):
         self.assertEqual(len(results), 4)
         self.assertTrue(all(r and r["source"] == "random" for r in results))
 
+    def test_answerable_rejects_rare_glyph_residue(self):
+        """字体加密残留的题干必须判不可读，避免模型照抄生出乱码答案。"""
+        exam = self._make_bare_exam(no_answer_action="skip")
+        garbled = {"question_id": "1", "question_type": "填空题",
+                   "question_text": "在PLC的面板嵮, POWER嵯嵪嵰嵭表嵪", "options": []}
+        clean = {"question_id": "2", "question_type": "填空题",
+                 "question_text": "在PLC的面板中，POWER指示灯表示", "options": []}
+        self.assertFalse(exam._answerable(garbled))
+        self.assertTrue(exam._answerable(clean))
+
     def test_submission_retries_once_on_network_error(self):
         """提交网络异常重试一次；平台业务拒绝不重试。"""
         import json as _json

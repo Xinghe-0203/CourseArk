@@ -143,6 +143,12 @@ def bank_import(payload: main.QuestionBankImport):
                                                payload.overwrite)
 
 
+@router.delete("/api/question-bank/anomalies")
+def bank_clean_anomalies():
+    """删除疑似字体加密残留的缓存（乱码答案/题干）"""
+    return {"deleted": question_bank_manager.clean_anomalies()}
+
+
 @router.delete("/api/question-bank/{question_hash}")
 def bank_delete(question_hash: str):
     if not question_bank_manager.delete_by_hash(question_hash):

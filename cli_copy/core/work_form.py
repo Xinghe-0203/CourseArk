@@ -37,6 +37,7 @@ from urllib.parse import urljoin
 
 from lxml import etree
 
+from core.answer_quality import encoding_issues as _encoding_issues
 from core.text_norm import normalize_radicals
 
 MOOC_HOST = "https://mooc1.chaoxing.com"
@@ -315,13 +316,15 @@ def parse_questions(html: str) -> list:
         qid = str(q_el.get("data") or "")
         if not qid:
             ident = q_el.get("id") or ""
-            match = re.search(r"(\d{6,})", ident)
+            match = re.search(r"(\d+)", ident)
             qid = match.group(1) if match else ""
         if not qid:
-            # 兜底：从题内作答控件名里取题号（answertype<qid> / answer<qid> / answerEditor<qid>N）
+            # 兜底：从题内作答控件名里取题号（answertype<qid> / tiankongsize<qid> /
+            # answer<qid>）。真实 qid 可能只有 3 位，不能用 \d{6,} 过滤。
+            # answerEditor<qid><空序号> 末尾还有空序号，无法与题号区分，故不作为兜底。
             for control in q_el.xpath(".//input[@name] | .//textarea[@name]"):
                 match = re.search(
-                    r"^(?:answertype|tiankongsize|answerEditor|answer)(\d{6,})",
+                    r"^(?:answertype|tiankongsize|answer)(\d+)",
                     control.get("name") or "")
                 if match:
                     qid = match.group(1)
@@ -344,6 +347,13 @@ def parse_questions(html: str) -> list:
         reasons = [r for r in [font_reason] + option_reasons if r]
 
         stem = _stem_of(q_el)
+        # 字体数据缺失/轮廓微扰时，题干会留下「能显示的生僻字」而不是私用区字符；
+        # 这类题必须判不可读，否则模型会照着乱码答出乱码，提交后在学习通上就是
+        # 用户看到的「乱码答案」。
+        residue = _encoding_issues(stem + " " + " ".join(options), label="题干")
+        if residue:
+            unreadable = True
+            reasons.extend(residue)
         blank_count = 0
         if qid:
             sizes = q_el.xpath(f".//input[@name='tiankongsize{qid}']")
@@ -578,8 +588,13 @@ def build_submission(form: dict, answered: list, fallback_qids: list = None) -> 
 
         if kind == KIND_BLANK:
             blank_count = _safe_int(item.get("blank_count"), 0) or 1
-            controls.setdefault(f"tiankongsize{qid}", str(blank_count))
-            blank_count = _safe_int(controls.get(f"tiankongsize{qid}"), blank_count)
+            # 页面控件值是权威；但值为 0/空时不能沿用（否则只填第一空，
+            # 其余空留空会被平台判为未作答），回退到解析器数出来的空数。
+            page_size = _safe_int(controls.get(f"tiankongsize{qid}"), 0)
+            if page_size > 0:
+                blank_count = page_size
+            else:
+                controls[f"tiankongsize{qid}"] = str(blank_count)
             for idx, part in enumerate(split_blanks(answer, blank_count), 1):
                 controls[f"answerEditor{qid}{idx}"] = part
         else:

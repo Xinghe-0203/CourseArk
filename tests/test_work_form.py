@@ -321,3 +321,38 @@ def test_choice_without_options_and_without_input_is_still_unreadable():
     questions = work_form.parse_questions(html)
     assert questions[0]["unreadable"] is True
     assert "选项" in questions[0]["unreadable_reason"]
+
+
+def test_parse_questions_accepts_short_qid_from_controls():
+    """真实题号可能只有 3 位；没有 data/id 时从 answertype<qid> 兜底，且不能把
+    answerEditor<qid><n> 当成题号。"""
+    html = """
+    <form action="/mooc-ans/work/addStudentWorkNewWeb?x=1">
+      <div class="questionLi singleQuesId" typename="填空题">
+        <input type="hidden" name="answertype123" value="2">
+        <input type="hidden" name="tiankongsize123" value="1">
+        <h3 class="mark_name"><span class="colorShallow">(填空题)</span> 题干 ____</h3>
+        <textarea name="answerEditor1231"></textarea>
+      </div>
+    </form>
+    """
+    questions = work_form.parse_questions(html)
+    assert len(questions) == 1
+    assert questions[0]["question_id"] == "123"
+
+
+def test_build_submission_recovers_zero_blank_size():
+    """页面 tiankongsize 为 0 时不能只填第一空：应回退到解析出的空数。"""
+    form = {
+        "found": True,
+        "action": "/mooc-ans/work/addStudentWorkNewWeb?x=1",
+        "controls": {"tiankongsize123": "0", "answertype123": "2"},
+    }
+    answered = [{
+        "question_id": "123", "question_type": "填空题", "answer": "甲；乙",
+        "kind": "blank", "blank_count": 2,
+    }]
+    _url, body = work_form.build_submission(form, answered)
+    assert body["tiankongsize123"] == "2"
+    assert body["answerEditor1231"] == "甲"
+    assert body["answerEditor1232"] == "乙"

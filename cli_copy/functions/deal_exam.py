@@ -17,6 +17,7 @@ import time
 from urllib.parse import urlencode
 
 from core import runtime
+from core.answer_quality import encoding_issues as _encoding_issues
 from core.runtime import logger
 from lxml import etree
 
@@ -850,6 +851,11 @@ class DealExam:
         if question.get('unreadable'):
             reason = question.get('unreadable_reason') or '题目字体或图片内容未完整识别'
             self.log.warning(f'{reason}，请在学习通中核对后处理')
+            return False
+        # work_form 已在解析期标记；这里是第二道闸，覆盖旧版解析器/其他入口。
+        residue = _encoding_issues(question.get("question_text", ""), label="题干")
+        if residue:
+            self.log.warning(f'{residue[0]}，已跳过作答，请在学习通中核对题目')
             return False
         if self.answer_mode == "manual":
             self.log.info(f"  {progress}{icon} 手动模式，跳过自动作答")
