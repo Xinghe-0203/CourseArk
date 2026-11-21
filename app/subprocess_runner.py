@@ -22,6 +22,9 @@ def worker_env(extra: dict = None) -> dict:
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUNBUFFERED"] = "1"
+    # 桌面版把 app-runtime 放在安装目录（只读）：Worker 与主服务都不得写 .pyc，
+    # 否则首次运行会在 resources 下生成 __pycache__（权限不足时还会直接报错）。
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["AUTOCXWEBUI_DATA_DIR"] = paths.DATA_DIR
     if extra:
         env.update(extra)

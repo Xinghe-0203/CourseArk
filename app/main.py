@@ -534,6 +534,11 @@ def _answers_summary(items: list, stats: dict) -> dict:
 
 # 运行中快照最多回放的业务事件条数：小窗只关心“最近在做什么”
 LIVE_EVENT_LIMIT = 60
+# /api/tasks?include_live=1 只给这些状态补 live 快照（终态不需要「预计剩余」）
+LIVE_STATUSES = (
+    "starting", "logging_in", "loading_courses", "running",
+    "pausing", "paused", "stopping",
+)
 
 # 没有业务事件时用阶段名兜底
 _STAGE_ACTIVITY = {

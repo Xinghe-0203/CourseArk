@@ -480,3 +480,40 @@ def test_missing_vue_build_reports_how_to_rebuild(app_client, monkeypatch, tmp_p
 def test_cors_is_not_open_to_any_origin(app_client):
     response = app_client.get("/api/health", headers={"Origin": "https://evil.example"})
     assert "access-control-allow-origin" not in {k.lower() for k in response.headers.keys()}
+
+
+def test_task_list_include_live_returns_snapshot(app_client, sandbox):
+    """列表接口支持 include_live=1：一次请求带回运行中任务的 live 快照，
+    替代前端逐任务打详情（8 个任务不会再产生 8 次带逐题明细的详情请求）。"""
+    from app import main as main_module
+
+    account = _create_account(app_client, "13800007777")
+    now = 1760000300.0
+    main_module.db.create_task({
+        "id": "live-batch", "run_id": "run-live", "account_id": account["id"],
+        "account_label": account["label"], "course_id": "c1", "class_id": "k1",
+        "cpi": "1", "course_name": "直播任务", "feature": "course_all",
+        "status": "running", "params": {}, "created_at": now - 120,
+    })
+    main_module.db.update_task("live-batch", started_at=now - 100)
+    main_module.db.add_event("live-batch", account["id"], "media_progress", "进度",
+                             stage="video",
+                             payload={"media": "1.1 视频", "current": 120, "total": 600},
+                             ts=now - 90)
+    main_module.db.flush_events()
+
+    import pytest
+
+    monkeypatch_holder = pytest.MonkeyPatch()
+    try:
+        monkeypatch_holder.setattr(main_module.time, "time", lambda: now)
+        items = app_client.get("/api/tasks?include_live=1").json()["items"]
+        plain = app_client.get("/api/tasks").json()["items"]
+    finally:
+        monkeypatch_holder.undo()
+
+    row = next(item for item in items if item["id"] == "live-batch")
+    assert row["live"] is not None
+    assert row["live"]["unit"]["current"] == 120
+    # 不带 include_live 时不额外查事件表，保持轻量
+    assert all("live" not in item for item in plain)

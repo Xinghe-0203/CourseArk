@@ -78,6 +78,10 @@ async function startBackend({
       ...process.env,
       PYTHONIOENCODING: "utf-8",
       PYTHONUNBUFFERED: "1",
+      // 打包后 app-runtime 位于安装目录（常见于 Program Files，只读）：
+      // 允许写 .pyc 会在首次启动时尝试创建 __pycache__，轻则留下垃圾目录，
+      // 重则因无权限报错或被杀软判定为可疑写入。这里显式关掉字节码缓存。
+      PYTHONDONTWRITEBYTECODE: "1",
       AUTOCXWEBUI_DATA_DIR: dataDir,
       AUTOCXWEBUI_SHUTDOWN_TOKEN: shutdownToken,
     },

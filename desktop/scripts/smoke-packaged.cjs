@@ -94,6 +94,26 @@ async function main() {
 
     await runSmoke(executable, appOut, tempRoot, "unpacked");
     await runSmoke(portable, path.dirname(portable), tempRoot, "portable");
+    // 运行后安装目录必须仍然干净：打包版的 app-runtime 在安装目录里（通常只读），
+    // 一旦允许写 .pyc，冒烟就会在 resources 下留一堆 __pycache__。
+    const strayCache = [];
+    const scan = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === "__pycache__") strayCache.push(full);
+          else scan(full);
+        } else if (entry.name.endsWith(".pyc")) {
+          strayCache.push(full);
+        }
+      }
+    };
+    scan(path.join(resources, "app-runtime"));
+    assert.equal(
+      strayCache.length,
+      0,
+      `打包应用运行后在安装目录留下了字节码缓存: ${strayCache.slice(0, 3).join(", ")}`,
+    );
     console.log("Unpacked and portable Electron apps loaded Vue and stopped their Python backends.");
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });

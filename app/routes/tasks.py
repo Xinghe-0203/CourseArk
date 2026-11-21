@@ -43,8 +43,16 @@ def list_runs(limit: int = Query(default=50, ge=1, le=200),
 def list_tasks(status: str = "", account_id: str = "", run_id: str = "",
                feature: str = "", course_id: str = "", q: str = "",
                since: float = 0, until: float = 0,
+               include_live: int = 0,
                limit: int = Query(default=100, ge=1, le=500),
                offset: int = Query(default=0, ge=0)):
+    """
+    任务列表。
+
+    include_live=1 时同时返回非终态任务的 live 快照（当前动作 / 已用时 / ETA）。
+    前端此前只能先拿列表、再对每个运行中任务各打一次 /tasks/{id} 补 live，
+    8 个小窗/列表同时刷新就是 8 次带逐题明细的详情请求；这里合并成一次。
+    """
     db = main.db
     filters = {"status": status, "account_id": account_id, "run_id": run_id,
                "feature": feature, "course_id": course_id, "q": q,
@@ -52,10 +60,12 @@ def list_tasks(status: str = "", account_id: str = "", run_id: str = "",
     rows = db.list_tasks(filters, limit, offset)
     # T5：一次批量预取非 succeeded 任务的未完成单元数，替代逐行 _unfinished_units
     precomputed = main._unfinished_units_batch(rows)
-    return {
-        "total": db.count_tasks(filters),
-        "items": [main._task_view(row, precomputed) for row in rows],
-    }
+    items = [main._task_view(row, precomputed) for row in rows]
+    if include_live:
+        for row, item in zip(rows, items):
+            if item.get("status") in main.LIVE_STATUSES:
+                item["live"] = main._live_view(row)
+    return {"total": db.count_tasks(filters), "items": items}
 
 
 @router.get("/api/tasks/{task_id}")

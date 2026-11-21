@@ -56,6 +56,8 @@ test("startBackend launches Python and waits for matching health", async () => {
   assert.equal(launch.spawnOptions.cwd, "C:/app");
   assert.equal(launch.spawnOptions.env.AUTOCXWEBUI_DATA_DIR, "C:/user-data");
   assert.equal(launch.spawnOptions.env.AUTOCXWEBUI_SHUTDOWN_TOKEN, "test-token");
+  // 安装目录只读：后端进程不得写 .pyc（否则会在 resources 下留 __pycache__）
+  assert.equal(launch.spawnOptions.env.PYTHONDONTWRITEBYTECODE, "1");
   assert.equal(result.baseUrl, "http://127.0.0.1:18848");
   assert.equal(result.child, child);
   assert.equal(typeof result.getOutput, "function");
