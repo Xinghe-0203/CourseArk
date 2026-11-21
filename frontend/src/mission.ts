@@ -35,6 +35,20 @@ export function missionState(course: Course, syncing = false): MissionState {
     pending,
   };
 }
+/** 单个课程的「已完成 / 总数 / 待完成 / 百分比」四个数字。
+ *  账号工作台的课程表与进度页此前各写一份 `numbersOf` / `missionNumbers`，
+ *  逻辑完全相同；统一到一处，百分比口径（向下取整、夹在 0–100）只有一份。 */
+export function missionNumbers(course: Pick<Course, "mission_fn" | "mission_all">) {
+  const all = Math.max(0, Number(course.mission_all) || 0);
+  const fn = Math.max(0, Number(course.mission_fn) || 0);
+  return {
+    all,
+    fn,
+    pending: Math.max(0, all - fn),
+    percent: all ? Math.min(100, Math.round((fn / all) * 100)) : 0,
+  };
+}
+
 /** 账号卡片顶部的任务点合计。 */
 export function missionTotals(courses: Course[]) {
   return courses.reduce(

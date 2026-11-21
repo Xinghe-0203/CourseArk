@@ -4,10 +4,12 @@ import {
   Layers,
   ArrowUpRight,
   Pause,
+  Play,
   Square,
   ChevronRight,
   History,
   CheckCircle2,
+  TriangleAlert,
 } from "lucide-vue-next";
 import { state, act, navigate, resumeTask, dismissResumeTask } from "../store";
 import { request } from "../api";
@@ -110,6 +112,63 @@ const phase = computed(() => [
     color: "blue",
   },
 ]);
+/** 今日统计（/api/overview.today）：任务点、答题、缓存与提交的真实数字。
+ *  这些字段后端一直返回，但界面此前一处未用——用户只能去任务详情逐条数。 */
+const today = computed(() => overview.value?.today || {});
+const todayFacts = computed(() => {
+  const t = today.value as Record<string, number>;
+  const n = (key: string) => Math.max(0, Number(t[key]) || 0);
+  return [
+    { key: "success", label: "完成任务点", value: n("success"), tone: "ok" },
+    { key: "questions", label: "答题", value: n("questions"), tone: "" },
+    { key: "cache", label: "缓存命中", value: n("cache_hits"), tone: "" },
+    { key: "llm", label: "AI 调用", value: n("llm_calls"), tone: "" },
+    { key: "submit", label: "提交成功", value: n("submit_ok"), tone: "ok" },
+    {
+      key: "failed",
+      label: "待处理",
+      value: n("failed") + n("submit_fail"),
+      tone: "warn",
+    },
+  ];
+});
+/** 今日全为 0 时不占版面，避免新装用户先看到一排零。 */
+const todayVisible = computed(() => todayFacts.value.some((item) => item.value > 0));
+/** 最近异常：/api/overview.recent_events 里 level 为 warning/error 的事件。
+ *  同一句话可能连续出现多次（例如同一账号反复登录失败），按内容归并后
+ *  只展示一行 + 次数，否则异常条会被重复文案占满。 */
+const problems = computed(() => {
+  const rows = (overview.value?.recent_events || []).filter(
+    (e) => e.level === "warning" || e.level === "error",
+  );
+  const merged = new Map<
+    string,
+    { title: string; count: number; time: string; level: string }
+>();
+  for (const event of rows) {
+    const title = event.narrative?.title || event.message || "任务异常";
+    const time = (event.timestamp || "").slice(5, 16);
+    const existing = merged.get(title);
+    if (existing) {
+      existing.count += 1;
+      if (time) existing.time = time;
+      if (event.level === "error") existing.level = "error";
+    } else {
+      merged.set(title, { title, count: 1, time, level: event.level });
+    }
+  }
+  return [...merged.values()].slice(0, 4);
+});
+const problemTotal = computed(() =>
+  problems.value.reduce((n, item) => n + item.count, 0),
+);
+/** 题库命中率：只有真正查询过才有意义，避免「0%」被误读成缓存没用。 */
+const bankRate = computed(() => {
+  const bank = overview.value?.question_bank;
+  if (!bank?.lookups) return null;
+  return Math.round((bank.hit_rate || 0) * 100);
+});
+
 const unfinished = computed(() => ({
   total: visibleUnfinishedTotal(state.tasks, state.settings),
   items: visibleResumableTasks(state.tasks, state.settings),
@@ -126,6 +185,8 @@ function dismissLatest() {
 }
 /** 停止不可撤销，先确认；暂停可逆，直接执行。 */
 const stopping = ref<{ id: string; label: string } | null>(null);
+/** 队列行上的单任务停止：与「停止账号」分开，粒度更细。 */
+const stoppingTask = ref<{ id: string; name: string } | null>(null);
 function askStop(p: { account: { id: string; label?: string; username: string } }) {
   stopping.value = {
     id: p.account.id,
@@ -136,6 +197,38 @@ function confirmStop() {
   const target = stopping.value;
   stopping.value = null;
   if (target) void control(target.id, "stop");
+}
+/** 队列行的单任务指令：走 /tasks/{id}/{op}，与学习任务页同一套接口。 */
+function taskCommand(id: string, op: "pause" | "resume" | "stop") {
+  if (op === "stop") {
+    const item = queue.value.find((row) => row.id === id);
+    stoppingTask.value = { id, name: item?.course_name || "该任务" };
+    return;
+  }
+  act(
+    "queue-" + id + op,
+    () => request(`/tasks/${id}/${op}`, "POST"),
+    op === "pause" ? "已发送暂停指令" : "已发送继续指令",
+  );
+}
+function confirmTaskStop() {
+  const target = stoppingTask.value;
+  stoppingTask.value = null;
+  if (target)
+    act(
+      "queue-" + target.id + "stop",
+      () => request(`/tasks/${target.id}/stop`, "POST"),
+      "已发送停止指令",
+    );
+}
+/** 队列行可执行的操作：与 app/task_model.py 的状态迁移表对齐。 */
+function queueOps(status: string) {
+  const pauseable = ["starting", "logging_in", "loading_courses", "running"];
+  return {
+    pause: pauseable.includes(status),
+    resume: status === "paused",
+    stop: !["succeeded", "failed", "stopped", "interrupted"].includes(status),
+  };
 }
 async function control(id: string, op: string) {
   await act(
@@ -214,6 +307,53 @@ async function control(id: string, op: string) {
       </div>
     </section>
 
+    <section v-if="todayVisible" class="today-strip" aria-label="今日统计">
+      <span class="eyebrow">今日</span>
+      <div
+        v-for="item in todayFacts"
+        :key="item.key"
+        :class="['today-fact', item.tone]"
+      >
+        <strong class="num">{{ item.value }}</strong>
+        <span>{{ item.label }}</span>
+      </div>
+      <div class="today-fact extra">
+        <strong class="num">{{ overview?.workers?.limit ?? "—" }}</strong>
+        <span>并发上限</span>
+      </div>
+      <div v-if="bankRate !== null" class="today-fact extra">
+        <strong class="num">{{ bankRate }}%</strong>
+        <span>缓存命中率</span>
+      </div>
+    </section>
+
+    <section v-if="problems.length" class="problem-strip" aria-label="最近异常">
+      <span class="problem-icon"><TriangleAlert :size="15" /></span>
+      <div class="problem-copy">
+        <b>最近有 {{ problemTotal }} 条异常</b>
+        <ul>
+          <li
+            v-for="item in problems"
+            :key="item.title"
+            :class="['problem-row', item.level]"
+          >
+            <span class="num">{{ item.time }}</span>
+            <span v-if="item.count > 1" class="problem-count num"
+              >×{{ item.count }}</span
+            >
+            <span class="problem-text">{{ item.title }}</span>
+          </li>
+        </ul>
+      </div>
+      <button
+        class="text-link"
+        aria-label="查看任务记录并处理异常"
+        @click="navigate('tasks')"
+      >
+        处理异常 <ArrowUpRight :size="13" />
+      </button>
+    </section>
+
     <div class="section-heading queue-heading">
       <div>
         <h2>调度队列</h2>
@@ -228,16 +368,11 @@ async function control(id: string, op: string) {
         <span>课程与任务</span><span>状态</span><span>说明</span><span>进度</span
         ><span>创建</span>
       </div>
-      <button
-        v-for="item in queue"
-        :key="item.id"
-        class="queue-row"
-        @click="openQueue(item)"
-      >
-        <span class="queue-main">
+      <div v-for="item in queue" :key="item.id" class="queue-row">
+        <button class="queue-main" @click="openQueue(item)">
           <b>{{ item.course_name }}</b>
           <small>{{ item.account_label }} · {{ item.feature_label }}</small>
-        </span>
+        </button>
         <span :class="['status', item.status]"
           ><i />{{ statuses[item.status] }}</span
         >
@@ -248,9 +383,49 @@ async function control(id: string, op: string) {
               summarizeWork(item).total || "—"
             }}</b
           >
+          <small class="num">{{ date(item.created_at) }}</small>
         </span>
-        <span class="queue-when num">{{ date(item.created_at) }}</span>
-      </button>
+        <span class="queue-actions">
+          <button
+            v-if="queueOps(item.status).pause"
+            class="icon-button"
+            aria-label="暂停这项任务"
+            title="暂停这项任务"
+            :disabled="state.busy.has('queue-' + item.id + 'pause')"
+            @click="taskCommand(item.id, 'pause')"
+          >
+            <Pause :size="13" />
+          </button>
+          <button
+            v-if="queueOps(item.status).resume"
+            class="icon-button"
+            aria-label="继续这项任务"
+            title="继续这项任务"
+            :disabled="state.busy.has('queue-' + item.id + 'resume')"
+            @click="taskCommand(item.id, 'resume')"
+          >
+            <Play :size="13" />
+          </button>
+          <button
+            v-if="queueOps(item.status).stop"
+            class="icon-button stop-ink"
+            aria-label="停止这项任务"
+            title="停止这项任务"
+            :disabled="state.busy.has('queue-' + item.id + 'stop')"
+            @click="taskCommand(item.id, 'stop')"
+          >
+            <Square :size="12" />
+          </button>
+          <button
+            class="icon-button"
+            aria-label="查看任务详情"
+            title="查看任务详情"
+            @click="openQueue(item)"
+          >
+            <ChevronRight :size="14" />
+          </button>
+        </span>
+      </div>
     </div>
     <div v-else-if="!queueTotal" class="empty">
       <Layers :size="26" />
@@ -424,6 +599,16 @@ async function control(id: string, op: string) {
     </div>
 
     <ConfirmDialog
+      v-if="stoppingTask"
+      title="停止这项任务"
+      :message="'将停止「' + stoppingTask.name + '」正在执行的任务。'"
+      hint="已完成的进度会保留，之后可以在任务记录里继续执行。"
+      confirm-text="停止任务"
+      :busy="state.busy.has('queue-' + stoppingTask.id + 'stop')"
+      @confirm="confirmTaskStop"
+      @cancel="stoppingTask = null"
+    />
+    <ConfirmDialog
       v-if="stopping"
       title="停止账号"
       :message="`将停止「${stopping.label}」下正在执行与排队的任务。`"
@@ -488,6 +673,146 @@ async function control(id: string, op: string) {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* ---------- 今日统计 ---------- */
+.today-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 0;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.today-strip > .eyebrow {
+  padding: 0 12px 0 10px;
+  font-size: 10px;
+  line-height: 46px;
+  color: var(--faint);
+}
+
+.today-fact {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 9px 14px;
+  border-left: 1px solid var(--line);
+}
+
+.today-fact strong {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.today-fact span {
+  font-size: 11px;
+  color: var(--mute);
+  white-space: nowrap;
+}
+
+.today-fact.ok strong {
+  color: var(--ok);
+}
+
+.today-fact.warn strong {
+  color: var(--warn);
+}
+
+.today-fact.extra strong {
+  color: var(--ink2);
+}
+
+/* ---------- 最近异常 ---------- */
+.problem-strip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--danger-line);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--r3);
+  background: var(--danger-soft);
+}
+
+.problem-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border-radius: var(--r2);
+  background: var(--surface);
+  color: var(--danger);
+}
+
+.problem-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.problem-copy b {
+  font-size: 12.5px;
+  color: var(--danger-ink);
+}
+
+.problem-copy ul {
+  display: grid;
+  gap: 2px;
+  color: var(--danger-ink);
+}
+
+.problem-copy li {
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.problem-copy li .num {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  opacity: 0.75;
+}
+
+.problem-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  justify-content: start;
+  gap: 8px;
+}
+
+.problem-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.problem-count {
+  padding: 0 5px;
+  border-radius: var(--r1);
+  background: rgba(255, 255, 255, 0.6);
+  font-size: 10.5px;
+}
+
+.problem-row.error .problem-text {
+  font-weight: 600;
+}
+
+.problem-strip > .text-link {
+  flex: 0 0 auto;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11.5px;
 }
 
 /* ---------- 执行摘要 ---------- */
@@ -609,7 +934,7 @@ async function control(id: string, op: string) {
 .queue-row {
   display: grid;
   grid-template-columns:
-    minmax(0, 1.5fr) 78px minmax(0, 1.4fr) 62px 78px;
+    minmax(0, 1.5fr) 78px minmax(0, 1.4fr) 92px 106px;
   gap: 14px;
   align-items: center;
   padding: 0 14px;
@@ -624,31 +949,85 @@ async function control(id: string, op: string) {
   color: var(--faint);
 }
 
+.queue-head > span:last-child {
+  text-align: right;
+}
+
 .queue-row {
-  width: 100%;
-  height: auto;
-  min-height: 46px;
-  padding: 11px 14px;
-  border: 0;
+  min-height: 48px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--line);
-  border-radius: 0;
   background: var(--surface);
-  text-align: left;
 }
 
 .queue-row:last-child {
   border-bottom: 0;
 }
 
-.queue-row:hover:not(:disabled) {
+.queue-row:hover {
   background: var(--surface2);
-  border-color: var(--line);
 }
 
+/* 整行可点：把课程名做成一枚无边框按钮，其余列不响应点击，
+   避免「点进度条也跳详情」和行内操作按钮互相抢事件。 */
 .queue-main {
   display: grid;
-  gap: 3px;
+  gap: 2px;
   min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  justify-content: start;
+  justify-items: stretch;
+}
+
+.queue-main:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.queue-main > b,
+.queue-main > small {
+  max-width: 100%;
+  text-align: left;
+}
+
+.queue-main:hover b {
+  color: var(--navy2);
+}
+
+.queue-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.queue-actions .icon-button {
+  width: 24px;
+  height: 24px;
+}
+
+.queue-actions .stop-ink:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
+  color: var(--danger-ink);
+}
+
+.queue-meta {
+  display: grid;
+  gap: 1px;
+  justify-items: end;
+}
+
+.queue-meta small {
+  font-family: var(--font-num);
+  font-size: 10.5px;
+  color: var(--faint);
 }
 
 .queue-main b {
@@ -928,6 +1307,18 @@ async function control(id: string, op: string) {
 }
 
 /* ---------- 响应式 ---------- */
+@media (max-width: 1080px) {
+  .queue-head,
+  .queue-row {
+    grid-template-columns: minmax(0, 1.4fr) 74px minmax(0, 1fr) 96px;
+  }
+
+  .queue-head > span:nth-child(4),
+  .queue-row > .queue-meta {
+    display: none;
+  }
+}
+
 @media (max-width: 980px) {
   .execution-dashboard {
     grid-template-columns: minmax(0, 1fr);
@@ -948,6 +1339,39 @@ async function control(id: string, op: string) {
 }
 
 @media (max-width: 720px) {
+  /* 今日统计在手机上排成两列，不再出现「单独一格挂在第二行」的碎行。 */
+  .today-strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--line);
+  }
+
+  .today-strip > .eyebrow {
+    display: none;
+  }
+
+  .today-fact {
+    display: grid;
+    gap: 1px;
+    padding: 9px 12px;
+    border-left: 0;
+    background: var(--surface);
+  }
+
+  .today-fact strong {
+    font-size: 17px;
+  }
+
+  .problem-strip {
+    flex-wrap: wrap;
+  }
+
+  .problem-strip > .text-link {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .resume-banner {
     grid-template-columns: auto minmax(0, 1fr);
   }
@@ -957,13 +1381,51 @@ async function control(id: string, op: string) {
     justify-content: flex-end;
   }
 
-  .queue-head,
-  .queue-row,
-  .recent-row {
-    grid-template-columns: minmax(0, 1fr) 78px;
+  /* 队列行在手机上重排成「主信息 + 状态 | 操作」三格两块，
+     而不是让状态和操作各自掉到下一行。 */
+  .queue-head {
+    display: none;
   }
 
+  .queue-row {
+    grid-template-areas:
+      "main status"
+      "main actions";
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 6px 10px;
+    padding: 12px 14px;
+  }
+
+  .queue-row > .queue-main {
+    grid-area: main;
+  }
+
+  .queue-row > .status {
+    grid-area: status;
+    justify-self: end;
+  }
+
+  .queue-row > .queue-actions {
+    grid-area: actions;
+    align-self: end;
+  }
+
+  .queue-row > .queue-reason {
+    grid-area: main;
+    align-self: end;
+    display: block;
+    white-space: normal;
+  }
+
+  .recent-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .queue-head > span:nth-child(3),
   .queue-head > span:nth-child(4),
+  .queue-row > .queue-reason,
   .queue-row > .queue-meta,
   .recent-row > .recent-meta {
     display: none;

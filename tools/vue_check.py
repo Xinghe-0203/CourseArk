@@ -14,6 +14,18 @@ def check(url, output):
         page=browser.new_page(viewport={'width':1920,'height':1080})
         page.on('pageerror',lambda e:errors.append(str(e)))
         page.goto(url)
+        # 种子数据刚加载：登录三态必须如实上屏（已验证 / 登录失败 / 待验证），
+        # 之后再跑任何操作都会改写 login_state，所以这条断言放在最前面。
+        page.get_by_role('navigation', name='主要导航').get_by_role('button', name='账号与课程').click()
+        page.wait_for_function('document.querySelectorAll(".account-row").length===6')
+        states = page.eval_on_selector_all('.account-row .status', 'ns=>ns.map(n=>n.className)')
+        assert any('status ok' == c for c in states), states
+        assert any('status failed' == c for c in states), states
+        assert any('status unknown' == c for c in states), states
+        assert page.locator('.account-row', has_text='账号 03').locator('.account-error').count() == 1
+        assert '138****0001' in page.locator('.account-row').first.inner_text()
+        passed('账号列表显示登录三态徽标、失败原因与打码手机号')
+        page.get_by_role('navigation', name='主要导航').get_by_role('button', name='工作总览').click()
         page.locator('.execution-account').first.wait_for()
         assert page.locator('.execution-account').count()==2
         assert page.locator('.execution-course').count()==2
@@ -24,6 +36,31 @@ def check(url, output):
         assert len(set(heights))==1, heights
         assert 240<=heights[0]<=560, heights
         passed('总览只显示执行中的两个账号与课程，等高执行卡片与真实进度仪表盘')
+        # 今日统计条：后端 /api/overview.today 的数字此前一处未用
+        today = page.locator('.today-strip')
+        today.wait_for()
+        facts = today.locator('.today-fact').all_inner_texts()
+        assert any('完成任务点' in t for t in facts), facts
+        assert any('答题' in t for t in facts), facts
+        assert any('并发上限' in t for t in facts), facts
+        passed('总览今日统计条展示完成任务点/答题/缓存/AI/提交/并发上限')
+        # 最近异常：同一文案归并成一行 + 次数
+        problems = page.locator('.problem-strip')
+        problems.wait_for()
+        assert '最近有' in problems.inner_text()
+        assert problems.locator('.problem-count').count() >= 1
+        passed('总览最近异常按文案归并，显示次数与处理入口')
+        # 队列行内指令：进行中可暂停、已暂停可继续，停止走二次确认
+        queue = page.locator('.overview-queue')
+        queue.wait_for()
+        pause_buttons = queue.get_by_label('暂停这项任务')
+        assert pause_buttons.count() >= 1
+        resume_buttons = queue.get_by_label('继续这项任务')
+        assert resume_buttons.count() >= 1
+        assert queue.get_by_label('停止这项任务').count() >= 1
+        # 只断言入口存在：这里真的点暂停会改掉后续「运行进度小窗」用例依赖的运行态。
+        assert queue.get_by_label('查看任务详情').count() >= 1
+        passed('总览队列行可直接暂停/继续/停止单项任务（入口齐全）')
         # 运行中进度小窗：默认最小化贴边，展开后显示当前动作、已用时、预计剩余
         win=page.locator('.progress-window')
         win.wait_for()
@@ -186,6 +223,18 @@ def check(url, output):
         page.get_by_label('搜索答题缓存').fill('Vue界面验收')
         page.get_by_text('Vue界面验收',exact=True).wait_for()
         passed('答题缓存导入预览、确认与搜索')
+        # 字体加密残留的缓存必须显式标出，并能一键清理（v2.5.3）
+        page.get_by_text('旧版 / 疑似乱码缓存',exact=False).wait_for()
+        page.get_by_role('button',name='清理乱码缓存',exact=True).click()
+        page.get_by_role('button',name='清理缓存',exact=True).click()
+        page.wait_for_selector('.modal',state='detached')
+        assert page.request.get(url+'/api/question-bank/stats').json()['suspicious']==0
+        passed('疑似乱码缓存提示与清理')
+        # 导出缓存收成一个下拉，选择后走浏览器下载
+        with page.expect_download() as download:
+            page.get_by_label('导出答题缓存').select_option('json')
+        assert download.value.suggested_filename.endswith('.json')
+        passed('答题缓存导出为单一格式下拉，选择后直接下载')
         page.get_by_label('搜索答题缓存').fill('')
         page.get_by_role('button',name='清空全部',exact=True).click()
         page.get_by_role('button',name='确认清空全部',exact=True).click()
@@ -326,7 +375,19 @@ def check(url, output):
         assert '已完成' in mission.inner_text() and '/' in mission.inner_text(), mission.inner_text()
         page.screenshot(path=str(output / 'desktop-mission.png'))
         passed('课程任务点显示已完成 x / y 与待完成数量')
+        # 课程弹窗顶部的任务点合计
+        summary = course_dialog.locator('.course-summary')
+        assert summary.count() == 1
+        assert '任务点合计' in summary.inner_text()
         page.get_by_role('button', name='关闭面板').click()
+        nav.get_by_role('button', name='账号与课程').click()
+        page.wait_for_function('document.querySelectorAll(".account-row").length===6')
+        # 登录状态：接口的 login_state / last_error 必须上屏，而不是「登录时自动验证」
+        failed = page.locator('.account-row', has_text='账号 03')
+        assert failed.locator('.status.failed').count() == 1, failed.inner_text()
+        assert failed.locator('.account-error').count() == 1
+        assert page.locator('.account-row .account-nickname').count() >= 1
+        passed('账号失败原因与平台昵称在列表内直接可见')
         nav.get_by_role('button', name='工作总览').click()
         banner = page.locator('.resume-banner')
         banner.wait_for()

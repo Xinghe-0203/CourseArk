@@ -7,10 +7,12 @@ import {
   Trash2,
   Eraser,
   RefreshCw,
+  ShieldAlert,
 } from "lucide-vue-next";
 import { request } from "../api";
 import { act, state } from "../store";
 import type { BankItem, BankStats, Settings } from "../types";
+import ConfirmDialog from "../components/ConfirmDialog.vue";
 import ModalShell from "../components/ModalShell.vue";
 import EmptyState from "../components/EmptyState.vue";
 import Pagination from "../components/Pagination.vue";
@@ -28,10 +30,12 @@ const items = ref<BankItem[]>([]),
   overwrite = ref(false),
   remove = ref<BankItem | null>(null),
   clearing = ref(false),
+  cleaningAnomalies = ref(false),
   files = ref<File[]>([]),
   sourcePath = ref("");
 /** T7.6：/api/question-bank/stats 聚合卡（tab 激活即拉取，容忍 0/失败）。 */
 const stats = ref<BankStats | null>(null);
+const suspicious = computed(() => stats.value?.suspicious || 0);
 const hitRate = computed(() => {
   const value = stats.value?.hit_rate;
   // 后端 hit_rate = hits / lookups；lookups 为 0 时它必然算出 0%，
@@ -151,6 +155,37 @@ function clearBank() {
     (result) => `已清空 ${(result as { deleted?: number }).deleted || 0} 条答题缓存`,
   );
 }
+/** 导出缓存：用一个下拉代替两个并列下载链接，选择后直接触发浏览器下载。 */
+function exportAs(event: Event) {
+  const format = (event.target as HTMLSelectElement).value;
+  if (!format) return;
+  const link = document.createElement("a");
+  link.href = `/api/question-bank/export?format=${format}`;
+  link.download = `question_bank.${format}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // 让下拉回到占位项，下次再选同一个格式仍然触发 change。
+  (event.target as HTMLSelectElement).value = "";
+  state.toast = `已开始导出 ${format.toUpperCase()} 缓存`;
+}
+function cleanAnomalies() {
+  act(
+    "clean-bank-anomalies",
+    async () => {
+      const result = await request<{ deleted: number }>(
+        "/question-bank/anomalies",
+        "DELETE",
+      );
+      cleaningAnomalies.value = false;
+      await load();
+      loadStats();
+      return result;
+    },
+    (result) =>
+      `已清理 ${(result as { deleted?: number }).deleted || 0} 条旧版 / 乱码缓存`,
+  );
+}
 </script>
 <template>
   <div class="bank">
@@ -172,13 +207,22 @@ function clearBank() {
           "
         >
           <RefreshCw :size="14" :class="{ spin: loading }" /></button
-        ><a class="button" href="/api/question-bank/export?format=json" download
-          ><Download :size="13" />导出 JSON</a
-        ><a class="button" href="/api/question-bank/export?format=csv" download
-          ><Download :size="13" />导出 CSV</a
         ><button class="primary" @click="show = true">
           <Upload :size="13" />导入缓存</button
-        ><button
+        ><div class="bank-export">
+          <Download :size="13" />
+          <select
+            :value="''"
+            aria-label="导出答题缓存"
+            @change="exportAs($event)"
+          >
+            <option value="" disabled>导出缓存</option>
+            <option value="json">导出 JSON</option>
+            <option value="csv">导出 CSV</option>
+          </select>
+        </div>
+        <span class="bank-tool-sep"></span>
+        <button
           class="danger"
           :disabled="!total || state.busy.has('clear-bank')"
           @click="clearing = true"
@@ -207,6 +251,22 @@ function clearBank() {
         }}</em>
       </div>
     </div>
+    <div v-if="suspicious" class="bank-warning" role="status">
+      <ShieldAlert :size="16" />
+      <div class="bank-warning-copy">
+        <b>发现 {{ suspicious }} 条旧版 / 疑似乱码缓存</b>
+        <small>
+          旧版题干里的部首码位已无法命中，答案含加密残留的记录也不会再提交；建议清理后让这些题重新走 AI。
+        </small>
+      </div>
+      <button
+        class="danger small"
+        :disabled="state.busy.has('clean-bank-anomalies')"
+        @click="cleaningAnomalies = true"
+      >
+        <Eraser :size="13" />清理乱码缓存
+      </button>
+    </div>
     <div class="filterbar">
       <label class="search"
         ><Search :size="14" /><input
@@ -224,12 +284,24 @@ function clearBank() {
         <span class="tag">{{ item.question_type || "未分类" }}</span>
         <div class="bank-main">
           <p class="bank-question">{{ item.question_text }}</p>
+          <span
+            v-if="item.quality?.length"
+            class="bank-quality"
+            :title="item.quality.join('；')"
+            ><ShieldAlert :size="11" aria-hidden="true" />疑似乱码</span
+          >
           <details v-if="item.options?.length">
             <summary>查看选项</summary>
             <p v-for="(opt, i) in item.options" :key="i">{{ opt }}</p>
           </details>
         </div>
-        <p class="bank-answer">{{ item.answer }}</p>
+        <p
+          class="bank-answer"
+          :class="{ 'is-bad': item.quality?.length }"
+          :title="item.quality?.join('；') || undefined"
+        >
+          {{ item.answer }}
+        </p>
         <button
           class="icon-button"
           aria-label="删除缓存"
@@ -299,6 +371,16 @@ function clearBank() {
       :page-size="50"
       :total="total"
       @update:offset="offset = $event"
+    />
+    <ConfirmDialog
+      v-if="cleaningAnomalies"
+      title="清理旧版与乱码缓存"
+      :message="`将删除 ${suspicious} 条旧版题干（含部首码位）或答案疑似乱码的记录。`"
+      hint="这些记录已无法参与命中；删除后相关内容会重新调用 AI。正常题目不受影响。"
+      confirm-text="清理缓存"
+      :busy="state.busy.has('clean-bank-anomalies')"
+      @confirm="cleanAnomalies"
+      @cancel="cleaningAnomalies = false"
     />
     <ModalShell v-if="show" title="导入答题缓存" wide @close="show = false"
       ><p class="muted">
@@ -469,6 +551,45 @@ function clearBank() {
   color: var(--faint);
 }
 
+.bank-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  height: var(--h-control);
+  padding: 0 4px 0 9px;
+  border: 1px solid var(--line2);
+  border-radius: var(--r2);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.bank-export select {
+  width: auto;
+  height: 26px;
+  border: 0;
+  background: transparent;
+  padding: 0 22px 0 4px;
+  font-size: var(--fs-small);
+  background-image: linear-gradient(45deg, transparent 50%, var(--mute) 50%),
+    linear-gradient(135deg, var(--mute) 50%, transparent 50%);
+  background-position: calc(100% - 11px) 12px, calc(100% - 7px) 12px;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+.bank-export select:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.bank-tool-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--line2);
+  margin: 0 2px;
+}
+
 .bank-stats em {
   font-size: 10.5px;
   font-style: normal;
@@ -476,6 +597,45 @@ function clearBank() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.bank-warning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r3);
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+}
+
+.bank-warning > svg {
+  flex: 0 0 auto;
+  color: var(--warn);
+}
+
+.bank-warning-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.bank-warning-copy b {
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.bank-warning-copy small {
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--warn-ink);
+  opacity: 0.85;
+}
+
+.bank-warning button {
+  flex: 0 0 auto;
 }
 
 .bank-list {
@@ -538,6 +698,20 @@ function clearBank() {
   color: var(--mute);
 }
 
+.bank-quality {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--danger-line);
+  border-radius: var(--r1);
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+  font-size: 10.5px;
+  line-height: 1.6;
+}
+
 .bank-main details p {
   margin: 1px 0 0;
 }
@@ -556,6 +730,11 @@ function clearBank() {
   overflow-wrap: anywhere;
 }
 
+.bank-answer.is-bad {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+
 .bank-item .icon-button {
   width: 26px;
   height: 26px;
@@ -570,6 +749,19 @@ function clearBank() {
 @media (max-width: 1080px) {
   .bank-stats {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bank-warning {
+    flex-wrap: wrap;
+  }
+
+  .bank-warning-copy {
+    flex-basis: calc(100% - 32px);
+  }
+
+  .bank-warning button {
+    width: 100%;
+    justify-content: center;
   }
 
   .bank-item {

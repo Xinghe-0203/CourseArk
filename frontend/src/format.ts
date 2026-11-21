@@ -92,3 +92,29 @@ export function chapters(text: string) {
     ),
   ];
 }
+
+/** 账号登录状态：ok / failed / unknown → 文案、语义色与简短原因。 */
+export interface LoginState {
+  key: "ok" | "failed" | "unknown";
+  text: string;
+  tone: string;
+  reason: string;
+}
+export function loginState(account: {
+  login_state?: string;
+  last_error?: string;
+  last_login_at?: string;
+}): LoginState {
+  const key =
+    account.login_state === "ok"
+      ? "ok"
+      : account.login_state === "failed"
+        ? "failed"
+        : "unknown";
+  const text =
+    key === "ok" ? "已验证" : key === "failed" ? "登录失败" : "待验证";
+  // 失败原因保留平台原文，但截断到一行能放下的长度，完整内容在详情折叠里。
+  const raw = String(account.last_error || "").replace(/\s+/g, " ").trim();
+  const reason = raw.length > 60 ? raw.slice(0, 58) + "…" : raw;
+  return { key, text, tone: key, reason };
+}

@@ -101,9 +101,9 @@ const choices: Record<string, [string, string][]> = {
     ["ERROR", "仅错误"],
   ],
 };
+/** 每个 tab 负责的设置前缀；learning 由 ParameterForm 单独渲染，不在列表里。 */
 const groups: Record<string, string[]> = {
   ai: ["llm"],
-  answer: ["defaults"],
   bank: ["question_bank"],
   ui: ["ui"],
   advanced: ["scheduler", "advanced", "server", "storage"],
@@ -111,14 +111,12 @@ const groups: Record<string, string[]> = {
 const tabs: Record<string, string> = {
   learning: "学习方式",
   ai: "AI 服务",
-  answer: "作答偏好",
   bank: "答题缓存",
   ui: "界面显示",
   advanced: "运行与存储",
 };
 const tabHints: Record<string, string> = {
   ai: "填写兼容接口与模型。已保存的密钥不会显示，留空会保留。",
-  answer: "这些是新建任务时的默认作答方式，已有任务使用各自保存的配置。",
   bank: "答题缓存用于复用已验证的答案；清空或导入请前往「答题缓存」页面。",
   ui: "调整「已完成」专页等界面的显示方式，保存后立即生效。",
   advanced: "调整后台并发与等待策略。端口变更需要重启服务。",
@@ -226,11 +224,18 @@ function importSource() {
           <template v-if="tab === 'learning'">
             <div class="panel-head">
               <h2>默认学习方式</h2>
-              <p>创建任务时可调整这些参数；已有任务使用各自保存的配置。</p>
+              <p>
+                新建任务时默认使用这里的参数，也可以在向导里临时调整；已有任务按创建时的快照执行。
+              </p>
             </div>
             <div class="panel-body">
               <h3>视频与章节任务</h3>
               <ParameterForm :params="form.defaults" feature="course_all" />
+              <h3 class="sub-head">章节测验与作业（与上面共用）</h3>
+              <p class="settings-hint">
+                作答方式、没有可靠答案时的处理与提交等待，与视频任务一起保存；
+                「答题缓存」页负责已经记住的答案，这里只管默认策略。
+              </p>
             </div>
           </template>
           <template v-else>
@@ -460,6 +465,22 @@ function importSource() {
   color: var(--faint);
 }
 
+.panel-body .sub-head {
+  margin-top: 20px;
+}
+
+.param-hint {
+  display: block;
+  font-size: var(--fs-meta);
+  line-height: 1.55;
+  color: var(--faint);
+}
+
+.param-hint.inline {
+  margin-left: 6px;
+  display: inline;
+}
+
 .settings-feedback {
   font-size: var(--fs-meta);
   color: var(--ok);
@@ -499,7 +520,7 @@ function importSource() {
 }
 
 .settings-backup[open] > summary::before {
-  content: "2";
+  content: "−";
 }
 
 .settings-backup[open] > summary {

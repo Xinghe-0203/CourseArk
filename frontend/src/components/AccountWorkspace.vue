@@ -16,8 +16,8 @@ import ConfirmDialog from "./ConfirmDialog.vue";
 import ProgressBar from "./ProgressBar.vue";
 import { state, act, navigate } from "../store";
 import { request } from "../api";
-import { active, statuses, features, date } from "../format";
-import { missionState, missionTotals } from "../mission";
+import { active, statuses, features, date, loginState } from "../format";
+import { missionNumbers, missionState, missionTotals } from "../mission";
 import { courseKey, taskForCourse } from "../course";
 import type { AccountWorkspace, Course, Task } from "../types";
 const emit = defineEmits<{ select: [task: Task] }>();
@@ -39,11 +39,7 @@ const selected = computed<AccountWorkspace | null>(
 const totalsFor = (p: AccountWorkspace) => missionTotals(p.courses);
 const missionFor = (p: AccountWorkspace, c: Course) => missionState(c, p.account.syncing);
 // 任务点用「已完成 / 总数 + 待完成」两个数，避免与右侧状态徽标的「已完成」撞词。
-function missionNumbers(c: Course) {
-  const all = Math.max(0, Number(c.mission_all) || 0);
-  const fn = Math.max(0, Number(c.mission_fn) || 0);
-  return { all, fn, pending: Math.max(0, all - fn), percent: all ? Math.min(100, Math.round((fn / all) * 100)) : 0 };
-}
+// 四个数字的计算统一在 mission.ts 的 missionNumbers()，与进度页共用一份口径。
 function accountTone(p: AccountWorkspace) {
   return p.counts.active ? "running" : p.counts.paused ? "paused" : "pending";
 }
@@ -143,6 +139,9 @@ function confirmStop() {
 </script>
 <template>
   <div class="account-workspace">
+    <!-- 工具条：左「找账号 / 选模块」，右「选账号」。此前三个按钮
+         （全选账号 / 为所选账号新建任务 / 创建所选 N 门课程任务）平铺在一行，
+         用户分不清先后顺序；现在按「查找 → 选择 → 创建」两段归位。 -->
     <div class="workspace-toolbar">
       <label class="search"
         ><Search :size="15" /><input
@@ -154,6 +153,10 @@ function confirmStop() {
         <option value="course_all">课程任务点</option>
         <option value="independent_homework">独立作业</option>
       </select>
+      <span class="toolbar-hint muted"
+        >{{ profiles.length }} 个账号 · {{ runningCount }} 项执行中 ·
+        {{ pendingCount }} 项排队</span
+      >
       <button
         :title="
           allVisibleChosen
@@ -162,34 +165,46 @@ function confirmStop() {
         "
         @click="chooseVisibleAccounts"
       >
-        {{ allVisibleChosen ? "清除账号选择" : `全选 ${profiles.length} 个账号` }}
-      </button>
-      <button
-        :disabled="!selectedAccounts.length"
-        title="用已勾选账号的可学习课程创建任务"
-        @click="chooseAccounts"
-      >
-        <CheckCheck :size="14" />为所选账号新建任务
-      </button>
-      <button class="primary" :disabled="!selectedCount" @click="create()">
-        创建所选 {{ selectedCount }} 门课程任务
+        {{
+          allVisibleChosen ? "清除账号选择" : `全选 ${profiles.length} 个账号`
+        }}
       </button>
     </div>
 
-    <div class="workspace-scope">
-      <span
-        >{{ profiles.length }} 个账号 · {{ runningCount }} 项正在执行 ·
-        {{ pendingCount }} 项排队</span
-      >
-      <div class="button-row" v-if="selectedAccounts.length">
-        <small>已选择 {{ selectedAccounts.length }} 个账号</small
-        ><button class="small" @click="operation('pause', chosenProfiles)">
-          批量暂停</button
-        ><button class="small" @click="operation('resume', chosenProfiles)">
-          批量继续</button
-        ><button class="small" @click="operation('stop', chosenProfiles)">
-          批量停止</button
+    <!-- 选择条：只在真的选了账号时出现，把「已选几个账号、几门课、能做什么」
+         一次说清；没选的时候不占一行，也不再显示一排禁用的按钮。 -->
+    <div class="workspace-scope" :class="{ 'is-idle': !selectedAccounts.length }">
+      <span v-if="selectedAccounts.length" class="scope-summary">
+        已选 <b class="num">{{ selectedAccounts.length }}</b> 个账号
+        <template v-if="selectedCount">
+          · <b class="num">{{ selectedCount }}</b> 门课程
+        </template>
+        <template v-else>· 还没有勾选课程</template>
+      </span>
+      <span v-else class="scope-summary muted">
+        勾选左侧账号可批量暂停/停止，或直接为它们新建任务
+      </span>
+      <div class="scope-actions">
+        <template v-if="selectedAccounts.length">
+          <button class="small" @click="operation('pause', chosenProfiles)">
+            批量暂停</button
+          ><button class="small" @click="operation('resume', chosenProfiles)">
+            批量继续</button
+          ><button class="small" @click="operation('stop', chosenProfiles)">
+            批量停止</button
+          >
+          <span class="scope-sep"></span>
+        </template>
+        <button
+          :disabled="!selectedAccounts.length"
+          title="用已勾选账号的可学习课程创建任务"
+          @click="chooseAccounts"
         >
+          <CheckCheck :size="14" />为所选账号新建任务
+        </button>
+        <button class="primary" :disabled="!selectedCount" @click="create()">
+          创建所选 {{ selectedCount }} 门课程任务
+        </button>
       </div>
     </div>
 
@@ -241,13 +256,12 @@ function confirmStop() {
           <div class="account-name">
             <h2>{{ selected.account.label || selected.account.username }}</h2>
             <small
-              >{{ selected.account.username }} ·
-              {{
-                selected.account.session?.has_session &&
-                selected.account.session?.fresh
-                  ? "登录缓存可用"
-                  : "登录时自动验证"
-              }}</small
+              >{{ selected.account.username_masked || selected.account.username }} ·
+              {{ loginState(selected.account).text }}
+              <template v-if="selected.account.last_login_at"
+                >· 最近登录
+                {{ selected.account.last_login_at.replace("T", " ") }}</template
+              ></small
             >
           </div>
           <span :class="['status', accountTone(selected)]"
@@ -590,7 +604,12 @@ function confirmStop() {
 .workspace-toolbar select {
   width: auto;
   min-width: 132px;
-  height: 28px;
+  height: var(--h-control);
+}
+
+.toolbar-hint {
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .workspace-scope {
@@ -605,6 +624,32 @@ function confirmStop() {
   background: var(--surface2);
   font-size: 11.5px;
   color: var(--mute);
+}
+
+/* 未选账号时用虚线表示「这里可以开始」；不能复用全局 .empty 类名，
+   那是空状态组件（40px 内边距 + 居中），会把工具条撑成一块空卡片。 */
+.workspace-scope.is-idle {
+  background: var(--surface);
+  border-style: dashed;
+}
+
+.scope-summary b {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.scope-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.scope-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--line2);
 }
 
 /* 二级菜单：左列账号，右侧详情 */
@@ -1155,6 +1200,56 @@ function confirmStop() {
 
   .course-task {
     grid-column: 1 / -1;
+  }
+}
+
+/* 手机端账号菜单改为两列网格：横向滚动会只露出半张卡片，
+   用户不知道右边还有账号；两列可直接看到全部账号。 */
+@media (max-width: 760px) {
+  .account-menu {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .account-menu-item {
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .account-menu-item:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .account-menu-item:nth-last-child(-n+2) {
+    border-bottom: 0;
+  }
+
+  .account-pick {
+    width: auto;
+    grid-template-columns: minmax(0, 1fr) 8px;
+    gap: 6px;
+  }
+
+  .scope-actions {
+    width: 100%;
+  }
+
+  .scope-actions > button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .scope-sep {
+    display: none;
+  }
+
+  .toolbar-hint {
+    flex-basis: 100%;
+  }
+
+  .account-pick .avatar {
+    display: none;
   }
 }
 </style>

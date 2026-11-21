@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import {
   Plus,
   RefreshCw,
@@ -14,8 +14,8 @@ import { request } from "../api";
 import type { Account, Course } from "../types";
 import ModalShell from "../components/ModalShell.vue";
 import ConfirmDialog from "../components/ConfirmDialog.vue";
-import { missionState } from "../mission";
-import { date } from "../format";
+import { missionState, missionTotals } from "../mission";
+import { date, loginState } from "../format";
 const edit = ref<Partial<Account> | null>(null),
   password = ref(""),
   courses = ref<Course[]>([]),
@@ -24,6 +24,10 @@ const edit = ref<Partial<Account> | null>(null),
   clearingSession = ref<Account | null>(null);
 const missionFor = (course: Course) =>
   missionState(course, showCourses.value?.syncing);
+/** 课程弹窗顶部合计：给用户一个「这门课还剩多少任务点」的总数，而不是逐门心算。 */
+const courseTotals = computed(() => missionTotals(courses.value));
+/** 登录状态：接口一直返回 login_state / last_error，但界面此前只显示「登录时自动验证」。 */
+const loginOf = (account: Account) => loginState(account);
 async function inspect(a: Account) {
   await act(
     "courses-" + a.id,
@@ -99,10 +103,18 @@ function save() {
           <span class="avatar">{{ (a.label || a.username).slice(0, 1) }}</span>
           <div>
             <b>{{ a.label || a.username }}</b>
-            <small>{{ a.username }}</small>
+            <small>{{ a.username_masked || a.username }}</small>
+            <span v-if="a.display_name" class="account-nickname"
+              >平台昵称 {{ a.display_name }}</span
+            >
           </div>
-          <span :class="['status', a.enabled ? 'running' : 'paused']"
-            ><i />{{ a.enabled ? "已启用" : "已停用" }}</span
+          <span :class="['status', loginOf(a).tone]"
+            ><i />{{ loginOf(a).text }}</span
+          >
+          <span
+            v-if="!a.enabled"
+            class="status stopped account-disabled"
+            ><i />已停用</span
           >
         </div>
         <div class="account-courses">
@@ -110,7 +122,10 @@ function save() {
           <small>门已同步课程</small>
           <button class="text-link" @click="inspect(a)">查看课程</button>
           <p v-if="a.syncing" class="account-sync-line">正在同步课程…</p>
-          <p v-else-if="a.last_sync_status" class="account-sync-line">
+          <p
+            v-else-if="a.last_sync_status"
+            :class="['account-sync-line', { 'is-failed': a.last_sync_status === 'failed' }]"
+          >
             课程同步{{ a.last_sync_status === "failed" ? "失败" : "成功"
             }}<template v-if="typeof a.last_sync_at === 'number'"
               >· {{ date(a.last_sync_at) }}</template
@@ -119,15 +134,32 @@ function save() {
           <p v-else class="account-sync-line">还没有同步过课程</p>
         </div>
         <div class="account-session">
-          <p class="account-note">
+          <p
+            class="account-note"
+            :class="{ 'is-failed': loginOf(a).key === 'failed' }"
+          >
             {{
               a.session?.fetching
                 ? "正在获取登录缓存…"
-                : a.session?.has_session && a.session?.fresh
-                  ? "登录缓存可用"
-                  : "登录时自动验证"
+                : loginOf(a).key === "failed"
+                  ? "密码登录失败，需要重新验证"
+                  : a.session?.has_session && a.session?.fresh
+                    ? "登录缓存可用，执行任务时无需密码"
+                    : loginOf(a).key === "ok"
+                      ? "已通过密码登录，缓存过期后会自动重登"
+                      : "还没有登录过，首次执行任务时自动验证"
             }}
           </p>
+          <p
+            v-if="loginOf(a).reason"
+            class="account-error"
+            :title="a.last_error"
+          >
+            {{ loginOf(a).reason }}
+          </p>
+          <small v-if="a.last_login_at" class="account-login-when"
+            >最近登录 {{ a.last_login_at.replace("T", " ") }}</small
+          >
           <details class="advanced">
             <summary>登录状态与缓存</summary>
             <p>
@@ -263,20 +295,29 @@ function save() {
       :title="`${showCourses.label || showCourses.username}的课程`"
       wide
       @close="showCourses = null"
-      ><div
+      ><div v-if="courses.length" class="course-summary">
+        <span class="eyebrow">任务点合计</span>
+        <b class="num">{{ courseTotals.fn }} / {{ courseTotals.all || "—" }}</b>
+        <small
+          >{{ courses.length }} 门课程 ·
+          {{ courses.filter((c) => c.if_open).length }} 门可学习 ·
+          {{ courseTotals.all - courseTotals.fn > 0
+            ? `${courseTotals.all - courseTotals.fn} 个任务点待完成`
+            : "已全部完成" }}</small
+        >
+      </div>
+      <div
         v-for="course in courses"
         :key="course.course_id + course.class_id"
         class="course-item"
       >
-        <div>
+        <div class="course-item-main">
           <b>{{ course.name }}</b
-          ><small
-            >{{ course.author }} · {{ course.if_open ? "可学习" : "已关闭" }} ·
-            <span :class="['course-mission', missionFor(course).tone]">{{
-              missionFor(course).text
-            }}</span></small
-          >
+          ><small>{{ course.author }} · {{ course.if_open ? "可学习" : "已关闭" }}</small>
         </div>
+        <span :class="['course-mission', missionFor(course).tone]">{{
+          missionFor(course).text
+        }}</span>
       </div>
       <div v-if="!courses.length" class="empty">
         <BookOpen :size="28" />
@@ -416,6 +457,114 @@ function save() {
   grid-column: 2;
   justify-self: start;
   margin-top: 3px;
+}
+
+.account-id .account-disabled {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: start;
+}
+
+.account-nickname {
+  font-size: 10.5px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-error {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--danger-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-note.is-failed {
+  color: var(--danger-ink);
+}
+
+.account-login-when {
+  font-family: var(--font-num);
+  font-size: 10.5px;
+  color: var(--faint);
+}
+
+.account-sync-line.is-failed {
+  color: var(--danger-ink);
+}
+
+/* 课程弹窗：合计条 + 每门课右侧任务点徽标 */
+.course-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--surface2);
+}
+
+.course-summary b {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.course-summary small {
+  font-size: 11px;
+  color: var(--mute);
+}
+
+.course-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.course-item:last-child {
+  border-bottom: 0;
+}
+
+.course-item-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.course-item-main b {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.course-item-main small {
+  font-size: 11px;
+  color: var(--mute);
+}
+
+.course-mission {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.course-mission.ok {
+  color: var(--ok);
+}
+
+.course-mission.pending {
+  color: var(--warn-ink);
+}
+
+.course-mission.muted {
+  color: var(--faint);
 }
 
 .account-courses {

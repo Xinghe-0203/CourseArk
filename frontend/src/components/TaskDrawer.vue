@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { RefreshCw, Radio, LoaderCircle, ShieldAlert, Search } from "lucide-vue-next";
+import {
+  RefreshCw,
+  Radio,
+  LoaderCircle,
+  ShieldAlert,
+  Search,
+  Pause,
+  Play,
+  Square,
+  Undo2,
+} from "lucide-vue-next";
 import type { AnswerItem, Task, TaskEvent } from "../types";
 import { request } from "../api";
 import { categories, statuses, date, active, terminal } from "../format";
@@ -19,7 +29,8 @@ import {
   appendEventPage,
   filterAnswerGroups,
 } from "../live";
-import { state } from "../store";
+import { state, act, resumeTask } from "../store";
+import ConfirmDialog from "./ConfirmDialog.vue";
 import ModalShell from "./ModalShell.vue";
 const props = defineProps<{ task: Task }>();
 defineEmits<{ close: [] }>();
@@ -78,6 +89,28 @@ const filtered = computed(() =>
           : e.event !== "log" && e.event !== "task_progress")),
   ),
 );
+/** 抽屉内可直接控制任务：与任务列表行的图标操作走同一套接口。
+ *  停止不可撤销，先弹 ConfirmDialog；暂停/继续/重试/续跑直接执行。 */
+const stopping = ref(false);
+function control(op: "pause" | "resume") {
+  const id = props.task.id;
+  act(
+    id + op,
+    () => request(`/tasks/${id}/${op}`, "POST"),
+    "任务指令已发送",
+  );
+}
+function confirmStop() {
+  stopping.value = false;
+  act(
+    "stop-" + props.task.id,
+    () => request(`/tasks/${props.task.id}/stop`, "POST"),
+    "已发送停止指令",
+  );
+}
+function askResume() {
+  void resumeTask(detail.value);
+}
 let timer: ReturnType<typeof setTimeout> | undefined,
   sseTimer: ReturnType<typeof setTimeout> | undefined,
   closed = false;
@@ -256,6 +289,42 @@ watch(
         <span v-if="live" class="live-badge"
           ><i /><Radio :size="11" />实时更新中</span
         >
+        <div class="detail-actions">
+          <button
+            v-if="
+              ['running', 'starting', 'logging_in', 'loading_courses'].includes(
+                detail.status,
+              )
+            "
+            class="small"
+            :disabled="state.busy.has(detail.id + 'pause')"
+            @click="control('pause')"
+          >
+            <Pause :size="12" />暂停
+          </button>
+          <button
+            v-if="['paused', 'pausing'].includes(detail.status)"
+            class="small"
+            :disabled="state.busy.has(detail.id + 'resume')"
+            @click="control('resume')"
+          >
+            <Play :size="12" />继续
+          </button>
+          <button
+            v-if="!terminal(detail)"
+            class="small"
+            :disabled="state.busy.has('stop-' + detail.id)"
+            @click="stopping = true"
+          >
+            <Square :size="12" />停止
+          </button>
+          <!-- 终态只剩「继续执行」一个入口：后端 resume 与 retry 对终态任务
+               是同一件事（用原参数快照新建 pending 任务，见
+               app/routes/tasks.py），两个按钮并存会让用户以为有区别。 -->
+          <button v-if="terminal(detail)" class="small" @click="askResume">
+            <Undo2 :size="12" />继续执行
+          </button>
+        </div>
       </div>
       <div v-if="detail.resumed_from" class="resume-chain detail-resume-chain">
         <span class="resume-chip"
@@ -597,6 +666,16 @@ watch(
           JSON.stringify(detail.params, null, 2)
         }}</pre>
       </template>
+      <ConfirmDialog
+        v-if="stopping"
+        title="停止任务"
+        :message="`将停止「${task.course_name || '这项任务'}」正在执行的任务。`"
+        hint="已完成的进度会保留，之后可以在任务记录里继续执行。"
+        confirm-text="停止任务"
+        :busy="state.busy.has('stop-' + task.id)"
+        @confirm="confirmStop"
+        @cancel="stopping = false"
+      />
     </div>
   </ModalShell>
 </template>
@@ -606,6 +685,20 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.detail-actions button {
+  height: var(--h-control-sm);
+  padding: 0 9px;
+  font-size: var(--fs-meta);
 }
 
 .detail-summary {

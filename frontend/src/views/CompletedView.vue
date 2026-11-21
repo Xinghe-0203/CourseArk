@@ -584,6 +584,29 @@ function changeSize(event: Event) {
   color: var(--navy);
 }
 
+/* 手机端：列表容器不再单独加边框，改成逐行卡片。
+   否则会出现「容器边框 + 行分隔线 + 状态胶囊」三层框，视觉上像嵌套的抽屉。 */
+@media (max-width: 760px) {
+  .completed-list {
+    gap: 8px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    overflow: visible;
+  }
+
+  .completed-row {
+    border: 1px solid var(--line);
+    border-radius: var(--r3);
+    background: var(--surface);
+    padding: 12px;
+  }
+
+  .completed-row:last-child {
+    border-bottom: 1px solid var(--line);
+  }
+}
+
 @media (max-width: 1080px) {
   .completed-head-row {
     display: none;

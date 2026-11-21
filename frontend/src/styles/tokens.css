@@ -2,22 +2,23 @@
 :root {
   color-scheme: light;
 
-  /* 墨色与中性面 */
+  /* 墨色与中性面：正文/次要/弱化三档对比度分别为 15:1 / 9:1 / 5.2:1，
+     弱化色不再低到看不清（旧 --faint #98a2ad 在白底上只有 3.2:1）。 */
   --ink: #15191f;
   --ink2: #39424d;
-  --mute: #69737f;
-  --faint: #98a2ad;
-  --paper: #edf0f3;
+  --mute: #5d6874;
+  --faint: #77828e;
+  --paper: #eef1f4;
   --surface: #ffffff;
-  --surface2: #f7f8fa;
-  --surface3: #eff2f5;
-  --line: #dfe3e8;
-  --line2: #c9d0d8;
+  --surface2: #f6f8fa;
+  --surface3: #eceff3;
+  --line: #dde2e8;
+  --line2: #c6ced7;
 
   /* 结构色：只在选择、进度与品牌出现 */
   --navy: #123a5e;
   --navy2: #1c5586;
-  --navy-soft: #e7edf4;
+  --navy-soft: #e5edf5;
   --navy-deep: #0e3152;
   --primary-contrast: #f4f8fb;
 
@@ -45,8 +46,8 @@
   --r3: 7px;
   --r4: 10px;
   --r-pill: 999px;
-  --rail: 208px;
-  --topbar: 54px;
+  --rail: 212px;
+  --topbar: 52px;
 
   /* 间距刻度：4 的倍数，页面只用这几档 */
   --sp-1: 4px;
@@ -63,20 +64,26 @@
   --fs-title: 15px;
   --fs-display: 26px;
 
+  /* 控件高度：按钮与输入框共用同一把尺，同排控件不会再高低不齐 */
+  --h-control: 28px;
+  --h-control-sm: 24px;
+  --h-input: 30px;
+
   /* 层级 */
   --z-sticky: 10;
   --z-overlay: 40;
   --z-float: 45;
+  --z-popover: 50;
   --z-toast: 60;
 
   /* 派生色：状态色与中性面的透明变体，避免组件里散落 rgba 字面量 */
   --ok-glow: rgba(26, 122, 82, 0.4);
   --ok-glow-soft: rgba(26, 122, 82, 0.12);
   --warn-glow-soft: rgba(150, 98, 15, 0.14);
-  --scrim: rgba(18, 24, 32, 0.4);
+  --scrim: rgba(18, 24, 32, 0.42);
   --scroll-thumb: #c3cbd3;
   --scroll-thumb-active: #a7b2bd;
-  --topbar-bg: rgba(255, 255, 255, 0.9);
+  --topbar-bg: rgba(255, 255, 255, 0.88);
   --toast-bg: #1b2027;
   --toast-ink: #f2f5f8;
 
@@ -84,7 +91,7 @@
   --shadow-1: 0 1px 2px rgba(16, 24, 32, 0.05);
   --shadow-2: 0 2px 8px rgba(16, 24, 32, 0.08);
   --shadow-3: 0 18px 44px rgba(16, 24, 32, 0.22);
-  --focus-ring: 0 0 0 3px rgba(28, 85, 134, 0.18);
+  --focus-ring: 0 0 0 3px rgba(28, 85, 134, 0.2);
 
   /* 字体角色 */
   --font-body: "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", system-ui, sans-serif;

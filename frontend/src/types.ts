@@ -10,11 +10,21 @@ export interface Account {
   id: string;
   label: string;
   username: string;
+  /** 手机号打码视图（接口的 username_masked），列表里用它避免整屏明文手机号 */
+  username_masked?: string;
   enabled: boolean;
   course_count: number;
   syncing: boolean;
   last_sync_status?: string;
   last_sync_at?: number;
+  /** 最近一次登录结果：ok / failed / unknown */
+  login_state?: string;
+  last_login_at?: string;
+  /** 登录或同步失败的具体原因（平台返回原文，已脱敏） */
+  last_error?: string;
+  /** 平台昵称（登录成功后由 Worker 回写） */
+  display_name?: string;
+  has_password?: boolean;
   session?: {
     has_session?: boolean;
     fresh?: boolean;
@@ -234,6 +244,8 @@ export interface TaskEvent {
   level: string;
   stage: string;
   ts: number;
+  /** 本地时间字符串（YYYY-MM-DDTHH:MM:SS），列表里直接用，避免每行再做时区换算 */
+  timestamp?: string;
   payload: Record<string, unknown>;
   presentation?: {
     category: string;
@@ -252,6 +264,8 @@ export interface BankItem {
   answer: string;
   options?: string[];
   course_id?: string;
+  /** 题干/答案的乱码风险原因；空数组 = 未发现异常 */
+  quality?: string[];
 }
 /** /api/overview 的调度队列行（active+paused+pending 前 60）。 */
 export interface QueueItem {
@@ -291,6 +305,7 @@ export interface BankStats {
   by_course: Record<string, number>;
   recent_days: { day: string; hits: number; lookups: number }[];
   recent_count: number;
+  suspicious?: number;
   latest: BankItem[];
 }
 export type Settings = Record<string, any>;

@@ -224,3 +224,25 @@
     width: 100%;
   }
 }
+
+/* 手机端浮窗占满宽度时会把整页内容压到看不见：
+   改成左右贴边的小卡片，并限制高度，点最小化后只留标题行。 */
+@media (max-width: 760px) {
+  .float-stack {
+    right: 8px;
+    left: 8px;
+    width: auto;
+    max-width: none;
+    max-height: 46vh;
+  }
+
+  .float-window {
+    max-height: 46vh;
+  }
+
+  .float-window.minimized,
+  .alert-window {
+    width: 100%;
+    align-self: stretch;
+  }
+}

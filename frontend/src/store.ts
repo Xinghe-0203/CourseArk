@@ -1,6 +1,5 @@
 import { reactive, watch } from "vue";
 import { request } from "./api";
-import { active } from "./format";
 import { nextDismissedResumeTasks } from "./mission";
 import { router } from "./router";
 import type {
@@ -56,25 +55,18 @@ export function setTaskLive(id: string, live?: TaskLive | null) {
   const task = state.tasks.find((item) => item.id === id);
   if (task) task.live = live ?? null;
 }
-// 列表接口不含 live：按任务节流补齐运行中快照（小窗与任务行摘要共用）。
-const liveFetchedAt: Record<string, number> = {};
-async function refreshLives() {
-  const now = Date.now();
-  const running = state.tasks.filter(
-    (task) => active(task) || task.status === "paused",
-  );
-  await Promise.all(
-    running.map(async (task) => {
-      if (now - (liveFetchedAt[task.id] || 0) < 2500) return;
-      liveFetchedAt[task.id] = now;
-      try {
-        const detail = await request<Task>(`/tasks/${task.id}`);
-        setTaskLive(task.id, detail.live);
-      } catch {
-        liveFetchedAt[task.id] = 0;
-      }
-    }),
-  );
+/**
+ * 运行中快照（当前动作 / 已用时 / ETA）由 /api/tasks?include_live=1 随列表一次带回，
+ * 不再对每个运行中任务各打一次 /tasks/{id}。此前 8 个任务是 8 次带逐题明细的详情
+ * 请求（每次都要查 4 次事件表 + 一次 500 条 answer_result），每 10 秒一轮。
+ * liveById 仍然保留：进度小窗自己轮询详情时会把更细的快照写进来，列表刷新沿用最新值。
+ */
+function adoptLive(items: Task[]) {
+  for (const task of items) {
+    const live = task.live ?? state.liveById[task.id] ?? null;
+    state.liveById[task.id] = live;
+    task.live = live;
+  }
 }
 export async function act(
   key: string,
@@ -129,16 +121,15 @@ export async function refresh() {
   try {
     const values = await Promise.all([
       request<{ items: Account[] }>("/accounts"),
-      request<{ items: Task[]; total: number }>("/tasks?limit=100"),
+      // include_live=1：列表自带运行中快照，省掉逐任务的详情轮询（见 adoptLive 注释）
+      request<{ items: Task[]; total: number }>("/tasks?limit=100&include_live=1"),
       request<{ items: AccountWorkspace[] }>("/workspace/accounts"),
       request<Overview>("/overview").catch(() => null),
     ]);
     if (current !== generation) return;
     state.accounts = values[0].items;
-    // 列表接口不带 live，用最近一次小窗轮询的快照补齐，避免行摘要闪回。
-    state.tasks = values[1].items.map((task) =>
-      state.liveById[task.id] ? { ...task, live: state.liveById[task.id] } : task,
-    );
+    state.tasks = values[1].items;
+    adoptLive(state.tasks);
     state.workspaces = values[2].items;
     state.overview = values[3];
     const validAccounts = new Set(state.workspaces.map((p) => p.account.id));
@@ -160,7 +151,6 @@ export async function refresh() {
       validCourses.has(key),
     );
     state.online = true;
-    void refreshLives();
   } catch (error) {
     state.online = false;
     if (!state.accounts.length)

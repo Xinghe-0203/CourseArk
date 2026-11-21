@@ -3,10 +3,10 @@ import { computed, ref } from "vue";
 import { ChartColumn, ChevronRight, Search } from "lucide-vue-next";
 import { state, navigate } from "../store";
 import { courseKey, courseRows, type CourseRow } from "../course";
-import { missionState, missionTotals } from "../mission";
+import { missionNumbers, missionState, missionTotals } from "../mission";
 import { active, date, features, statuses } from "../format";
 import ProgressBar from "../components/ProgressBar.vue";
-import type { Course, Task } from "../types";
+import type { Task } from "../types";
 
 const emit = defineEmits<{ select: [task: Task] }>();
 const query = ref("");
@@ -24,11 +24,8 @@ const rows = computed(() => courseRows(state.workspaces));
 const missionOf = (row: CourseRow) => missionState(row.course, row.account.syncing);
 
 // 任务点只用数字 + 「待完成」，避免和右侧状态徽标里的「已完成」撞词。
-function numbersOf(course: Course) {
-  const all = Math.max(0, Number(course.mission_all) || 0);
-  const fn = Math.max(0, Number(course.mission_fn) || 0);
-  return { all, fn, pending: Math.max(0, all - fn), percent: all ? Math.min(100, Math.round((fn / all) * 100)) : 0 };
-}
+// 四个数字的计算统一在 mission.ts 的 missionNumbers()，与账号工作台共用一份口径。
+const numbersOf = missionNumbers;
 
 const filtered = computed(() =>
   rows.value.filter((row) => {

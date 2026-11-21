@@ -188,3 +188,27 @@ describe("不再提醒（settings.ui.dismissed_resume_tasks）", () => {
     expect(next).not.toContain("t0");
   });
 });
+import { missionNumbers } from "./mission";
+describe("任务点四数口径", () => {
+  it("待完成 = 总数 - 已完成，百分比夹在 0-100 并向下取整", () => {
+    expect(missionNumbers({ mission_fn: 8, mission_all: 24 })).toEqual({
+      all: 24,
+      fn: 8,
+      pending: 16,
+      percent: 33,
+    });
+    expect(missionNumbers({ mission_fn: 0, mission_all: 0 })).toEqual({
+      all: 0,
+      fn: 0,
+      pending: 0,
+      percent: 0,
+    });
+    // 平台偶尔回传已完成大于总数，不能出现负数待完成或 >100% 的进度
+    expect(missionNumbers({ mission_fn: 30, mission_all: 24 })).toEqual({
+      all: 24,
+      fn: 30,
+      pending: 0,
+      percent: 100,
+    });
+  });
+});

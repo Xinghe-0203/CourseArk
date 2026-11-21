@@ -423,6 +423,11 @@
 }
 
 @media (max-width: 760px) {
+  /* 进度小窗固定在右下角，给页面留出可滚动到底部的空间，避免遮住保存按钮/最后一行 */
+  .shell:has(.progress-window) .page-content {
+    padding-bottom: 88px;
+  }
+
   .topbar {
     padding: 10px 14px;
     gap: 8px;

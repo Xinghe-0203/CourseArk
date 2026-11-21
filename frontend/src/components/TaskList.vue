@@ -14,6 +14,7 @@ import { request } from "../api";
 import { runningSummary } from "../live";
 import { canResume, isResumeDismissed, unfinishedUnits } from "../mission";
 import ProgressBar from "./ProgressBar.vue";
+import ConfirmDialog from "./ConfirmDialog.vue";
 import EmptyState from "./EmptyState.vue";
 import Pagination from "./Pagination.vue";
 import {
@@ -51,18 +52,20 @@ async function load() {
         : filter.value;
   try {
     const data = await request<{ items: Task[]; total: number }>(
-      `/tasks?q=${encodeURIComponent(query.value)}&status=${status}&account_id=${account.value}&limit=100&offset=${offset.value}`,
+      `/tasks?q=${encodeURIComponent(query.value)}&status=${status}&account_id=${account.value}` +
+        `&limit=100&offset=${offset.value}&include_live=1`,
     );
     if (current === generation) {
       if (offset.value && offset.value >= data.total) {
         offset.value = Math.max(0, Math.floor((data.total - 1) / 100) * 100);
         return;
       }
-      fetched.value = data.items.map((task) =>
-        state.liveById[task.id]
-          ? { ...task, live: state.liveById[task.id] }
-          : task,
-      );
+      // 列表接口带 include_live，行摘要直接可用；liveById 里若还有小窗轮询到的
+      // 更新值就用它，避免行摘要闪回旧快照。
+      fetched.value = data.items.map((task) => ({
+        ...task,
+        live: task.live ?? state.liveById[task.id] ?? null,
+      }));
       count.value = data.total;
       loadError.value = "";
     }
@@ -98,12 +101,29 @@ function resetFilters() {
   account.value = "";
   filter.value = props.initialFilter || "active";
 }
+/** 停止不可撤销（已完成的进度保留，但要重新跑），必须先确认；
+ *  暂停/继续可逆，直接执行。此前这里点一下就停，与总览页的行为不一致。 */
+const stopping = ref<{ id: string; name: string } | null>(null);
 function command(task: Task, op: string) {
+  if (op === "stop") {
+    stopping.value = { id: task.id, name: task.course_name || "这项任务" };
+    return;
+  }
   act(
     task.id,
     () => request(`/tasks/${task.id}/${op}`, "POST"),
-    op === "retry" ? "已加入重试队列" : "任务指令已发送",
+    "任务指令已发送",
   );
+}
+function confirmStop() {
+  const target = stopping.value;
+  stopping.value = null;
+  if (target)
+    act(
+      target.id,
+      () => request(`/tasks/${target.id}/stop`, "POST"),
+      "已发送停止指令",
+    );
 }
 function resume(task: Task) {
   resumeTask(task);
@@ -311,6 +331,16 @@ const emptyDesc = computed(() =>
       :page-size="100"
       :total="count"
       @update:offset="offset = $event"
+    />
+    <ConfirmDialog
+      v-if="stopping"
+      title="停止任务"
+      :message="`将停止「${stopping.name}」正在执行的任务。`"
+      hint="已完成的进度会保留，之后可以在任务记录里继续执行。"
+      confirm-text="停止任务"
+      :busy="state.busy.has(stopping.id)"
+      @confirm="confirmStop"
+      @cancel="stopping = null"
     />
   </div>
 </template>

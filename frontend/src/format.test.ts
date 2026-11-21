@@ -32,3 +32,20 @@ describe("账号分组与真实进度", () => {
     expect(features.independent_homework).toBe("独立作业");
   });
 });
+import { loginState } from "./format";
+describe("账号登录状态文案", () => {
+  it("区分已验证 / 登录失败 / 待验证，并保留失败原因", () => {
+    expect(loginState({ login_state: "ok" }).text).toBe("已验证");
+    expect(loginState({ login_state: "failed" }).text).toBe("登录失败");
+    expect(loginState({}).text).toBe("待验证");
+    expect(loginState({ login_state: "failed", last_error: "密码错误" }).reason).toBe(
+      "密码错误",
+    );
+  });
+  it("失败原因压成一行，避免平台长文案把行撑高", () => {
+    const long = "失败".repeat(80);
+    const { reason } = loginState({ login_state: "failed", last_error: long });
+    expect(reason.length).toBeLessThanOrEqual(59);
+    expect(reason.endsWith("…")).toBe(true);
+  });
+});
